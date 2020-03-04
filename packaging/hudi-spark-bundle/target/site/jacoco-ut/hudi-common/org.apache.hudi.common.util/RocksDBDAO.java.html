@@ -1,0 +1,464 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>RocksDBDAO.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.util</a> &gt; <span class="el_source">RocksDBDAO.java</span></div><h1>RocksDBDAO.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.util;
+
+import org.apache.hudi.common.util.collection.Pair;
+import org.apache.hudi.exception.HoodieException;
+import org.apache.hudi.exception.HoodieIOException;
+
+import com.google.common.base.Preconditions;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+import org.rocksdb.AbstractImmutableNativeReference;
+import org.rocksdb.ColumnFamilyDescriptor;
+import org.rocksdb.ColumnFamilyHandle;
+import org.rocksdb.ColumnFamilyOptions;
+import org.rocksdb.DBOptions;
+import org.rocksdb.InfoLogLevel;
+import org.rocksdb.Options;
+import org.rocksdb.RocksDB;
+import org.rocksdb.RocksDBException;
+import org.rocksdb.RocksIterator;
+import org.rocksdb.Statistics;
+import org.rocksdb.WriteBatch;
+import org.rocksdb.WriteOptions;
+
+import java.io.File;
+import java.io.IOException;
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+/**
+ * Data access objects for storing and retrieving objects in Rocks DB.
+ */
+public class RocksDBDAO {
+
+<span class="nc" id="L58">  private static final Logger LOG = LogManager.getLogger(RocksDBDAO.class);</span>
+
+  private transient ConcurrentHashMap&lt;String, ColumnFamilyHandle&gt; managedHandlesMap;
+  private transient ConcurrentHashMap&lt;String, ColumnFamilyDescriptor&gt; managedDescriptorMap;
+  private transient RocksDB rocksDB;
+<span class="nc" id="L63">  private boolean closed = false;</span>
+  private final String rocksDBBasePath;
+
+<span class="nc" id="L66">  public RocksDBDAO(String basePath, String rocksDBBasePath) {</span>
+<span class="nc" id="L67">    this.rocksDBBasePath =</span>
+<span class="nc" id="L68">        String.format(&quot;%s/%s/%s&quot;, rocksDBBasePath, basePath.replace(&quot;/&quot;, &quot;_&quot;), UUID.randomUUID().toString());</span>
+<span class="nc" id="L69">    init();</span>
+<span class="nc" id="L70">  }</span>
+
+  /**
+   * Create RocksDB if not initialized.
+   */
+  private RocksDB getRocksDB() {
+<span class="nc bnc" id="L76" title="All 2 branches missed.">    if (null == rocksDB) {</span>
+<span class="nc" id="L77">      init();</span>
+    }
+<span class="nc" id="L79">    return rocksDB;</span>
+  }
+
+  /**
+   * Initialized Rocks DB instance.
+   */
+  private void init() {
+    try {
+<span class="nc" id="L87">      LOG.info(&quot;DELETING RocksDB persisted at &quot; + rocksDBBasePath);</span>
+<span class="nc" id="L88">      FileIOUtils.deleteDirectory(new File(rocksDBBasePath));</span>
+
+<span class="nc" id="L90">      managedHandlesMap = new ConcurrentHashMap&lt;&gt;();</span>
+<span class="nc" id="L91">      managedDescriptorMap = new ConcurrentHashMap&lt;&gt;();</span>
+
+      // If already present, loads the existing column-family handles
+
+<span class="nc" id="L95">      final DBOptions dbOptions = new DBOptions().setCreateIfMissing(true).setCreateMissingColumnFamilies(true)</span>
+<span class="nc" id="L96">          .setWalDir(rocksDBBasePath).setStatsDumpPeriodSec(300).setStatistics(new Statistics());</span>
+<span class="nc" id="L97">      dbOptions.setLogger(new org.rocksdb.Logger(dbOptions) {</span>
+        @Override
+        protected void log(InfoLogLevel infoLogLevel, String logMsg) {
+<span class="nc" id="L100">          LOG.info(&quot;From Rocks DB : &quot; + logMsg);</span>
+<span class="nc" id="L101">        }</span>
+      });
+<span class="nc" id="L103">      final List&lt;ColumnFamilyDescriptor&gt; managedColumnFamilies = loadManagedColumnFamilies(dbOptions);</span>
+<span class="nc" id="L104">      final List&lt;ColumnFamilyHandle&gt; managedHandles = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L105">      FileIOUtils.mkdir(new File(rocksDBBasePath));</span>
+<span class="nc" id="L106">      rocksDB = RocksDB.open(dbOptions, rocksDBBasePath, managedColumnFamilies, managedHandles);</span>
+
+<span class="nc bnc" id="L108" title="All 2 branches missed.">      Preconditions.checkArgument(managedHandles.size() == managedColumnFamilies.size(),</span>
+          &quot;Unexpected number of handles are returned&quot;);
+<span class="nc bnc" id="L110" title="All 2 branches missed.">      for (int index = 0; index &lt; managedHandles.size(); index++) {</span>
+<span class="nc" id="L111">        ColumnFamilyHandle handle = managedHandles.get(index);</span>
+<span class="nc" id="L112">        ColumnFamilyDescriptor descriptor = managedColumnFamilies.get(index);</span>
+<span class="nc" id="L113">        String familyNameFromHandle = new String(handle.getName());</span>
+<span class="nc" id="L114">        String familyNameFromDescriptor = new String(descriptor.getName());</span>
+
+<span class="nc" id="L116">        Preconditions.checkArgument(familyNameFromDescriptor.equals(familyNameFromHandle),</span>
+            &quot;Family Handles not in order with descriptors&quot;);
+<span class="nc" id="L118">        managedHandlesMap.put(familyNameFromHandle, handle);</span>
+<span class="nc" id="L119">        managedDescriptorMap.put(familyNameFromDescriptor, descriptor);</span>
+      }
+<span class="nc" id="L121">    } catch (RocksDBException | IOException re) {</span>
+<span class="nc" id="L122">      LOG.error(&quot;Got exception opening Rocks DB instance &quot;, re);</span>
+<span class="nc" id="L123">      throw new HoodieException(re);</span>
+<span class="nc" id="L124">    }</span>
+<span class="nc" id="L125">  }</span>
+
+  /**
+   * Helper to load managed column family descriptors.
+   */
+  private List&lt;ColumnFamilyDescriptor&gt; loadManagedColumnFamilies(DBOptions dbOptions) throws RocksDBException {
+<span class="nc" id="L131">    final List&lt;ColumnFamilyDescriptor&gt; managedColumnFamilies = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L132">    final Options options = new Options(dbOptions, new ColumnFamilyOptions());</span>
+<span class="nc" id="L133">    List&lt;byte[]&gt; existing = RocksDB.listColumnFamilies(options, rocksDBBasePath);</span>
+
+<span class="nc bnc" id="L135" title="All 2 branches missed.">    if (existing.isEmpty()) {</span>
+<span class="nc" id="L136">      LOG.info(&quot;No column family found. Loading default&quot;);</span>
+<span class="nc" id="L137">      managedColumnFamilies.add(getColumnFamilyDescriptor(RocksDB.DEFAULT_COLUMN_FAMILY));</span>
+    } else {
+<span class="nc" id="L139">      LOG.info(&quot;Loading column families :&quot; + existing.stream().map(String::new).collect(Collectors.toList()));</span>
+<span class="nc" id="L140">      managedColumnFamilies</span>
+<span class="nc" id="L141">          .addAll(existing.stream().map(RocksDBDAO::getColumnFamilyDescriptor).collect(Collectors.toList()));</span>
+    }
+<span class="nc" id="L143">    return managedColumnFamilies;</span>
+  }
+
+  private static ColumnFamilyDescriptor getColumnFamilyDescriptor(byte[] columnFamilyName) {
+<span class="nc" id="L147">    return new ColumnFamilyDescriptor(columnFamilyName, new ColumnFamilyOptions());</span>
+  }
+
+  /**
+   * Perform a batch write operation.
+   */
+  public void writeBatch(BatchHandler handler) {
+<span class="nc" id="L154">    try (WriteBatch batch = new WriteBatch()) {</span>
+<span class="nc" id="L155">      handler.apply(batch);</span>
+<span class="nc" id="L156">      getRocksDB().write(new WriteOptions(), batch);</span>
+<span class="nc" id="L157">    } catch (RocksDBException re) {</span>
+<span class="nc" id="L158">      throw new HoodieException(re);</span>
+<span class="nc" id="L159">    }</span>
+<span class="nc" id="L160">  }</span>
+
+  /**
+   * Helper to add put operation in batch.
+   *
+   * @param batch Batch Handle
+   * @param columnFamilyName Column Family
+   * @param key Key
+   * @param value Payload
+   * @param &lt;T&gt; Type of payload
+   */
+  public &lt;T extends Serializable&gt; void putInBatch(WriteBatch batch, String columnFamilyName, String key, T value) {
+    try {
+<span class="nc" id="L173">      byte[] payload = SerializationUtils.serialize(value);</span>
+<span class="nc" id="L174">      batch.put(managedHandlesMap.get(columnFamilyName), key.getBytes(), payload);</span>
+<span class="nc" id="L175">    } catch (Exception e) {</span>
+<span class="nc" id="L176">      throw new HoodieException(e);</span>
+<span class="nc" id="L177">    }</span>
+<span class="nc" id="L178">  }</span>
+
+  /**
+   * Helper to add put operation in batch.
+   *
+   * @param batch Batch Handle
+   * @param columnFamilyName Column Family
+   * @param key Key
+   * @param value Payload
+   * @param &lt;T&gt; Type of payload
+   */
+  public &lt;K extends Serializable, T extends Serializable&gt; void putInBatch(WriteBatch batch, String columnFamilyName,
+      K key, T value) {
+    try {
+<span class="nc" id="L192">      byte[] keyBytes = SerializationUtils.serialize(key);</span>
+<span class="nc" id="L193">      byte[] payload = SerializationUtils.serialize(value);</span>
+<span class="nc" id="L194">      batch.put(managedHandlesMap.get(columnFamilyName), keyBytes, payload);</span>
+<span class="nc" id="L195">    } catch (Exception e) {</span>
+<span class="nc" id="L196">      throw new HoodieException(e);</span>
+<span class="nc" id="L197">    }</span>
+<span class="nc" id="L198">  }</span>
+
+  /**
+   * Perform single PUT on a column-family.
+   *
+   * @param columnFamilyName Column family name
+   * @param key Key
+   * @param value Payload
+   * @param &lt;T&gt; Type of Payload
+   */
+  public &lt;T extends Serializable&gt; void put(String columnFamilyName, String key, T value) {
+    try {
+<span class="nc" id="L210">      byte[] payload = SerializationUtils.serialize(value);</span>
+<span class="nc" id="L211">      getRocksDB().put(managedHandlesMap.get(columnFamilyName), key.getBytes(), payload);</span>
+<span class="nc" id="L212">    } catch (Exception e) {</span>
+<span class="nc" id="L213">      throw new HoodieException(e);</span>
+<span class="nc" id="L214">    }</span>
+<span class="nc" id="L215">  }</span>
+
+  /**
+   * Perform single PUT on a column-family.
+   *
+   * @param columnFamilyName Column family name
+   * @param key Key
+   * @param value Payload
+   * @param &lt;T&gt; Type of Payload
+   */
+  public &lt;K extends Serializable, T extends Serializable&gt; void put(String columnFamilyName, K key, T value) {
+    try {
+<span class="nc" id="L227">      byte[] payload = SerializationUtils.serialize(value);</span>
+<span class="nc" id="L228">      getRocksDB().put(managedHandlesMap.get(columnFamilyName), SerializationUtils.serialize(key), payload);</span>
+<span class="nc" id="L229">    } catch (Exception e) {</span>
+<span class="nc" id="L230">      throw new HoodieException(e);</span>
+<span class="nc" id="L231">    }</span>
+<span class="nc" id="L232">  }</span>
+
+  /**
+   * Helper to add delete operation in batch.
+   *
+   * @param batch Batch Handle
+   * @param columnFamilyName Column Family
+   * @param key Key
+   */
+  public void deleteInBatch(WriteBatch batch, String columnFamilyName, String key) {
+    try {
+<span class="nc" id="L243">      batch.delete(managedHandlesMap.get(columnFamilyName), key.getBytes());</span>
+<span class="nc" id="L244">    } catch (RocksDBException e) {</span>
+<span class="nc" id="L245">      throw new HoodieException(e);</span>
+<span class="nc" id="L246">    }</span>
+<span class="nc" id="L247">  }</span>
+
+  /**
+   * Helper to add delete operation in batch.
+   *
+   * @param batch Batch Handle
+   * @param columnFamilyName Column Family
+   * @param key Key
+   */
+  public &lt;K extends Serializable&gt; void deleteInBatch(WriteBatch batch, String columnFamilyName, K key) {
+    try {
+<span class="nc" id="L258">      batch.delete(managedHandlesMap.get(columnFamilyName), SerializationUtils.serialize(key));</span>
+<span class="nc" id="L259">    } catch (Exception e) {</span>
+<span class="nc" id="L260">      throw new HoodieException(e);</span>
+<span class="nc" id="L261">    }</span>
+<span class="nc" id="L262">  }</span>
+
+  /**
+   * Perform a single Delete operation.
+   *
+   * @param columnFamilyName Column Family name
+   * @param key Key to be deleted
+   */
+  public void delete(String columnFamilyName, String key) {
+    try {
+<span class="nc" id="L272">      getRocksDB().delete(managedHandlesMap.get(columnFamilyName), key.getBytes());</span>
+<span class="nc" id="L273">    } catch (RocksDBException e) {</span>
+<span class="nc" id="L274">      throw new HoodieException(e);</span>
+<span class="nc" id="L275">    }</span>
+<span class="nc" id="L276">  }</span>
+
+  /**
+   * Perform a single Delete operation.
+   *
+   * @param columnFamilyName Column Family name
+   * @param key Key to be deleted
+   */
+  public &lt;K extends Serializable&gt; void delete(String columnFamilyName, K key) {
+    try {
+<span class="nc" id="L286">      getRocksDB().delete(managedHandlesMap.get(columnFamilyName), SerializationUtils.serialize(key));</span>
+<span class="nc" id="L287">    } catch (Exception e) {</span>
+<span class="nc" id="L288">      throw new HoodieException(e);</span>
+<span class="nc" id="L289">    }</span>
+<span class="nc" id="L290">  }</span>
+
+  /**
+   * Retrieve a value for a given key in a column family.
+   *
+   * @param columnFamilyName Column Family Name
+   * @param key Key to be retrieved
+   * @param &lt;T&gt; Type of object stored.
+   */
+  public &lt;T extends Serializable&gt; T get(String columnFamilyName, String key) {
+<span class="nc bnc" id="L300" title="All 2 branches missed.">    Preconditions.checkArgument(!closed);</span>
+    try {
+<span class="nc" id="L302">      byte[] val = getRocksDB().get(managedHandlesMap.get(columnFamilyName), key.getBytes());</span>
+<span class="nc bnc" id="L303" title="All 2 branches missed.">      return val == null ? null : SerializationUtils.deserialize(val);</span>
+<span class="nc" id="L304">    } catch (RocksDBException e) {</span>
+<span class="nc" id="L305">      throw new HoodieException(e);</span>
+    }
+  }
+
+  /**
+   * Retrieve a value for a given key in a column family.
+   *
+   * @param columnFamilyName Column Family Name
+   * @param key Key to be retrieved
+   * @param &lt;T&gt; Type of object stored.
+   */
+  public &lt;K extends Serializable, T extends Serializable&gt; T get(String columnFamilyName, K key) {
+<span class="nc bnc" id="L317" title="All 2 branches missed.">    Preconditions.checkArgument(!closed);</span>
+    try {
+<span class="nc" id="L319">      byte[] val = getRocksDB().get(managedHandlesMap.get(columnFamilyName), SerializationUtils.serialize(key));</span>
+<span class="nc bnc" id="L320" title="All 2 branches missed.">      return val == null ? null : SerializationUtils.deserialize(val);</span>
+<span class="nc" id="L321">    } catch (Exception e) {</span>
+<span class="nc" id="L322">      throw new HoodieException(e);</span>
+    }
+  }
+
+  /**
+   * Perform a prefix search and return stream of key-value pairs retrieved.
+   *
+   * @param columnFamilyName Column Family Name
+   * @param prefix Prefix Key
+   * @param &lt;T&gt; Type of value stored
+   */
+  public &lt;T extends Serializable&gt; Stream&lt;Pair&lt;String, T&gt;&gt; prefixSearch(String columnFamilyName, String prefix) {
+<span class="nc bnc" id="L334" title="All 2 branches missed.">    Preconditions.checkArgument(!closed);</span>
+<span class="nc" id="L335">    final HoodieTimer timer = new HoodieTimer();</span>
+<span class="nc" id="L336">    timer.startTimer();</span>
+<span class="nc" id="L337">    long timeTakenMicro = 0;</span>
+<span class="nc" id="L338">    List&lt;Pair&lt;String, T&gt;&gt; results = new LinkedList&lt;&gt;();</span>
+<span class="nc" id="L339">    try (final RocksIterator it = getRocksDB().newIterator(managedHandlesMap.get(columnFamilyName))) {</span>
+<span class="nc" id="L340">      it.seek(prefix.getBytes());</span>
+<span class="nc bnc" id="L341" title="All 4 branches missed.">      while (it.isValid() &amp;&amp; new String(it.key()).startsWith(prefix)) {</span>
+<span class="nc" id="L342">        long beginTs = System.nanoTime();</span>
+<span class="nc" id="L343">        T val = SerializationUtils.deserialize(it.value());</span>
+<span class="nc" id="L344">        timeTakenMicro += ((System.nanoTime() - beginTs) / 1000);</span>
+<span class="nc" id="L345">        results.add(Pair.of(new String(it.key()), val));</span>
+<span class="nc" id="L346">        it.next();</span>
+<span class="nc" id="L347">      }</span>
+    }
+
+<span class="nc" id="L350">    LOG.info(&quot;Prefix Search for (query=&quot; + prefix + &quot;) on &quot; + columnFamilyName + &quot;. Total Time Taken (msec)=&quot;</span>
+<span class="nc" id="L351">        + timer.endTimer() + &quot;. Serialization Time taken(micro)=&quot; + timeTakenMicro + &quot;, num entries=&quot; + results.size());</span>
+<span class="nc" id="L352">    return results.stream();</span>
+  }
+
+  /**
+   * Perform a prefix delete and return stream of key-value pairs retrieved.
+   *
+   * @param columnFamilyName Column Family Name
+   * @param prefix Prefix Key
+   * @param &lt;T&gt; Type of value stored
+   */
+  public &lt;T extends Serializable&gt; void prefixDelete(String columnFamilyName, String prefix) {
+<span class="nc bnc" id="L363" title="All 2 branches missed.">    Preconditions.checkArgument(!closed);</span>
+<span class="nc" id="L364">    LOG.info(&quot;Prefix DELETE (query=&quot; + prefix + &quot;) on &quot; + columnFamilyName);</span>
+<span class="nc" id="L365">    final RocksIterator it = getRocksDB().newIterator(managedHandlesMap.get(columnFamilyName));</span>
+<span class="nc" id="L366">    it.seek(prefix.getBytes());</span>
+    // Find first and last keys to be deleted
+<span class="nc" id="L368">    String firstEntry = null;</span>
+<span class="nc" id="L369">    String lastEntry = null;</span>
+<span class="nc bnc" id="L370" title="All 4 branches missed.">    while (it.isValid() &amp;&amp; new String(it.key()).startsWith(prefix)) {</span>
+<span class="nc" id="L371">      String result = new String(it.key());</span>
+<span class="nc" id="L372">      it.next();</span>
+<span class="nc bnc" id="L373" title="All 2 branches missed.">      if (firstEntry == null) {</span>
+<span class="nc" id="L374">        firstEntry = result;</span>
+      }
+<span class="nc" id="L376">      lastEntry = result;</span>
+<span class="nc" id="L377">    }</span>
+<span class="nc" id="L378">    it.close();</span>
+
+<span class="nc bnc" id="L380" title="All 2 branches missed.">    if (null != firstEntry) {</span>
+      try {
+        // This will not delete the last entry
+<span class="nc" id="L383">        getRocksDB().deleteRange(managedHandlesMap.get(columnFamilyName), firstEntry.getBytes(), lastEntry.getBytes());</span>
+        // Delete the last entry
+<span class="nc" id="L385">        getRocksDB().delete(lastEntry.getBytes());</span>
+<span class="nc" id="L386">      } catch (RocksDBException e) {</span>
+<span class="nc" id="L387">        LOG.error(&quot;Got exception performing range delete&quot;);</span>
+<span class="nc" id="L388">        throw new HoodieException(e);</span>
+<span class="nc" id="L389">      }</span>
+    }
+<span class="nc" id="L391">  }</span>
+
+  /**
+   * Add a new column family to store.
+   *
+   * @param columnFamilyName Column family name
+   */
+  public void addColumnFamily(String columnFamilyName) {
+<span class="nc bnc" id="L399" title="All 2 branches missed.">    Preconditions.checkArgument(!closed);</span>
+
+<span class="nc" id="L401">    managedDescriptorMap.computeIfAbsent(columnFamilyName, colFamilyName -&gt; {</span>
+      try {
+<span class="nc" id="L403">        ColumnFamilyDescriptor descriptor = getColumnFamilyDescriptor(colFamilyName.getBytes());</span>
+<span class="nc" id="L404">        ColumnFamilyHandle handle = getRocksDB().createColumnFamily(descriptor);</span>
+<span class="nc" id="L405">        managedHandlesMap.put(colFamilyName, handle);</span>
+<span class="nc" id="L406">        return descriptor;</span>
+<span class="nc" id="L407">      } catch (RocksDBException e) {</span>
+<span class="nc" id="L408">        throw new HoodieException(e);</span>
+      }
+    });
+<span class="nc" id="L411">  }</span>
+
+  /**
+   * Note : Does not delete from underlying DB. Just closes the handle.
+   *
+   * @param columnFamilyName Column Family Name
+   */
+  public void dropColumnFamily(String columnFamilyName) {
+<span class="nc bnc" id="L419" title="All 2 branches missed.">    Preconditions.checkArgument(!closed);</span>
+
+<span class="nc" id="L421">    managedDescriptorMap.computeIfPresent(columnFamilyName, (colFamilyName, descriptor) -&gt; {</span>
+<span class="nc" id="L422">      ColumnFamilyHandle handle = managedHandlesMap.get(colFamilyName);</span>
+      try {
+<span class="nc" id="L424">        getRocksDB().dropColumnFamily(handle);</span>
+<span class="nc" id="L425">        handle.close();</span>
+<span class="nc" id="L426">      } catch (RocksDBException e) {</span>
+<span class="nc" id="L427">        throw new HoodieException(e);</span>
+<span class="nc" id="L428">      }</span>
+<span class="nc" id="L429">      managedHandlesMap.remove(columnFamilyName);</span>
+<span class="nc" id="L430">      return null;</span>
+    });
+<span class="nc" id="L432">  }</span>
+
+  /**
+   * Close the DAO object.
+   */
+  public synchronized void close() {
+<span class="nc bnc" id="L438" title="All 2 branches missed.">    if (!closed) {</span>
+<span class="nc" id="L439">      closed = true;</span>
+<span class="nc" id="L440">      managedHandlesMap.values().forEach(AbstractImmutableNativeReference::close);</span>
+<span class="nc" id="L441">      managedHandlesMap.clear();</span>
+<span class="nc" id="L442">      managedDescriptorMap.clear();</span>
+<span class="nc" id="L443">      getRocksDB().close();</span>
+      try {
+<span class="nc" id="L445">        FileIOUtils.deleteDirectory(new File(rocksDBBasePath));</span>
+<span class="nc" id="L446">      } catch (IOException e) {</span>
+<span class="nc" id="L447">        throw new HoodieIOException(e.getMessage(), e);</span>
+<span class="nc" id="L448">      }</span>
+    }
+<span class="nc" id="L450">  }</span>
+
+  String getRocksDBBasePath() {
+<span class="nc" id="L453">    return rocksDBBasePath;</span>
+  }
+
+  /**
+   * Functional interface for stacking operation to Write batch.
+   */
+  public interface BatchHandler {
+
+    void apply(WriteBatch batch);
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

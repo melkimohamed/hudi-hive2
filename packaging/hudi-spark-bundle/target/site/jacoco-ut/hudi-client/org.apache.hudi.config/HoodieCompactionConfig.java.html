@@ -1,0 +1,306 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieCompactionConfig.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-client</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.config</a> &gt; <span class="el_source">HoodieCompactionConfig.java</span></div><h1>HoodieCompactionConfig.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.config;
+
+import org.apache.hudi.common.model.HoodieCleaningPolicy;
+import org.apache.hudi.common.model.OverwriteWithLatestAvroPayload;
+import org.apache.hudi.table.compact.strategy.CompactionStrategy;
+import org.apache.hudi.table.compact.strategy.LogFileSizeBasedCompactionStrategy;
+
+import com.google.common.base.Preconditions;
+
+import javax.annotation.concurrent.Immutable;
+
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.Properties;
+
+/**
+ * Compaction related config.
+ */
+@Immutable
+public class HoodieCompactionConfig extends DefaultHoodieConfig {
+
+  public static final String CLEANER_POLICY_PROP = &quot;hoodie.cleaner.policy&quot;;
+  public static final String AUTO_CLEAN_PROP = &quot;hoodie.clean.automatic&quot;;
+  // Turn on inline compaction - after fw delta commits a inline compaction will be run
+  public static final String INLINE_COMPACT_PROP = &quot;hoodie.compact.inline&quot;;
+  // Run a compaction every N delta commits
+  public static final String INLINE_COMPACT_NUM_DELTA_COMMITS_PROP = &quot;hoodie.compact.inline.max.delta.commits&quot;;
+  public static final String CLEANER_FILE_VERSIONS_RETAINED_PROP = &quot;hoodie.cleaner.fileversions.retained&quot;;
+  public static final String CLEANER_COMMITS_RETAINED_PROP = &quot;hoodie.cleaner.commits.retained&quot;;
+  public static final String CLEANER_INCREMENTAL_MODE = &quot;hoodie.cleaner.incremental.mode&quot;;
+  public static final String MAX_COMMITS_TO_KEEP_PROP = &quot;hoodie.keep.max.commits&quot;;
+  public static final String MIN_COMMITS_TO_KEEP_PROP = &quot;hoodie.keep.min.commits&quot;;
+  public static final String COMMITS_ARCHIVAL_BATCH_SIZE_PROP = &quot;hoodie.commits.archival.batch&quot;;
+  // Upsert uses this file size to compact new data onto existing files..
+  public static final String PARQUET_SMALL_FILE_LIMIT_BYTES = &quot;hoodie.parquet.small.file.limit&quot;;
+  // By default, treat any file &lt;= 100MB as a small file.
+<span class="nc" id="L56">  public static final String DEFAULT_PARQUET_SMALL_FILE_LIMIT_BYTES = String.valueOf(104857600);</span>
+  /**
+   * Configs related to specific table types.
+   */
+  // Number of inserts, that will be put each partition/bucket for writing
+  public static final String COPY_ON_WRITE_TABLE_INSERT_SPLIT_SIZE = &quot;hoodie.copyonwrite.insert.split.size&quot;;
+  // The rationale to pick the insert parallelism is the following. Writing out 100MB files,
+  // with atleast 1kb records, means 100K records per file. we just overprovision to 500K
+<span class="nc" id="L64">  public static final String DEFAULT_COPY_ON_WRITE_TABLE_INSERT_SPLIT_SIZE = String.valueOf(500000);</span>
+  // Config to control whether we control insert split sizes automatically based on average
+  // record sizes
+  public static final String COPY_ON_WRITE_TABLE_AUTO_SPLIT_INSERTS = &quot;hoodie.copyonwrite.insert.auto.split&quot;;
+  // its off by default
+<span class="nc" id="L69">  public static final String DEFAULT_COPY_ON_WRITE_TABLE_AUTO_SPLIT_INSERTS = String.valueOf(true);</span>
+  // This value is used as a guesstimate for the record size, if we can't determine this from
+  // previous commits
+  public static final String COPY_ON_WRITE_TABLE_RECORD_SIZE_ESTIMATE = &quot;hoodie.copyonwrite.record.size.estimate&quot;;
+  // Used to determine how much more can be packed into a small file, before it exceeds the size
+  // limit.
+<span class="nc" id="L75">  public static final String DEFAULT_COPY_ON_WRITE_TABLE_RECORD_SIZE_ESTIMATE = String.valueOf(1024);</span>
+  public static final String CLEANER_PARALLELISM = &quot;hoodie.cleaner.parallelism&quot;;
+<span class="nc" id="L77">  public static final String DEFAULT_CLEANER_PARALLELISM = String.valueOf(200);</span>
+  public static final String TARGET_IO_PER_COMPACTION_IN_MB_PROP = &quot;hoodie.compaction.target.io&quot;;
+  // 500GB of target IO per compaction (both read and write)
+<span class="nc" id="L80">  public static final String DEFAULT_TARGET_IO_PER_COMPACTION_IN_MB = String.valueOf(500 * 1024);</span>
+  public static final String COMPACTION_STRATEGY_PROP = &quot;hoodie.compaction.strategy&quot;;
+  // 200GB of target IO per compaction
+<span class="nc" id="L83">  public static final String DEFAULT_COMPACTION_STRATEGY = LogFileSizeBasedCompactionStrategy.class.getName();</span>
+  // used to merge records written to log file
+<span class="nc" id="L85">  public static final String DEFAULT_PAYLOAD_CLASS = OverwriteWithLatestAvroPayload.class.getName();</span>
+  public static final String PAYLOAD_CLASS_PROP = &quot;hoodie.compaction.payload.class&quot;;
+
+  // used to choose a trade off between IO vs Memory when performing compaction process
+  // Depending on outputfile_size and memory provided, choose true to avoid OOM for large file
+  // size + small memory
+  public static final String COMPACTION_LAZY_BLOCK_READ_ENABLED_PROP = &quot;hoodie.compaction.lazy.block.read&quot;;
+  public static final String DEFAULT_COMPACTION_LAZY_BLOCK_READ_ENABLED = &quot;false&quot;;
+  // used to choose whether to enable reverse log reading (reverse log traversal)
+  public static final String COMPACTION_REVERSE_LOG_READ_ENABLED_PROP = &quot;hoodie.compaction.reverse.log.read&quot;;
+  public static final String DEFAULT_COMPACTION_REVERSE_LOG_READ_ENABLED = &quot;false&quot;;
+<span class="nc" id="L96">  private static final String DEFAULT_CLEANER_POLICY = HoodieCleaningPolicy.KEEP_LATEST_COMMITS.name();</span>
+  private static final String DEFAULT_AUTO_CLEAN = &quot;true&quot;;
+  private static final String DEFAULT_INLINE_COMPACT = &quot;false&quot;;
+  private static final String DEFAULT_INCREMENTAL_CLEANER = &quot;false&quot;;
+  private static final String DEFAULT_INLINE_COMPACT_NUM_DELTA_COMMITS = &quot;1&quot;;
+  private static final String DEFAULT_CLEANER_FILE_VERSIONS_RETAINED = &quot;3&quot;;
+  private static final String DEFAULT_CLEANER_COMMITS_RETAINED = &quot;10&quot;;
+  private static final String DEFAULT_MAX_COMMITS_TO_KEEP = &quot;30&quot;;
+  private static final String DEFAULT_MIN_COMMITS_TO_KEEP = &quot;20&quot;;
+<span class="nc" id="L105">  private static final String DEFAULT_COMMITS_ARCHIVAL_BATCH_SIZE = String.valueOf(10);</span>
+  public static final String TARGET_PARTITIONS_PER_DAYBASED_COMPACTION_PROP =
+      &quot;hoodie.compaction.daybased.target.partitions&quot;;
+  // 500GB of target IO per compaction (both read and write)
+<span class="nc" id="L109">  public static final String DEFAULT_TARGET_PARTITIONS_PER_DAYBASED_COMPACTION = String.valueOf(10);</span>
+
+  private HoodieCompactionConfig(Properties props) {
+<span class="nc" id="L112">    super(props);</span>
+<span class="nc" id="L113">  }</span>
+
+  public static HoodieCompactionConfig.Builder newBuilder() {
+<span class="nc" id="L116">    return new Builder();</span>
+  }
+
+<span class="nc" id="L119">  public static class Builder {</span>
+
+<span class="nc" id="L121">    private final Properties props = new Properties();</span>
+
+    public Builder fromFile(File propertiesFile) throws IOException {
+<span class="nc" id="L124">      FileReader reader = new FileReader(propertiesFile);</span>
+      try {
+<span class="nc" id="L126">        this.props.load(reader);</span>
+<span class="nc" id="L127">        return this;</span>
+      } finally {
+<span class="nc" id="L129">        reader.close();</span>
+      }
+    }
+
+    public Builder fromProperties(Properties props) {
+<span class="nc" id="L134">      this.props.putAll(props);</span>
+<span class="nc" id="L135">      return this;</span>
+    }
+
+    public Builder withAutoClean(Boolean autoClean) {
+<span class="nc" id="L139">      props.setProperty(AUTO_CLEAN_PROP, String.valueOf(autoClean));</span>
+<span class="nc" id="L140">      return this;</span>
+    }
+
+    public Builder withIncrementalCleaningMode(Boolean incrementalCleaningMode) {
+<span class="nc" id="L144">      props.setProperty(CLEANER_INCREMENTAL_MODE, String.valueOf(incrementalCleaningMode));</span>
+<span class="nc" id="L145">      return this;</span>
+    }
+
+    public Builder withInlineCompaction(Boolean inlineCompaction) {
+<span class="nc" id="L149">      props.setProperty(INLINE_COMPACT_PROP, String.valueOf(inlineCompaction));</span>
+<span class="nc" id="L150">      return this;</span>
+    }
+
+    public Builder inlineCompactionEvery(int deltaCommits) {
+<span class="nc" id="L154">      props.setProperty(INLINE_COMPACT_PROP, String.valueOf(deltaCommits));</span>
+<span class="nc" id="L155">      return this;</span>
+    }
+
+    public Builder withCleanerPolicy(HoodieCleaningPolicy policy) {
+<span class="nc" id="L159">      props.setProperty(CLEANER_POLICY_PROP, policy.name());</span>
+<span class="nc" id="L160">      return this;</span>
+    }
+
+    public Builder retainFileVersions(int fileVersionsRetained) {
+<span class="nc" id="L164">      props.setProperty(CLEANER_FILE_VERSIONS_RETAINED_PROP, String.valueOf(fileVersionsRetained));</span>
+<span class="nc" id="L165">      return this;</span>
+    }
+
+    public Builder retainCommits(int commitsRetained) {
+<span class="nc" id="L169">      props.setProperty(CLEANER_COMMITS_RETAINED_PROP, String.valueOf(commitsRetained));</span>
+<span class="nc" id="L170">      return this;</span>
+    }
+
+    public Builder archiveCommitsWith(int minToKeep, int maxToKeep) {
+<span class="nc" id="L174">      props.setProperty(MIN_COMMITS_TO_KEEP_PROP, String.valueOf(minToKeep));</span>
+<span class="nc" id="L175">      props.setProperty(MAX_COMMITS_TO_KEEP_PROP, String.valueOf(maxToKeep));</span>
+<span class="nc" id="L176">      return this;</span>
+    }
+
+    public Builder compactionSmallFileSize(long smallFileLimitBytes) {
+<span class="nc" id="L180">      props.setProperty(PARQUET_SMALL_FILE_LIMIT_BYTES, String.valueOf(smallFileLimitBytes));</span>
+<span class="nc" id="L181">      return this;</span>
+    }
+
+    public Builder insertSplitSize(int insertSplitSize) {
+<span class="nc" id="L185">      props.setProperty(COPY_ON_WRITE_TABLE_INSERT_SPLIT_SIZE, String.valueOf(insertSplitSize));</span>
+<span class="nc" id="L186">      return this;</span>
+    }
+
+    public Builder autoTuneInsertSplits(boolean autoTuneInsertSplits) {
+<span class="nc" id="L190">      props.setProperty(COPY_ON_WRITE_TABLE_AUTO_SPLIT_INSERTS, String.valueOf(autoTuneInsertSplits));</span>
+<span class="nc" id="L191">      return this;</span>
+    }
+
+    public Builder approxRecordSize(int recordSizeEstimate) {
+<span class="nc" id="L195">      props.setProperty(COPY_ON_WRITE_TABLE_RECORD_SIZE_ESTIMATE, String.valueOf(recordSizeEstimate));</span>
+<span class="nc" id="L196">      return this;</span>
+    }
+
+    public Builder withCleanerParallelism(int cleanerParallelism) {
+<span class="nc" id="L200">      props.setProperty(CLEANER_PARALLELISM, String.valueOf(cleanerParallelism));</span>
+<span class="nc" id="L201">      return this;</span>
+    }
+
+    public Builder withCompactionStrategy(CompactionStrategy compactionStrategy) {
+<span class="nc" id="L205">      props.setProperty(COMPACTION_STRATEGY_PROP, compactionStrategy.getClass().getName());</span>
+<span class="nc" id="L206">      return this;</span>
+    }
+
+    public Builder withPayloadClass(String payloadClassName) {
+<span class="nc" id="L210">      props.setProperty(PAYLOAD_CLASS_PROP, payloadClassName);</span>
+<span class="nc" id="L211">      return this;</span>
+    }
+
+    public Builder withTargetIOPerCompactionInMB(long targetIOPerCompactionInMB) {
+<span class="nc" id="L215">      props.setProperty(TARGET_IO_PER_COMPACTION_IN_MB_PROP, String.valueOf(targetIOPerCompactionInMB));</span>
+<span class="nc" id="L216">      return this;</span>
+    }
+
+    public Builder withMaxNumDeltaCommitsBeforeCompaction(int maxNumDeltaCommitsBeforeCompaction) {
+<span class="nc" id="L220">      props.setProperty(INLINE_COMPACT_NUM_DELTA_COMMITS_PROP, String.valueOf(maxNumDeltaCommitsBeforeCompaction));</span>
+<span class="nc" id="L221">      return this;</span>
+    }
+
+    public Builder withCompactionLazyBlockReadEnabled(Boolean compactionLazyBlockReadEnabled) {
+<span class="nc" id="L225">      props.setProperty(COMPACTION_LAZY_BLOCK_READ_ENABLED_PROP, String.valueOf(compactionLazyBlockReadEnabled));</span>
+<span class="nc" id="L226">      return this;</span>
+    }
+
+    public Builder withCompactionReverseLogReadEnabled(Boolean compactionReverseLogReadEnabled) {
+<span class="nc" id="L230">      props.setProperty(COMPACTION_REVERSE_LOG_READ_ENABLED_PROP, String.valueOf(compactionReverseLogReadEnabled));</span>
+<span class="nc" id="L231">      return this;</span>
+    }
+
+    public Builder withTargetPartitionsPerDayBasedCompaction(int targetPartitionsPerCompaction) {
+<span class="nc" id="L235">      props.setProperty(TARGET_PARTITIONS_PER_DAYBASED_COMPACTION_PROP, String.valueOf(targetPartitionsPerCompaction));</span>
+<span class="nc" id="L236">      return this;</span>
+    }
+
+    public Builder withCommitsArchivalBatchSize(int batchSize) {
+<span class="nc" id="L240">      props.setProperty(COMMITS_ARCHIVAL_BATCH_SIZE_PROP, String.valueOf(batchSize));</span>
+<span class="nc" id="L241">      return this;</span>
+    }
+
+    public HoodieCompactionConfig build() {
+<span class="nc" id="L245">      HoodieCompactionConfig config = new HoodieCompactionConfig(props);</span>
+<span class="nc bnc" id="L246" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(AUTO_CLEAN_PROP), AUTO_CLEAN_PROP, DEFAULT_AUTO_CLEAN);</span>
+<span class="nc bnc" id="L247" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(CLEANER_INCREMENTAL_MODE), CLEANER_INCREMENTAL_MODE,</span>
+          DEFAULT_INCREMENTAL_CLEANER);
+<span class="nc bnc" id="L249" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(INLINE_COMPACT_PROP), INLINE_COMPACT_PROP,</span>
+          DEFAULT_INLINE_COMPACT);
+<span class="nc bnc" id="L251" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(INLINE_COMPACT_NUM_DELTA_COMMITS_PROP),</span>
+          INLINE_COMPACT_NUM_DELTA_COMMITS_PROP, DEFAULT_INLINE_COMPACT_NUM_DELTA_COMMITS);
+<span class="nc bnc" id="L253" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(CLEANER_POLICY_PROP), CLEANER_POLICY_PROP,</span>
+<span class="nc" id="L254">          DEFAULT_CLEANER_POLICY);</span>
+<span class="nc bnc" id="L255" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(CLEANER_FILE_VERSIONS_RETAINED_PROP),</span>
+          CLEANER_FILE_VERSIONS_RETAINED_PROP, DEFAULT_CLEANER_FILE_VERSIONS_RETAINED);
+<span class="nc bnc" id="L257" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(CLEANER_COMMITS_RETAINED_PROP), CLEANER_COMMITS_RETAINED_PROP,</span>
+          DEFAULT_CLEANER_COMMITS_RETAINED);
+<span class="nc bnc" id="L259" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(MAX_COMMITS_TO_KEEP_PROP), MAX_COMMITS_TO_KEEP_PROP,</span>
+          DEFAULT_MAX_COMMITS_TO_KEEP);
+<span class="nc bnc" id="L261" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(MIN_COMMITS_TO_KEEP_PROP), MIN_COMMITS_TO_KEEP_PROP,</span>
+          DEFAULT_MIN_COMMITS_TO_KEEP);
+<span class="nc bnc" id="L263" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(PARQUET_SMALL_FILE_LIMIT_BYTES), PARQUET_SMALL_FILE_LIMIT_BYTES,</span>
+          DEFAULT_PARQUET_SMALL_FILE_LIMIT_BYTES);
+<span class="nc bnc" id="L265" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(COPY_ON_WRITE_TABLE_INSERT_SPLIT_SIZE),</span>
+          COPY_ON_WRITE_TABLE_INSERT_SPLIT_SIZE, DEFAULT_COPY_ON_WRITE_TABLE_INSERT_SPLIT_SIZE);
+<span class="nc bnc" id="L267" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(COPY_ON_WRITE_TABLE_AUTO_SPLIT_INSERTS),</span>
+          COPY_ON_WRITE_TABLE_AUTO_SPLIT_INSERTS, DEFAULT_COPY_ON_WRITE_TABLE_AUTO_SPLIT_INSERTS);
+<span class="nc bnc" id="L269" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(COPY_ON_WRITE_TABLE_RECORD_SIZE_ESTIMATE),</span>
+          COPY_ON_WRITE_TABLE_RECORD_SIZE_ESTIMATE, DEFAULT_COPY_ON_WRITE_TABLE_RECORD_SIZE_ESTIMATE);
+<span class="nc bnc" id="L271" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(CLEANER_PARALLELISM), CLEANER_PARALLELISM,</span>
+          DEFAULT_CLEANER_PARALLELISM);
+<span class="nc bnc" id="L273" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(COMPACTION_STRATEGY_PROP), COMPACTION_STRATEGY_PROP,</span>
+          DEFAULT_COMPACTION_STRATEGY);
+<span class="nc bnc" id="L275" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(PAYLOAD_CLASS_PROP), PAYLOAD_CLASS_PROP, DEFAULT_PAYLOAD_CLASS);</span>
+<span class="nc bnc" id="L276" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(TARGET_IO_PER_COMPACTION_IN_MB_PROP),</span>
+          TARGET_IO_PER_COMPACTION_IN_MB_PROP, DEFAULT_TARGET_IO_PER_COMPACTION_IN_MB);
+<span class="nc bnc" id="L278" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(COMPACTION_LAZY_BLOCK_READ_ENABLED_PROP),</span>
+          COMPACTION_LAZY_BLOCK_READ_ENABLED_PROP, DEFAULT_COMPACTION_LAZY_BLOCK_READ_ENABLED);
+<span class="nc bnc" id="L280" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(COMPACTION_REVERSE_LOG_READ_ENABLED_PROP),</span>
+          COMPACTION_REVERSE_LOG_READ_ENABLED_PROP, DEFAULT_COMPACTION_REVERSE_LOG_READ_ENABLED);
+<span class="nc bnc" id="L282" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(TARGET_PARTITIONS_PER_DAYBASED_COMPACTION_PROP),</span>
+          TARGET_PARTITIONS_PER_DAYBASED_COMPACTION_PROP, DEFAULT_TARGET_PARTITIONS_PER_DAYBASED_COMPACTION);
+<span class="nc bnc" id="L284" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(COMMITS_ARCHIVAL_BATCH_SIZE_PROP),</span>
+<span class="nc" id="L285">          COMMITS_ARCHIVAL_BATCH_SIZE_PROP, DEFAULT_COMMITS_ARCHIVAL_BATCH_SIZE);</span>
+
+<span class="nc" id="L287">      HoodieCleaningPolicy.valueOf(props.getProperty(CLEANER_POLICY_PROP));</span>
+
+      // Ensure minInstantsToKeep &gt; cleanerCommitsRetained, otherwise we will archive some
+      // commit instant on timeline, that still has not been cleaned. Could miss some data via incr pull
+<span class="nc" id="L291">      int minInstantsToKeep = Integer.parseInt(props.getProperty(HoodieCompactionConfig.MIN_COMMITS_TO_KEEP_PROP));</span>
+<span class="nc" id="L292">      int maxInstantsToKeep = Integer.parseInt(props.getProperty(HoodieCompactionConfig.MAX_COMMITS_TO_KEEP_PROP));</span>
+<span class="nc" id="L293">      int cleanerCommitsRetained =</span>
+<span class="nc" id="L294">          Integer.parseInt(props.getProperty(HoodieCompactionConfig.CLEANER_COMMITS_RETAINED_PROP));</span>
+<span class="nc bnc" id="L295" title="All 2 branches missed.">      Preconditions.checkArgument(maxInstantsToKeep &gt; minInstantsToKeep);</span>
+<span class="nc bnc" id="L296" title="All 2 branches missed.">      Preconditions.checkArgument(minInstantsToKeep &gt; cleanerCommitsRetained,</span>
+<span class="nc" id="L297">          String.format(</span>
+              &quot;Increase %s=%d to be greater than %s=%d. Otherwise, there is risk of incremental pull &quot;
+                  + &quot;missing data from few instants.&quot;,
+<span class="nc" id="L300">              HoodieCompactionConfig.MIN_COMMITS_TO_KEEP_PROP, minInstantsToKeep,</span>
+<span class="nc" id="L301">              HoodieCompactionConfig.CLEANER_COMMITS_RETAINED_PROP, cleanerCommitsRetained));</span>
+<span class="nc" id="L302">      return config;</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

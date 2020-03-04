@@ -1,0 +1,435 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>ObjectSizeCalculator.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.util</a> &gt; <span class="el_source">ObjectSizeCalculator.java</span></div><h1>ObjectSizeCalculator.java</h1><pre class="source lang-java linenums">// =================================================================================================
+// Copyright 2011 Twitter, Inc.
+// -------------------------------------------------------------------------------------------------
+// Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);
+// you may not use this work except in compliance with the License.
+// You may obtain a copy of the License in the LICENSE file, or at:
+//
+//  http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// =================================================================================================
+
+package org.apache.hudi.common.util;
+
+import java.lang.management.ManagementFactory;
+import java.lang.management.MemoryPoolMXBean;
+import java.lang.reflect.Array;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+import java.util.ArrayDeque;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.IdentityHashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+
+/**
+ * Contains utility methods for calculating the memory usage of objects. It only works on the HotSpot JVM, and infers
+ * the actual memory layout (32 bit vs. 64 bit word size, compressed object pointers vs. uncompressed) from best
+ * available indicators. It can reliably detect a 32 bit vs. 64 bit JVM. It can only make an educated guess at whether
+ * compressed OOPs are used, though; specifically, it knows what the JVM's default choice of OOP compression would be
+ * based on HotSpot version and maximum heap sizes, but if the choice is explicitly overridden with the
+ * &lt;tt&gt;-XX:{+|-}UseCompressedOops&lt;/tt&gt; command line switch, it can not detect this fact and will report incorrect sizes,
+ * as it will presume the default JVM behavior.
+ *
+ * @author Attila Szegedi
+ */
+public class ObjectSizeCalculator {
+
+  /**
+   * Describes constant memory overheads for various constructs in a JVM implementation.
+   */
+  public interface MemoryLayoutSpecification {
+
+    /**
+     * Returns the fixed overhead of an array of any type or length in this JVM.
+     *
+     * @return the fixed overhead of an array.
+     */
+    int getArrayHeaderSize();
+
+    /**
+     * Returns the fixed overhead of for any {@link Object} subclass in this JVM.
+     *
+     * @return the fixed overhead of any object.
+     */
+    int getObjectHeaderSize();
+
+    /**
+     * Returns the quantum field size for a field owned by an object in this JVM.
+     *
+     * @return the quantum field size for an object.
+     */
+    int getObjectPadding();
+
+    /**
+     * Returns the fixed size of an object reference in this JVM.
+     *
+     * @return the size of all object references.
+     */
+    int getReferenceSize();
+
+    /**
+     * Returns the quantum field size for a field owned by one of an object's ancestor superclasses in this JVM.
+     *
+     * @return the quantum field size for a superclass field.
+     */
+    int getSuperclassFieldPadding();
+  }
+
+  private static class CurrentLayout {
+
+<span class="nc" id="L91">    private static final MemoryLayoutSpecification SPEC = getEffectiveMemoryLayoutSpecification();</span>
+  }
+
+  /**
+   * Given an object, returns the total allocated size, in bytes, of the object and all other objects reachable from it.
+   * Attempts to to detect the current JVM memory layout, but may fail with {@link UnsupportedOperationException};
+   *
+   * @param obj the object; can be null. Passing in a {@link java.lang.Class} object doesn't do anything special, it
+   *        measures the size of all objects reachable through it (which will include its class loader, and by
+   *        extension, all other Class objects loaded by the same loader, and all the parent class loaders). It doesn't
+   *        provide the size of the static fields in the JVM class that the Class object represents.
+   * @return the total allocated size of the object and all other objects it retains.
+   * @throws UnsupportedOperationException if the current vm memory layout cannot be detected.
+   */
+  public static long getObjectSize(Object obj) throws UnsupportedOperationException {
+<span class="nc bnc" id="L106" title="All 2 branches missed.">    return obj == null ? 0 : new ObjectSizeCalculator(CurrentLayout.SPEC).calculateObjectSize(obj);</span>
+  }
+
+  // Fixed object header size for arrays.
+  private final int arrayHeaderSize;
+  // Fixed object header size for non-array objects.
+  private final int objectHeaderSize;
+  // Padding for the object size - if the object size is not an exact multiple
+  // of this, it is padded to the next multiple.
+  private final int objectPadding;
+  // Size of reference (pointer) fields.
+  private final int referenceSize;
+  // Padding for the fields of superclass before fields of subclasses are
+  // added.
+  private final int superclassFieldPadding;
+
+<span class="nc" id="L122">  private final Map&lt;Class&lt;?&gt;, ClassSizeInfo&gt; classSizeInfos = new IdentityHashMap&lt;&gt;();</span>
+
+<span class="nc" id="L124">  private final Set&lt;Object&gt; alreadyVisited = Collections.newSetFromMap(new IdentityHashMap&lt;&gt;());</span>
+<span class="nc" id="L125">  private final Deque&lt;Object&gt; pending = new ArrayDeque&lt;&gt;(16 * 1024);</span>
+  private long size;
+
+  /**
+   * Creates an object size calculator that can calculate object sizes for a given {@code memoryLayoutSpecification}.
+   *
+   * @param memoryLayoutSpecification a description of the JVM memory layout.
+   */
+<span class="nc" id="L133">  public ObjectSizeCalculator(MemoryLayoutSpecification memoryLayoutSpecification) {</span>
+<span class="nc" id="L134">    Objects.requireNonNull(memoryLayoutSpecification);</span>
+<span class="nc" id="L135">    arrayHeaderSize = memoryLayoutSpecification.getArrayHeaderSize();</span>
+<span class="nc" id="L136">    objectHeaderSize = memoryLayoutSpecification.getObjectHeaderSize();</span>
+<span class="nc" id="L137">    objectPadding = memoryLayoutSpecification.getObjectPadding();</span>
+<span class="nc" id="L138">    referenceSize = memoryLayoutSpecification.getReferenceSize();</span>
+<span class="nc" id="L139">    superclassFieldPadding = memoryLayoutSpecification.getSuperclassFieldPadding();</span>
+<span class="nc" id="L140">  }</span>
+
+  /**
+   * Given an object, returns the total allocated size, in bytes, of the object and all other objects reachable from it.
+   *
+   * @param obj the object; can be null. Passing in a {@link java.lang.Class} object doesn't do anything special, it
+   *        measures the size of all objects reachable through it (which will include its class loader, and by
+   *        extension, all other Class objects loaded by the same loader, and all the parent class loaders). It doesn't
+   *        provide the size of the static fields in the JVM class that the Class object represents.
+   * @return the total allocated size of the object and all other objects it retains.
+   */
+  public synchronized long calculateObjectSize(Object obj) {
+    // Breadth-first traversal instead of naive depth-first with recursive
+    // implementation, so we don't blow the stack traversing long linked lists.
+    try {
+      for (;;) {
+<span class="nc" id="L156">        visit(obj);</span>
+<span class="nc bnc" id="L157" title="All 2 branches missed.">        if (pending.isEmpty()) {</span>
+<span class="nc" id="L158">          return size;</span>
+        }
+<span class="nc" id="L160">        obj = pending.removeFirst();</span>
+      }
+    } finally {
+<span class="nc" id="L163">      alreadyVisited.clear();</span>
+<span class="nc" id="L164">      pending.clear();</span>
+<span class="nc" id="L165">      size = 0;</span>
+    }
+  }
+
+  private ClassSizeInfo getClassSizeInfo(final Class&lt;?&gt; clazz) {
+<span class="nc" id="L170">    ClassSizeInfo csi = classSizeInfos.get(clazz);</span>
+<span class="nc bnc" id="L171" title="All 2 branches missed.">    if (csi == null) {</span>
+<span class="nc" id="L172">      csi = new ClassSizeInfo(clazz);</span>
+<span class="nc" id="L173">      classSizeInfos.put(clazz, csi);</span>
+    }
+<span class="nc" id="L175">    return csi;</span>
+  }
+
+  private void visit(Object obj) {
+<span class="nc bnc" id="L179" title="All 2 branches missed.">    if (alreadyVisited.contains(obj)) {</span>
+<span class="nc" id="L180">      return;</span>
+    }
+<span class="nc" id="L182">    final Class&lt;?&gt; clazz = obj.getClass();</span>
+<span class="nc bnc" id="L183" title="All 2 branches missed.">    if (clazz == ArrayElementsVisitor.class) {</span>
+<span class="nc" id="L184">      ((ArrayElementsVisitor) obj).visit(this);</span>
+    } else {
+<span class="nc" id="L186">      alreadyVisited.add(obj);</span>
+<span class="nc bnc" id="L187" title="All 2 branches missed.">      if (clazz.isArray()) {</span>
+<span class="nc" id="L188">        visitArray(obj);</span>
+      } else {
+<span class="nc" id="L190">        getClassSizeInfo(clazz).visit(obj, this);</span>
+      }
+    }
+<span class="nc" id="L193">  }</span>
+
+  private void visitArray(Object array) {
+<span class="nc" id="L196">    final Class&lt;?&gt; componentType = array.getClass().getComponentType();</span>
+<span class="nc" id="L197">    final int length = Array.getLength(array);</span>
+<span class="nc bnc" id="L198" title="All 2 branches missed.">    if (componentType.isPrimitive()) {</span>
+<span class="nc" id="L199">      increaseByArraySize(length, getPrimitiveFieldSize(componentType));</span>
+    } else {
+<span class="nc" id="L201">      increaseByArraySize(length, referenceSize);</span>
+      // If we didn't use an ArrayElementsVisitor, we would be enqueueing every
+      // element of the array here instead. For large arrays, it would
+      // tremendously enlarge the queue. In essence, we're compressing it into
+      // a small command object instead. This is different than immediately
+      // visiting the elements, as their visiting is scheduled for the end of
+      // the current queue.
+<span class="nc bnc" id="L208" title="All 3 branches missed.">      switch (length) {</span>
+        case 0: {
+<span class="nc" id="L210">          break;</span>
+        }
+        case 1: {
+<span class="nc" id="L213">          enqueue(Array.get(array, 0));</span>
+<span class="nc" id="L214">          break;</span>
+        }
+        default: {
+<span class="nc" id="L217">          enqueue(new ArrayElementsVisitor((Object[]) array));</span>
+        }
+      }
+    }
+<span class="nc" id="L221">  }</span>
+
+  private void increaseByArraySize(int length, long elementSize) {
+<span class="nc" id="L224">    increaseSize(roundTo(arrayHeaderSize + length * elementSize, objectPadding));</span>
+<span class="nc" id="L225">  }</span>
+
+  private static class ArrayElementsVisitor {
+
+    private final Object[] array;
+
+<span class="nc" id="L231">    ArrayElementsVisitor(Object[] array) {</span>
+<span class="nc" id="L232">      this.array = array;</span>
+<span class="nc" id="L233">    }</span>
+
+    public void visit(ObjectSizeCalculator calc) {
+<span class="nc bnc" id="L236" title="All 2 branches missed.">      for (Object elem : array) {</span>
+<span class="nc bnc" id="L237" title="All 2 branches missed.">        if (elem != null) {</span>
+<span class="nc" id="L238">          calc.visit(elem);</span>
+        }
+      }
+<span class="nc" id="L241">    }</span>
+  }
+
+  void enqueue(Object obj) {
+<span class="nc bnc" id="L245" title="All 2 branches missed.">    if (obj != null) {</span>
+<span class="nc" id="L246">      pending.addLast(obj);</span>
+    }
+<span class="nc" id="L248">  }</span>
+
+  void increaseSize(long objectSize) {
+<span class="nc" id="L251">    size += objectSize;</span>
+<span class="nc" id="L252">  }</span>
+
+  static long roundTo(long x, int multiple) {
+<span class="nc" id="L255">    return ((x + multiple - 1) / multiple) * multiple;</span>
+  }
+
+  private class ClassSizeInfo {
+
+    // Padded fields + header size
+    private final long objectSize;
+    // Only the fields size - used to calculate the subclasses' memory
+    // footprint.
+    private final long fieldsSize;
+    private final Field[] referenceFields;
+
+<span class="nc" id="L267">    public ClassSizeInfo(Class&lt;?&gt; clazz) {</span>
+<span class="nc" id="L268">      long fieldsSize = 0;</span>
+<span class="nc" id="L269">      final List&lt;Field&gt; referenceFields = new LinkedList&lt;&gt;();</span>
+<span class="nc bnc" id="L270" title="All 2 branches missed.">      for (Field f : clazz.getDeclaredFields()) {</span>
+<span class="nc bnc" id="L271" title="All 2 branches missed.">        if (Modifier.isStatic(f.getModifiers())) {</span>
+<span class="nc" id="L272">          continue;</span>
+        }
+<span class="nc" id="L274">        final Class&lt;?&gt; type = f.getType();</span>
+<span class="nc bnc" id="L275" title="All 2 branches missed.">        if (type.isPrimitive()) {</span>
+<span class="nc" id="L276">          fieldsSize += getPrimitiveFieldSize(type);</span>
+        } else {
+<span class="nc" id="L278">          f.setAccessible(true);</span>
+<span class="nc" id="L279">          referenceFields.add(f);</span>
+<span class="nc" id="L280">          fieldsSize += referenceSize;</span>
+        }
+      }
+<span class="nc" id="L283">      final Class&lt;?&gt; superClass = clazz.getSuperclass();</span>
+<span class="nc bnc" id="L284" title="All 2 branches missed.">      if (superClass != null) {</span>
+<span class="nc" id="L285">        final ClassSizeInfo superClassInfo = getClassSizeInfo(superClass);</span>
+<span class="nc" id="L286">        fieldsSize += roundTo(superClassInfo.fieldsSize, superclassFieldPadding);</span>
+<span class="nc" id="L287">        referenceFields.addAll(Arrays.asList(superClassInfo.referenceFields));</span>
+      }
+<span class="nc" id="L289">      this.fieldsSize = fieldsSize;</span>
+<span class="nc" id="L290">      this.objectSize = roundTo(objectHeaderSize + fieldsSize, objectPadding);</span>
+<span class="nc" id="L291">      this.referenceFields = referenceFields.toArray(new Field[referenceFields.size()]);</span>
+<span class="nc" id="L292">    }</span>
+
+    void visit(Object obj, ObjectSizeCalculator calc) {
+<span class="nc" id="L295">      calc.increaseSize(objectSize);</span>
+<span class="nc" id="L296">      enqueueReferencedObjects(obj, calc);</span>
+<span class="nc" id="L297">    }</span>
+
+    public void enqueueReferencedObjects(Object obj, ObjectSizeCalculator calc) {
+<span class="nc bnc" id="L300" title="All 2 branches missed.">      for (Field f : referenceFields) {</span>
+        try {
+<span class="nc" id="L302">          calc.enqueue(f.get(obj));</span>
+<span class="nc" id="L303">        } catch (IllegalAccessException e) {</span>
+<span class="nc" id="L304">          throw new AssertionError(&quot;Unexpected denial of access to &quot; + f, e);</span>
+<span class="nc" id="L305">        }</span>
+      }
+<span class="nc" id="L307">    }</span>
+  }
+
+  private static long getPrimitiveFieldSize(Class&lt;?&gt; type) {
+<span class="nc bnc" id="L311" title="All 4 branches missed.">    if (type == boolean.class || type == byte.class) {</span>
+<span class="nc" id="L312">      return 1;</span>
+    }
+<span class="nc bnc" id="L314" title="All 4 branches missed.">    if (type == char.class || type == short.class) {</span>
+<span class="nc" id="L315">      return 2;</span>
+    }
+<span class="nc bnc" id="L317" title="All 4 branches missed.">    if (type == int.class || type == float.class) {</span>
+<span class="nc" id="L318">      return 4;</span>
+    }
+<span class="nc bnc" id="L320" title="All 4 branches missed.">    if (type == long.class || type == double.class) {</span>
+<span class="nc" id="L321">      return 8;</span>
+    }
+<span class="nc" id="L323">    throw new AssertionError(&quot;Encountered unexpected primitive type &quot; + type.getName());</span>
+  }
+
+  static MemoryLayoutSpecification getEffectiveMemoryLayoutSpecification() {
+<span class="nc" id="L327">    final String vmName = System.getProperty(&quot;java.vm.name&quot;);</span>
+<span class="nc bnc" id="L328" title="All 6 branches missed.">    if (vmName == null || !(vmName.startsWith(&quot;Java HotSpot(TM) &quot;) || vmName.startsWith(&quot;OpenJDK&quot;)</span>
+<span class="nc bnc" id="L329" title="All 2 branches missed.">        || vmName.startsWith(&quot;TwitterJDK&quot;))) {</span>
+<span class="nc" id="L330">      throw new UnsupportedOperationException(&quot;ObjectSizeCalculator only supported on HotSpot VM&quot;);</span>
+    }
+
+<span class="nc" id="L333">    final String dataModel = System.getProperty(&quot;sun.arch.data.model&quot;);</span>
+<span class="nc bnc" id="L334" title="All 2 branches missed.">    if (&quot;32&quot;.equals(dataModel)) {</span>
+      // Running with 32-bit data model
+<span class="nc" id="L336">      return new MemoryLayoutSpecification() {</span>
+        @Override
+        public int getArrayHeaderSize() {
+<span class="nc" id="L339">          return 12;</span>
+        }
+
+        @Override
+        public int getObjectHeaderSize() {
+<span class="nc" id="L344">          return 8;</span>
+        }
+
+        @Override
+        public int getObjectPadding() {
+<span class="nc" id="L349">          return 8;</span>
+        }
+
+        @Override
+        public int getReferenceSize() {
+<span class="nc" id="L354">          return 4;</span>
+        }
+
+        @Override
+        public int getSuperclassFieldPadding() {
+<span class="nc" id="L359">          return 4;</span>
+        }
+      };
+<span class="nc bnc" id="L362" title="All 2 branches missed.">    } else if (!&quot;64&quot;.equals(dataModel)) {</span>
+<span class="nc" id="L363">      throw new UnsupportedOperationException(</span>
+          &quot;Unrecognized value '&quot; + dataModel + &quot;' of sun.arch.data.model system property&quot;);
+    }
+
+<span class="nc" id="L367">    final String strVmVersion = System.getProperty(&quot;java.vm.version&quot;);</span>
+<span class="nc" id="L368">    final int vmVersion = Integer.parseInt(strVmVersion.substring(0, strVmVersion.indexOf('.')));</span>
+<span class="nc bnc" id="L369" title="All 2 branches missed.">    if (vmVersion &gt;= 17) {</span>
+<span class="nc" id="L370">      long maxMemory = 0;</span>
+<span class="nc bnc" id="L371" title="All 2 branches missed.">      for (MemoryPoolMXBean mp : ManagementFactory.getMemoryPoolMXBeans()) {</span>
+<span class="nc" id="L372">        maxMemory += mp.getUsage().getMax();</span>
+<span class="nc" id="L373">      }</span>
+<span class="nc bnc" id="L374" title="All 2 branches missed.">      if (maxMemory &lt; 30L * 1024 * 1024 * 1024) {</span>
+        // HotSpot 17.0 and above use compressed OOPs below 30GB of RAM total
+        // for all memory pools (yes, including code cache).
+<span class="nc" id="L377">        return new MemoryLayoutSpecification() {</span>
+          @Override
+          public int getArrayHeaderSize() {
+<span class="nc" id="L380">            return 16;</span>
+          }
+
+          @Override
+          public int getObjectHeaderSize() {
+<span class="nc" id="L385">            return 12;</span>
+          }
+
+          @Override
+          public int getObjectPadding() {
+<span class="nc" id="L390">            return 8;</span>
+          }
+
+          @Override
+          public int getReferenceSize() {
+<span class="nc" id="L395">            return 4;</span>
+          }
+
+          @Override
+          public int getSuperclassFieldPadding() {
+<span class="nc" id="L400">            return 4;</span>
+          }
+        };
+      }
+    }
+
+    // In other cases, it's a 64-bit uncompressed OOPs object model
+<span class="nc" id="L407">    return new MemoryLayoutSpecification() {</span>
+      @Override
+      public int getArrayHeaderSize() {
+<span class="nc" id="L410">        return 24;</span>
+      }
+
+      @Override
+      public int getObjectHeaderSize() {
+<span class="nc" id="L415">        return 16;</span>
+      }
+
+      @Override
+      public int getObjectPadding() {
+<span class="nc" id="L420">        return 8;</span>
+      }
+
+      @Override
+      public int getReferenceSize() {
+<span class="nc" id="L425">        return 8;</span>
+      }
+
+      @Override
+      public int getSuperclassFieldPadding() {
+<span class="nc" id="L430">        return 8;</span>
+      }
+    };
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

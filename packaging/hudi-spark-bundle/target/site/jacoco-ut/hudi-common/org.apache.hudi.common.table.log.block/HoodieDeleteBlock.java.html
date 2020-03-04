@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieDeleteBlock.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.table.log.block</a> &gt; <span class="el_source">HoodieDeleteBlock.java</span></div><h1>HoodieDeleteBlock.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.table.log.block;
+
+import org.apache.hudi.common.model.HoodieKey;
+import org.apache.hudi.common.model.HoodieLogFile;
+import org.apache.hudi.common.storage.SizeAwareDataInputStream;
+import org.apache.hudi.common.util.Option;
+import org.apache.hudi.common.util.SerializationUtils;
+import org.apache.hudi.exception.HoodieIOException;
+
+import org.apache.hadoop.fs.FSDataInputStream;
+
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * Delete block contains a list of keys to be deleted from scanning the blocks so far.
+ */
+public class HoodieDeleteBlock extends HoodieLogBlock {
+
+  private HoodieKey[] keysToDelete;
+
+  public HoodieDeleteBlock(HoodieKey[] keysToDelete, Map&lt;HeaderMetadataType, String&gt; header) {
+<span class="nc" id="L46">    this(Option.empty(), null, false, Option.empty(), header, new HashMap&lt;&gt;());</span>
+<span class="nc" id="L47">    this.keysToDelete = keysToDelete;</span>
+<span class="nc" id="L48">  }</span>
+
+  private HoodieDeleteBlock(Option&lt;byte[]&gt; content, FSDataInputStream inputStream, boolean readBlockLazily,
+      Option&lt;HoodieLogBlockContentLocation&gt; blockContentLocation, Map&lt;HeaderMetadataType, String&gt; header,
+      Map&lt;HeaderMetadataType, String&gt; footer) {
+<span class="nc" id="L53">    super(header, footer, blockContentLocation, content, inputStream, readBlockLazily);</span>
+<span class="nc" id="L54">  }</span>
+
+  @Override
+  public byte[] getContentBytes() throws IOException {
+
+    // In case this method is called before realizing keys from content
+<span class="nc bnc" id="L60" title="All 2 branches missed.">    if (getContent().isPresent()) {</span>
+<span class="nc" id="L61">      return getContent().get();</span>
+<span class="nc bnc" id="L62" title="All 6 branches missed.">    } else if (readBlockLazily &amp;&amp; !getContent().isPresent() &amp;&amp; keysToDelete == null) {</span>
+      // read block lazily
+<span class="nc" id="L64">      getKeysToDelete();</span>
+    }
+
+<span class="nc" id="L67">    ByteArrayOutputStream baos = new ByteArrayOutputStream();</span>
+<span class="nc" id="L68">    DataOutputStream output = new DataOutputStream(baos);</span>
+<span class="nc" id="L69">    byte[] bytesToWrite = SerializationUtils.serialize(getKeysToDelete());</span>
+<span class="nc" id="L70">    output.writeInt(version);</span>
+<span class="nc" id="L71">    output.writeInt(bytesToWrite.length);</span>
+<span class="nc" id="L72">    output.write(bytesToWrite);</span>
+<span class="nc" id="L73">    return baos.toByteArray();</span>
+  }
+
+  public HoodieKey[] getKeysToDelete() {
+    try {
+<span class="nc bnc" id="L78" title="All 2 branches missed.">      if (keysToDelete == null) {</span>
+<span class="nc bnc" id="L79" title="All 4 branches missed.">        if (!getContent().isPresent() &amp;&amp; readBlockLazily) {</span>
+          // read content from disk
+<span class="nc" id="L81">          inflate();</span>
+        }
+<span class="nc" id="L83">        SizeAwareDataInputStream dis =</span>
+<span class="nc" id="L84">            new SizeAwareDataInputStream(new DataInputStream(new ByteArrayInputStream(getContent().get())));</span>
+<span class="nc" id="L85">        int version = dis.readInt();</span>
+<span class="nc" id="L86">        int dataLength = dis.readInt();</span>
+<span class="nc" id="L87">        byte[] data = new byte[dataLength];</span>
+<span class="nc" id="L88">        dis.readFully(data);</span>
+<span class="nc" id="L89">        this.keysToDelete = SerializationUtils.&lt;HoodieKey[]&gt;deserialize(data);</span>
+<span class="nc" id="L90">        deflate();</span>
+      }
+<span class="nc" id="L92">      return keysToDelete;</span>
+<span class="nc" id="L93">    } catch (IOException io) {</span>
+<span class="nc" id="L94">      throw new HoodieIOException(&quot;Unable to generate keys to delete from block content&quot;, io);</span>
+    }
+  }
+
+  @Override
+  public HoodieLogBlockType getBlockType() {
+<span class="nc" id="L100">    return HoodieLogBlockType.DELETE_BLOCK;</span>
+  }
+
+  public static HoodieLogBlock getBlock(HoodieLogFile logFile, FSDataInputStream inputStream, Option&lt;byte[]&gt; content,
+      boolean readBlockLazily, long position, long blockSize, long blockEndPos, Map&lt;HeaderMetadataType, String&gt; header,
+      Map&lt;HeaderMetadataType, String&gt; footer) throws IOException {
+
+<span class="nc" id="L107">    return new HoodieDeleteBlock(content, inputStream, readBlockLazily,</span>
+<span class="nc" id="L108">        Option.of(new HoodieLogBlockContentLocation(logFile, position, blockSize, blockEndPos)), header, footer);</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

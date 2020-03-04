@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieWriteHandle.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-client</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.io</a> &gt; <span class="el_source">HoodieWriteHandle.java</span></div><h1>HoodieWriteHandle.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.io;
+
+import org.apache.hudi.client.WriteStatus;
+import org.apache.hudi.common.model.HoodieRecord;
+import org.apache.hudi.common.model.HoodieRecordPayload;
+import org.apache.hudi.common.util.FSUtils;
+import org.apache.hudi.common.util.HoodieAvroUtils;
+import org.apache.hudi.common.util.HoodieTimer;
+import org.apache.hudi.common.util.Option;
+import org.apache.hudi.common.util.ReflectionUtils;
+import org.apache.hudi.config.HoodieWriteConfig;
+import org.apache.hudi.exception.HoodieException;
+import org.apache.hudi.exception.HoodieIOException;
+import org.apache.hudi.table.HoodieTable;
+
+import org.apache.avro.Schema;
+import org.apache.avro.generic.GenericRecord;
+import org.apache.avro.generic.IndexedRecord;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+import org.apache.spark.TaskContext;
+
+import java.io.IOException;
+
+/**
+ * Base class for all write operations logically performed at the file group level.
+ */
+public abstract class HoodieWriteHandle&lt;T extends HoodieRecordPayload&gt; extends HoodieIOHandle {
+
+<span class="nc" id="L50">  private static final Logger LOG = LogManager.getLogger(HoodieWriteHandle.class);</span>
+  protected final Schema originalSchema;
+  protected final Schema writerSchema;
+  protected HoodieTimer timer;
+  protected final WriteStatus writeStatus;
+  protected final String fileId;
+  protected final String writeToken;
+
+  public HoodieWriteHandle(HoodieWriteConfig config, String instantTime, String fileId, HoodieTable&lt;T&gt; hoodieTable) {
+<span class="nc" id="L59">    super(config, instantTime, hoodieTable);</span>
+<span class="nc" id="L60">    this.fileId = fileId;</span>
+<span class="nc" id="L61">    this.writeToken = makeSparkWriteToken();</span>
+<span class="nc" id="L62">    this.originalSchema = new Schema.Parser().parse(config.getSchema());</span>
+<span class="nc" id="L63">    this.writerSchema = createHoodieWriteSchema(originalSchema);</span>
+<span class="nc" id="L64">    this.timer = new HoodieTimer().startTimer();</span>
+<span class="nc" id="L65">    this.writeStatus = (WriteStatus) ReflectionUtils.loadClass(config.getWriteStatusClassName(),</span>
+<span class="nc bnc" id="L66" title="All 2 branches missed.">        !hoodieTable.getIndex().isImplicitWithStorage(), config.getWriteStatusFailureFraction());</span>
+<span class="nc" id="L67">  }</span>
+
+  /**
+   * Generate a write token based on the currently running spark task and its place in the spark dag.
+   */
+  private static String makeSparkWriteToken() {
+<span class="nc" id="L73">    return FSUtils.makeWriteToken(TaskContext.getPartitionId(), TaskContext.get().stageId(),</span>
+<span class="nc" id="L74">        TaskContext.get().taskAttemptId());</span>
+  }
+
+  public static Schema createHoodieWriteSchema(Schema originalSchema) {
+<span class="nc" id="L78">    return HoodieAvroUtils.addMetadataFields(originalSchema);</span>
+  }
+
+  public Path makeNewPath(String partitionPath) {
+<span class="nc" id="L82">    Path path = FSUtils.getPartitionPath(config.getBasePath(), partitionPath);</span>
+    try {
+<span class="nc" id="L84">      fs.mkdirs(path); // create a new partition as needed.</span>
+<span class="nc" id="L85">    } catch (IOException e) {</span>
+<span class="nc" id="L86">      throw new HoodieIOException(&quot;Failed to make dir &quot; + path, e);</span>
+<span class="nc" id="L87">    }</span>
+
+<span class="nc" id="L89">    return new Path(path.toString(), FSUtils.makeDataFileName(instantTime, writeToken, fileId));</span>
+  }
+
+  /**
+   * Creates an empty marker file corresponding to storage writer path.
+   *
+   * @param partitionPath Partition path
+   */
+  protected void createMarkerFile(String partitionPath) {
+<span class="nc" id="L98">    Path markerPath = makeNewMarkerPath(partitionPath);</span>
+    try {
+<span class="nc" id="L100">      LOG.info(&quot;Creating Marker Path=&quot; + markerPath);</span>
+<span class="nc" id="L101">      fs.create(markerPath, false).close();</span>
+<span class="nc" id="L102">    } catch (IOException e) {</span>
+<span class="nc" id="L103">      throw new HoodieException(&quot;Failed to create marker file &quot; + markerPath, e);</span>
+<span class="nc" id="L104">    }</span>
+<span class="nc" id="L105">  }</span>
+
+  /**
+   * THe marker path will be &lt;base-path&gt;/.hoodie/.temp/&lt;instant_ts&gt;/2019/04/25/filename.
+   */
+  private Path makeNewMarkerPath(String partitionPath) {
+<span class="nc" id="L111">    Path markerRootPath = new Path(hoodieTable.getMetaClient().getMarkerFolderPath(instantTime));</span>
+<span class="nc" id="L112">    Path path = FSUtils.getPartitionPath(markerRootPath, partitionPath);</span>
+    try {
+<span class="nc" id="L114">      fs.mkdirs(path); // create a new partition as needed.</span>
+<span class="nc" id="L115">    } catch (IOException e) {</span>
+<span class="nc" id="L116">      throw new HoodieIOException(&quot;Failed to make dir &quot; + path, e);</span>
+<span class="nc" id="L117">    }</span>
+<span class="nc" id="L118">    return new Path(path.toString(), FSUtils.makeMarkerFile(instantTime, writeToken, fileId));</span>
+  }
+
+  public Schema getWriterSchema() {
+<span class="nc" id="L122">    return writerSchema;</span>
+  }
+
+  /**
+   * Determines whether we can accept the incoming records, into the current file. Depending on
+   * &lt;p&gt;
+   * - Whether it belongs to the same partitionPath as existing records - Whether the current file written bytes lt max
+   * file size
+   */
+  public boolean canWrite(HoodieRecord record) {
+<span class="nc" id="L132">    return false;</span>
+  }
+
+  /**
+   * Perform the actual writing of the given record into the backing file.
+   */
+  public void write(HoodieRecord record, Option&lt;IndexedRecord&gt; insertValue) {
+    // NO_OP
+<span class="nc" id="L140">  }</span>
+
+  /**
+   * Perform the actual writing of the given record into the backing file.
+   */
+  public void write(HoodieRecord record, Option&lt;IndexedRecord&gt; avroRecord, Option&lt;Exception&gt; exception) {
+<span class="nc" id="L146">    Option recordMetadata = record.getData().getMetadata();</span>
+<span class="nc bnc" id="L147" title="All 4 branches missed.">    if (exception.isPresent() &amp;&amp; exception.get() instanceof Throwable) {</span>
+      // Not throwing exception from here, since we don't want to fail the entire job for a single record
+<span class="nc" id="L149">      writeStatus.markFailure(record, exception.get(), recordMetadata);</span>
+<span class="nc" id="L150">      LOG.error(&quot;Error writing record &quot; + record, exception.get());</span>
+    } else {
+<span class="nc" id="L152">      write(record, avroRecord);</span>
+    }
+<span class="nc" id="L154">  }</span>
+
+  /**
+   * Rewrite the GenericRecord with the Schema containing the Hoodie Metadata fields.
+   */
+  protected GenericRecord rewriteRecord(GenericRecord record) {
+<span class="nc" id="L160">    return HoodieAvroUtils.rewriteRecord(record, writerSchema);</span>
+  }
+
+  public abstract WriteStatus close();
+
+  public abstract WriteStatus getWriteStatus();
+
+  @Override
+  protected FileSystem getFileSystem() {
+<span class="nc" id="L169">    return hoodieTable.getMetaClient().getFs();</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

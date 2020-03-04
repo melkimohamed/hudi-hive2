@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieRealtimeRecordReader.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-hadoop-mr</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.hadoop.realtime</a> &gt; <span class="el_source">HoodieRealtimeRecordReader.java</span></div><h1>HoodieRealtimeRecordReader.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.hadoop.realtime;
+
+import org.apache.hudi.exception.HoodieException;
+
+import org.apache.hadoop.io.ArrayWritable;
+import org.apache.hadoop.io.NullWritable;
+import org.apache.hadoop.mapred.JobConf;
+import org.apache.hadoop.mapred.RecordReader;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+import java.io.IOException;
+
+/**
+ * Realtime Record Reader which can do compacted (merge-on-read) record reading or unmerged reading (parquet and log
+ * files read in parallel) based on job configuration.
+ */
+public class HoodieRealtimeRecordReader implements RecordReader&lt;NullWritable, ArrayWritable&gt; {
+
+  // Property to enable parallel reading of parquet and log files without merging.
+  public static final String REALTIME_SKIP_MERGE_PROP = &quot;hoodie.realtime.merge.skip&quot;;
+  // By default, we do merged-reading
+  public static final String DEFAULT_REALTIME_SKIP_MERGE = &quot;false&quot;;
+<span class="nc" id="L42">  private static final Logger LOG = LogManager.getLogger(HoodieRealtimeRecordReader.class);</span>
+  private final RecordReader&lt;NullWritable, ArrayWritable&gt; reader;
+
+  public HoodieRealtimeRecordReader(HoodieRealtimeFileSplit split, JobConf job,
+<span class="nc" id="L46">      RecordReader&lt;NullWritable, ArrayWritable&gt; realReader) {</span>
+<span class="nc" id="L47">    this.reader = constructRecordReader(split, job, realReader);</span>
+<span class="nc" id="L48">  }</span>
+
+  public static boolean canSkipMerging(JobConf jobConf) {
+<span class="nc" id="L51">    return Boolean.parseBoolean(jobConf.get(REALTIME_SKIP_MERGE_PROP, DEFAULT_REALTIME_SKIP_MERGE));</span>
+  }
+
+  /**
+   * Construct record reader based on job configuration.
+   *
+   * @param split File Split
+   * @param jobConf Job Configuration
+   * @param realReader Parquet Record Reader
+   * @return Realtime Reader
+   */
+  private static RecordReader&lt;NullWritable, ArrayWritable&gt; constructRecordReader(HoodieRealtimeFileSplit split,
+      JobConf jobConf, RecordReader&lt;NullWritable, ArrayWritable&gt; realReader) {
+    try {
+<span class="nc bnc" id="L65" title="All 2 branches missed.">      if (canSkipMerging(jobConf)) {</span>
+<span class="nc" id="L66">        LOG.info(&quot;Enabling un-merged reading of realtime records&quot;);</span>
+<span class="nc" id="L67">        return new RealtimeUnmergedRecordReader(split, jobConf, realReader);</span>
+      }
+<span class="nc" id="L69">      return new RealtimeCompactedRecordReader(split, jobConf, realReader);</span>
+<span class="nc" id="L70">    } catch (IOException ex) {</span>
+<span class="nc" id="L71">      LOG.error(&quot;Got exception when constructing record reader&quot;, ex);</span>
+<span class="nc" id="L72">      throw new HoodieException(ex);</span>
+    }
+  }
+
+  @Override
+  public boolean next(NullWritable key, ArrayWritable value) throws IOException {
+<span class="nc" id="L78">    return this.reader.next(key, value);</span>
+  }
+
+  @Override
+  public NullWritable createKey() {
+<span class="nc" id="L83">    return this.reader.createKey();</span>
+  }
+
+  @Override
+  public ArrayWritable createValue() {
+<span class="nc" id="L88">    return this.reader.createValue();</span>
+  }
+
+  @Override
+  public long getPos() throws IOException {
+<span class="nc" id="L93">    return this.reader.getPos();</span>
+  }
+
+  @Override
+  public void close() throws IOException {
+<span class="nc" id="L98">    this.reader.close();</span>
+<span class="nc" id="L99">  }</span>
+
+  @Override
+  public float getProgress() throws IOException {
+<span class="nc" id="L103">    return this.reader.getProgress();</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

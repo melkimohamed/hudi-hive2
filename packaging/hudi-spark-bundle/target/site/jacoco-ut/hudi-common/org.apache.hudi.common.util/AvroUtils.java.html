@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>AvroUtils.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.util</a> &gt; <span class="el_source">AvroUtils.java</span></div><h1>AvroUtils.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.util;
+
+import org.apache.hudi.avro.model.HoodieCleanMetadata;
+import org.apache.hudi.avro.model.HoodieCleanerPlan;
+import org.apache.hudi.avro.model.HoodieCompactionPlan;
+import org.apache.hudi.avro.model.HoodieRestoreMetadata;
+import org.apache.hudi.avro.model.HoodieRollbackMetadata;
+import org.apache.hudi.avro.model.HoodieRollbackPartitionMetadata;
+import org.apache.hudi.avro.model.HoodieSavepointMetadata;
+import org.apache.hudi.avro.model.HoodieSavepointPartitionMetadata;
+import org.apache.hudi.common.HoodieRollbackStat;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableMap;
+import org.apache.avro.file.DataFileReader;
+import org.apache.avro.file.DataFileWriter;
+import org.apache.avro.file.FileReader;
+import org.apache.avro.file.SeekableByteArrayInput;
+import org.apache.avro.io.DatumReader;
+import org.apache.avro.io.DatumWriter;
+import org.apache.avro.specific.SpecificDatumReader;
+import org.apache.avro.specific.SpecificDatumWriter;
+import org.apache.avro.specific.SpecificRecordBase;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * A utility class for avro.
+ */
+<span class="nc" id="L52">public class AvroUtils {</span>
+
+<span class="nc" id="L54">  private static final Integer DEFAULT_VERSION = 1;</span>
+
+  public static HoodieRestoreMetadata convertRestoreMetadata(String startRestoreTime, Option&lt;Long&gt; durationInMs,
+      List&lt;String&gt; commits, Map&lt;String, List&lt;HoodieRollbackStat&gt;&gt; commitToStats) {
+<span class="nc" id="L58">    ImmutableMap.Builder&lt;String, List&lt;HoodieRollbackMetadata&gt;&gt; commitToStatBuilder = ImmutableMap.builder();</span>
+<span class="nc bnc" id="L59" title="All 2 branches missed.">    for (Map.Entry&lt;String, List&lt;HoodieRollbackStat&gt;&gt; commitToStat : commitToStats.entrySet()) {</span>
+<span class="nc" id="L60">      commitToStatBuilder.put(commitToStat.getKey(),</span>
+<span class="nc" id="L61">          Collections.singletonList(convertRollbackMetadata(startRestoreTime, durationInMs, commits, commitToStat.getValue())));</span>
+<span class="nc" id="L62">    }</span>
+<span class="nc" id="L63">    return new HoodieRestoreMetadata(startRestoreTime, durationInMs.orElseGet(() -&gt; -1L), commits,</span>
+<span class="nc" id="L64">        commitToStatBuilder.build(), DEFAULT_VERSION);</span>
+  }
+
+  public static HoodieRollbackMetadata convertRollbackMetadata(String startRollbackTime, Option&lt;Long&gt; durationInMs,
+      List&lt;String&gt; commits, List&lt;HoodieRollbackStat&gt; rollbackStats) {
+<span class="nc" id="L69">    ImmutableMap.Builder&lt;String, HoodieRollbackPartitionMetadata&gt; partitionMetadataBuilder = ImmutableMap.builder();</span>
+<span class="nc" id="L70">    int totalDeleted = 0;</span>
+<span class="nc bnc" id="L71" title="All 2 branches missed.">    for (HoodieRollbackStat stat : rollbackStats) {</span>
+<span class="nc" id="L72">      HoodieRollbackPartitionMetadata metadata = new HoodieRollbackPartitionMetadata(stat.getPartitionPath(),</span>
+<span class="nc" id="L73">          stat.getSuccessDeleteFiles(), stat.getFailedDeleteFiles());</span>
+<span class="nc" id="L74">      partitionMetadataBuilder.put(stat.getPartitionPath(), metadata);</span>
+<span class="nc" id="L75">      totalDeleted += stat.getSuccessDeleteFiles().size();</span>
+<span class="nc" id="L76">    }</span>
+
+<span class="nc" id="L78">    return new HoodieRollbackMetadata(startRollbackTime, durationInMs.orElseGet(() -&gt; -1L), totalDeleted, commits,</span>
+<span class="nc" id="L79">        partitionMetadataBuilder.build(), DEFAULT_VERSION);</span>
+  }
+
+  public static HoodieSavepointMetadata convertSavepointMetadata(String user, String comment,
+      Map&lt;String, List&lt;String&gt;&gt; latestFiles) {
+<span class="nc" id="L84">    ImmutableMap.Builder&lt;String, HoodieSavepointPartitionMetadata&gt; partitionMetadataBuilder = ImmutableMap.builder();</span>
+<span class="nc bnc" id="L85" title="All 2 branches missed.">    for (Map.Entry&lt;String, List&lt;String&gt;&gt; stat : latestFiles.entrySet()) {</span>
+<span class="nc" id="L86">      HoodieSavepointPartitionMetadata metadata = new HoodieSavepointPartitionMetadata(stat.getKey(), stat.getValue());</span>
+<span class="nc" id="L87">      partitionMetadataBuilder.put(stat.getKey(), metadata);</span>
+<span class="nc" id="L88">    }</span>
+<span class="nc" id="L89">    return new HoodieSavepointMetadata(user, System.currentTimeMillis(), comment, partitionMetadataBuilder.build(),</span>
+        DEFAULT_VERSION);
+  }
+
+  public static Option&lt;byte[]&gt; serializeCompactionPlan(HoodieCompactionPlan compactionWorkload) throws IOException {
+<span class="nc" id="L94">    return serializeAvroMetadata(compactionWorkload, HoodieCompactionPlan.class);</span>
+  }
+
+  public static Option&lt;byte[]&gt; serializeCleanerPlan(HoodieCleanerPlan cleanPlan) throws IOException {
+<span class="nc" id="L98">    return serializeAvroMetadata(cleanPlan, HoodieCleanerPlan.class);</span>
+  }
+
+  public static Option&lt;byte[]&gt; serializeCleanMetadata(HoodieCleanMetadata metadata) throws IOException {
+<span class="nc" id="L102">    return serializeAvroMetadata(metadata, HoodieCleanMetadata.class);</span>
+  }
+
+  public static Option&lt;byte[]&gt; serializeSavepointMetadata(HoodieSavepointMetadata metadata) throws IOException {
+<span class="nc" id="L106">    return serializeAvroMetadata(metadata, HoodieSavepointMetadata.class);</span>
+  }
+
+  public static Option&lt;byte[]&gt; serializeRollbackMetadata(HoodieRollbackMetadata rollbackMetadata) throws IOException {
+<span class="nc" id="L110">    return serializeAvroMetadata(rollbackMetadata, HoodieRollbackMetadata.class);</span>
+  }
+
+  public static Option&lt;byte[]&gt; serializeRestoreMetadata(HoodieRestoreMetadata restoreMetadata) throws IOException {
+<span class="nc" id="L114">    return serializeAvroMetadata(restoreMetadata, HoodieRestoreMetadata.class);</span>
+  }
+
+  public static &lt;T extends SpecificRecordBase&gt; Option&lt;byte[]&gt; serializeAvroMetadata(T metadata, Class&lt;T&gt; clazz)
+      throws IOException {
+<span class="nc" id="L119">    DatumWriter&lt;T&gt; datumWriter = new SpecificDatumWriter&lt;&gt;(clazz);</span>
+<span class="nc" id="L120">    DataFileWriter&lt;T&gt; fileWriter = new DataFileWriter&lt;&gt;(datumWriter);</span>
+<span class="nc" id="L121">    ByteArrayOutputStream baos = new ByteArrayOutputStream();</span>
+<span class="nc" id="L122">    fileWriter.create(metadata.getSchema(), baos);</span>
+<span class="nc" id="L123">    fileWriter.append(metadata);</span>
+<span class="nc" id="L124">    fileWriter.flush();</span>
+<span class="nc" id="L125">    return Option.of(baos.toByteArray());</span>
+  }
+
+  public static HoodieCleanerPlan deserializeCleanerPlan(byte[] bytes) throws IOException {
+<span class="nc" id="L129">    return deserializeAvroMetadata(bytes, HoodieCleanerPlan.class);</span>
+  }
+
+  public static HoodieCompactionPlan deserializeCompactionPlan(byte[] bytes) throws IOException {
+<span class="nc" id="L133">    return deserializeAvroMetadata(bytes, HoodieCompactionPlan.class);</span>
+  }
+
+  public static HoodieCleanMetadata deserializeHoodieCleanMetadata(byte[] bytes) throws IOException {
+<span class="nc" id="L137">    return deserializeAvroMetadata(bytes, HoodieCleanMetadata.class);</span>
+  }
+
+  public static HoodieSavepointMetadata deserializeHoodieSavepointMetadata(byte[] bytes) throws IOException {
+<span class="nc" id="L141">    return deserializeAvroMetadata(bytes, HoodieSavepointMetadata.class);</span>
+  }
+
+  public static &lt;T extends SpecificRecordBase&gt; T deserializeAvroMetadata(byte[] bytes, Class&lt;T&gt; clazz)
+      throws IOException {
+<span class="nc" id="L146">    DatumReader&lt;T&gt; reader = new SpecificDatumReader&lt;&gt;(clazz);</span>
+<span class="nc" id="L147">    FileReader&lt;T&gt; fileReader = DataFileReader.openReader(new SeekableByteArrayInput(bytes), reader);</span>
+<span class="nc" id="L148">    Preconditions.checkArgument(fileReader.hasNext(), &quot;Could not deserialize metadata of type &quot; + clazz);</span>
+<span class="nc" id="L149">    return fileReader.next();</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

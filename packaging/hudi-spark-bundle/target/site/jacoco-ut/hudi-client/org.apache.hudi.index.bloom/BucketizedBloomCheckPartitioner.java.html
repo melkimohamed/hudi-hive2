@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>BucketizedBloomCheckPartitioner.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-client</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.index.bloom</a> &gt; <span class="el_source">BucketizedBloomCheckPartitioner.java</span></div><h1>BucketizedBloomCheckPartitioner.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.index.bloom;
+
+import org.apache.hudi.common.util.collection.Pair;
+
+import com.google.common.hash.Hashing;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+import org.apache.spark.Partitioner;
+
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * Partitions bloom filter checks by spreading out comparisons across buckets of work.
+ *
+ * Each bucket incurs the following cost
+ * 
+ * &lt;pre&gt;
+ *   1) Read bloom filter from file footer
+ *   2) Check keys against bloom filter
+ *   3) [Conditional] If any key had a hit, open file and check
+ * &lt;/pre&gt;
+ *
+ * The partitioner performs a two phase bin packing algorithm, to pack enough work into each bucket such that cost of
+ * (1) &amp; (3) is amortized. Also, avoids any skews in the sort based approach, by directly partitioning by the file to be
+ * checked against and ensuring each partition has similar number of buckets. Performance tests show that this approach
+ * could bound the amount of skew to std_dev(numberOfBucketsPerPartition) * cost of (3), lower than sort partitioning.
+ *
+ * Approach has two goals :
+ * 
+ * &lt;pre&gt;
+ *   1) Pack as many buckets from same file group into same partition, to amortize cost of (1) and (2) further
+ *   2) Spread buckets across partitions evenly to achieve skew reduction
+ * &lt;/pre&gt;
+ */
+<span class="nc bnc" id="L58" title="All 2 branches missed.">public class BucketizedBloomCheckPartitioner extends Partitioner {</span>
+
+<span class="nc" id="L60">  private static final Logger LOG = LogManager.getLogger(BucketizedBloomCheckPartitioner.class);</span>
+
+  private int partitions;
+
+  /**
+   * Stores the final mapping of a file group to a list of partitions for its keys.
+   */
+  private Map&lt;String, List&lt;Integer&gt;&gt; fileGroupToPartitions;
+
+  /**
+   * Create a partitioner that computes a plan based on provided workload characteristics.
+   *
+   * @param targetPartitions maximum number of partitions to target
+   * @param fileGroupToComparisons number of expected comparisons per file group
+   * @param keysPerBucket maximum number of keys to pack in a single bucket
+   */
+  public BucketizedBloomCheckPartitioner(int targetPartitions, Map&lt;String, Long&gt; fileGroupToComparisons,
+<span class="nc" id="L77">      int keysPerBucket) {</span>
+<span class="nc" id="L78">    this.fileGroupToPartitions = new HashMap&lt;&gt;();</span>
+
+<span class="nc" id="L80">    Map&lt;String, Integer&gt; bucketsPerFileGroup = new HashMap&lt;&gt;();</span>
+    // Compute the buckets needed per file group, using simple uniform distribution
+<span class="nc" id="L82">    fileGroupToComparisons.forEach((f, c) -&gt; bucketsPerFileGroup.put(f, (int) Math.ceil((c * 1.0) / keysPerBucket)));</span>
+<span class="nc" id="L83">    int totalBuckets = bucketsPerFileGroup.values().stream().mapToInt(i -&gt; i).sum();</span>
+    // If totalBuckets &gt; targetPartitions, no need to have extra partitions
+<span class="nc" id="L85">    this.partitions = Math.min(targetPartitions, totalBuckets);</span>
+
+    // PHASE 1 : start filling upto minimum number of buckets into partitions, taking all but one bucket from each file
+    // This tries to first optimize for goal 1 above, with knowledge that each partition needs a certain minimum number
+    // of buckets and assigns buckets in the same order as file groups. If we were to simply round robin, then buckets
+    // for a file group is more or less guaranteed to be placed on different partitions all the time.
+<span class="nc" id="L91">    int minBucketsPerPartition = Math.max((int) Math.floor((1.0 * totalBuckets) / partitions), 1);</span>
+<span class="nc" id="L92">    LOG.info(String.format(&quot;TotalBuckets %d, min_buckets/partition %d&quot;, totalBuckets, minBucketsPerPartition));</span>
+<span class="nc" id="L93">    int[] bucketsFilled = new int[partitions];</span>
+<span class="nc" id="L94">    Map&lt;String, AtomicInteger&gt; bucketsFilledPerFileGroup = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L95">    int partitionIndex = 0;</span>
+<span class="nc bnc" id="L96" title="All 2 branches missed.">    for (Map.Entry&lt;String, Integer&gt; e : bucketsPerFileGroup.entrySet()) {</span>
+<span class="nc bnc" id="L97" title="All 2 branches missed.">      for (int b = 0; b &lt; Math.max(1, e.getValue() - 1); b++) {</span>
+        // keep filled counts upto date
+<span class="nc" id="L99">        bucketsFilled[partitionIndex]++;</span>
+<span class="nc" id="L100">        AtomicInteger cnt = bucketsFilledPerFileGroup.getOrDefault(e.getKey(), new AtomicInteger(0));</span>
+<span class="nc" id="L101">        cnt.incrementAndGet();</span>
+<span class="nc" id="L102">        bucketsFilledPerFileGroup.put(e.getKey(), cnt);</span>
+
+        // mark this partition against the file group
+<span class="nc" id="L105">        List&lt;Integer&gt; partitionList = this.fileGroupToPartitions.getOrDefault(e.getKey(), new ArrayList&lt;&gt;());</span>
+<span class="nc" id="L106">        partitionList.add(partitionIndex);</span>
+<span class="nc" id="L107">        this.fileGroupToPartitions.put(e.getKey(), partitionList);</span>
+
+        // switch to new partition if needed
+<span class="nc bnc" id="L110" title="All 2 branches missed.">        if (bucketsFilled[partitionIndex] &gt;= minBucketsPerPartition) {</span>
+<span class="nc" id="L111">          partitionIndex = (partitionIndex + 1) % partitions;</span>
+        }
+      }
+<span class="nc" id="L114">    }</span>
+
+    // PHASE 2 : for remaining unassigned buckets, round robin over partitions once. Since we withheld 1 bucket from
+    // each file group uniformly, this remaining is also an uniform mix across file groups. We just round robin to
+    // optimize for goal 2.
+<span class="nc bnc" id="L119" title="All 2 branches missed.">    for (Map.Entry&lt;String, Integer&gt; e : bucketsPerFileGroup.entrySet()) {</span>
+<span class="nc" id="L120">      int remaining = e.getValue() - bucketsFilledPerFileGroup.get(e.getKey()).intValue();</span>
+<span class="nc bnc" id="L121" title="All 2 branches missed.">      for (int r = 0; r &lt; remaining; r++) {</span>
+        // mark this partition against the file group
+<span class="nc" id="L123">        this.fileGroupToPartitions.get(e.getKey()).add(partitionIndex);</span>
+<span class="nc" id="L124">        bucketsFilled[partitionIndex]++;</span>
+<span class="nc" id="L125">        partitionIndex = (partitionIndex + 1) % partitions;</span>
+      }
+<span class="nc" id="L127">    }</span>
+
+<span class="nc bnc" id="L129" title="All 2 branches missed.">    if (LOG.isDebugEnabled()) {</span>
+<span class="nc" id="L130">      LOG.debug(&quot;Partitions assigned per file groups :&quot; + fileGroupToPartitions);</span>
+<span class="nc" id="L131">      StringBuilder str = new StringBuilder();</span>
+<span class="nc bnc" id="L132" title="All 2 branches missed.">      for (int i = 0; i &lt; bucketsFilled.length; i++) {</span>
+<span class="nc" id="L133">        str.append(&quot;p&quot; + i + &quot; : &quot; + bucketsFilled[i] + &quot;,&quot;);</span>
+      }
+<span class="nc" id="L135">      LOG.debug(&quot;Num buckets assigned per file group :&quot; + str);</span>
+    }
+<span class="nc" id="L137">  }</span>
+
+  @Override
+  public int numPartitions() {
+<span class="nc" id="L141">    return partitions;</span>
+  }
+
+  @Override
+  public int getPartition(Object key) {
+<span class="nc" id="L146">    final Pair&lt;String, String&gt; parts = (Pair&lt;String, String&gt;) key;</span>
+<span class="nc" id="L147">    final long hashOfKey = Hashing.md5().hashString(parts.getRight(), StandardCharsets.UTF_8).asLong();</span>
+<span class="nc" id="L148">    final List&lt;Integer&gt; candidatePartitions = fileGroupToPartitions.get(parts.getLeft());</span>
+<span class="nc" id="L149">    final int idx = (int) Math.floorMod(hashOfKey, candidatePartitions.size());</span>
+<span class="nc bnc" id="L150" title="All 4 branches missed.">    assert idx &gt;= 0;</span>
+<span class="nc" id="L151">    return candidatePartitions.get(idx);</span>
+  }
+
+  Map&lt;String, List&lt;Integer&gt;&gt; getFileGroupToPartitions() {
+<span class="nc" id="L155">    return fileGroupToPartitions;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

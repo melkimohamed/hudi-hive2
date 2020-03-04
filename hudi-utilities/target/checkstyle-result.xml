@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<checkstyle version="8.18">
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/HDFSParquetImporter.java">
+<error line="213" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+<error line="226" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+<error line="239" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/HiveIncrementalPuller.java">
+<error line="66" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/HoodieCleaner.java">
+<error line="38" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+<error line="80" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/HoodieCompactionAdminTool.java">
+<error line="39" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/HoodieCompactor.java">
+<error line="40" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+<error line="53" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/HoodieSnapshotCopier.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/HoodieWithTimelineServer.java">
+<error line="41" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+<error line="49" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/UtilHelpers.java">
+<error line="22" severity="info" message="Import org.apache.hudi.AvroConversionUtils appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="68" severity="info" message="Import java.sql.DriverManager appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="69" severity="info" message="Import java.sql.Driver appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/adhoc/UpgradePayloadFromUberToApache.java">
+<error line="97" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/deltastreamer/AbstractDeltaStreamerService.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/deltastreamer/Compactor.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/deltastreamer/DeltaSync.java">
+<error line="25" severity="info" message="Import org.apache.hudi.client.WriteStatus appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/deltastreamer/HoodieDeltaStreamer.java">
+<error line="138" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+<error line="150" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/deltastreamer/HoodieDeltaStreamerMetrics.java">
+<error line="26" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/deltastreamer/SchedulerConfGenerator.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/deltastreamer/SourceFormatAdapter.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/exception/HoodieDeltaStreamerException.java">
+<error line="23" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/exception/HoodieIncrementalPullException.java">
+<error line="25" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/exception/HoodieIncrementalPullSQLException.java">
+<error line="23" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/keygen/TimestampBasedKeyGenerator.java">
+<error line="23" severity="info" message="Import org.apache.hudi.common.model.HoodieKey appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/perf/TimelineServerPerf.java">
+<error line="59" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+<error line="239" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/schema/FilebasedSchemaProvider.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/schema/JdbcbasedSchemaProvider.java">
+<error line="22" severity="info" message="Import org.apache.hudi.common.util.TypedProperties appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="25" severity="info" message="&apos;org.apache.spark.api.java.JavaSparkContext&apos; devrait être séparé des imports précédents." source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/schema/NullTargetSchemaRegistryProvider.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/schema/RowBasedSchemaProvider.java">
+<error line="28" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/schema/SchemaProvider.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/schema/SchemaRegistryProvider.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/sources/AvroDFSSource.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/sources/AvroKafkaSource.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/sources/AvroSource.java">
+<error line="29" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/sources/HiveIncrPullSource.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/sources/HoodieIncrSource.java">
+<error line="41" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+<error line="45" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/sources/InputBatch.java">
+<error line="25" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/sources/JsonDFSSource.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/sources/JsonKafkaSource.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/sources/JsonSource.java">
+<error line="28" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/sources/ParquetDFSSource.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/sources/RowSource.java">
+<error line="32" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/sources/Source.java">
+<error line="38" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/sources/helpers/AvroConvertor.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/sources/helpers/DFSPathSelector.java">
+<error line="43" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/sources/helpers/IncrSourceHelper.java">
+<error line="31" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/sources/helpers/KafkaOffsetGen.java">
+<error line="50" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/transform/AWSDmsTransformer.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/transform/FlatteningTransformer.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/transform/SqlQueryBasedTransformer.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/main/java/org/apache/hudi/utilities/transform/Transformer.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/test/java/org/apache/hudi/utilities/TestAWSDatabaseMigrationServiceSource.java">
+<error line="42" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/test/java/org/apache/hudi/utilities/TestFlatteningTransformer.java">
+<error line="31" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/test/java/org/apache/hudi/utilities/TestHDFSParquetImporter.java">
+<error line="59" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/test/java/org/apache/hudi/utilities/TestHiveIncrementalPuller.java">
+<error line="25" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/test/java/org/apache/hudi/utilities/TestHoodieDeltaStreamer.java">
+<error line="24" severity="info" message="Import org.apache.hudi.common.model.HoodieCommitMetadata appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="37" severity="info" message="Import org.apache.hudi.exception.HoodieException appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="729" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+<error line="736" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+<error line="756" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/test/java/org/apache/hudi/utilities/TestHoodieSnapshotCopier.java">
+<error line="42" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/test/java/org/apache/hudi/utilities/TestJdbcbasedSchemaProvider.java">
+<error line="41" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/test/java/org/apache/hudi/utilities/TestSchedulerConfGenerator.java">
+<error line="32" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/test/java/org/apache/hudi/utilities/TestTimestampBasedKeyGenerator.java">
+<error line="23" severity="info" message="Import org.apache.hudi.DataSourceWriteOptions appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="28" severity="info" message="&apos;org.junit.Before&apos; devrait être séparé des imports précédents." source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="35" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/test/java/org/apache/hudi/utilities/UtilitiesTestBase.java">
+<error line="159" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/test/java/org/apache/hudi/utilities/sources/AbstractBaseTestSource.java">
+<error line="43" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/test/java/org/apache/hudi/utilities/sources/AbstractDFSSourceTestBase.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/test/java/org/apache/hudi/utilities/sources/DistributedTestDataSource.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/test/java/org/apache/hudi/utilities/sources/TestDataSource.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/test/java/org/apache/hudi/utilities/sources/TestJsonDFSSource.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/test/java/org/apache/hudi/utilities/sources/TestKafkaSource.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/test/java/org/apache/hudi/utilities/sources/TestParquetDFSSource.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/test/java/org/apache/hudi/utilities/sources/config/TestSourceConfig.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/test/resources/delta-streamer-config/base.properties">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/test/resources/delta-streamer-config/dfs-source.properties">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/test/resources/delta-streamer-config/kafka-source.properties">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/test/resources/delta-streamer-config/sql-transformer.properties">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/test/resources/log4j-surefire-quiet.properties">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-utilities/src/test/resources/log4j-surefire.properties">
+</file>
+</checkstyle>

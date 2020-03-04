@@ -1,0 +1,319 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>MercifulJsonConverter.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.avro</a> &gt; <span class="el_source">MercifulJsonConverter.java</span></div><h1>MercifulJsonConverter.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.avro;
+
+import org.apache.hudi.common.util.collection.Pair;
+import org.apache.hudi.exception.HoodieException;
+import org.apache.hudi.exception.HoodieIOException;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.collect.ImmutableMap;
+import org.apache.avro.Schema;
+import org.apache.avro.Schema.Type;
+import org.apache.avro.generic.GenericData;
+import org.apache.avro.generic.GenericRecord;
+
+import java.io.IOException;
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Converts Json record to Avro Generic Record.
+ */
+public class MercifulJsonConverter {
+
+<span class="nc" id="L44">  private static final Map&lt;Schema.Type, JsonToAvroFieldProcessor&gt; FIELD_TYPE_PROCESSORS = getFieldTypeProcessors();</span>
+
+  private final ObjectMapper mapper;
+
+  /**
+   * Build type processor map for each avro type.
+   */
+  private static Map&lt;Schema.Type, JsonToAvroFieldProcessor&gt; getFieldTypeProcessors() {
+<span class="nc" id="L52">    return new ImmutableMap.Builder&lt;Type, JsonToAvroFieldProcessor&gt;().put(Type.STRING, generateStringTypeHandler())</span>
+<span class="nc" id="L53">        .put(Type.BOOLEAN, generateBooleanTypeHandler()).put(Type.DOUBLE, generateDoubleTypeHandler())</span>
+<span class="nc" id="L54">        .put(Type.FLOAT, generateFloatTypeHandler()).put(Type.INT, generateIntTypeHandler())</span>
+<span class="nc" id="L55">        .put(Type.LONG, generateLongTypeHandler()).put(Type.ARRAY, generateArrayTypeHandler())</span>
+<span class="nc" id="L56">        .put(Type.RECORD, generateRecordTypeHandler()).put(Type.ENUM, generateEnumTypeHandler())</span>
+<span class="nc" id="L57">        .put(Type.MAP, generateMapTypeHandler()).put(Type.BYTES, generateBytesTypeHandler())</span>
+<span class="nc" id="L58">        .put(Type.FIXED, generateFixedTypeHandler()).build();</span>
+  }
+
+  /**
+   * Uses a default objectMapper to deserialize a json string.
+   */
+  public MercifulJsonConverter() {
+<span class="nc" id="L65">    this(new ObjectMapper());</span>
+<span class="nc" id="L66">  }</span>
+
+  /**
+   * Allows a configured ObjectMapper to be passed for converting json records to avro record.
+   */
+<span class="nc" id="L71">  public MercifulJsonConverter(ObjectMapper mapper) {</span>
+<span class="nc" id="L72">    this.mapper = mapper;</span>
+<span class="nc" id="L73">  }</span>
+
+  /**
+   * Converts json to Avro generic record.
+   *
+   * @param json Json record
+   * @param schema Schema
+   */
+  public GenericRecord convert(String json, Schema schema) {
+    try {
+<span class="nc" id="L83">      Map&lt;String, Object&gt; jsonObjectMap = mapper.readValue(json, Map.class);</span>
+<span class="nc" id="L84">      return convertJsonToAvro(jsonObjectMap, schema);</span>
+<span class="nc" id="L85">    } catch (IOException e) {</span>
+<span class="nc" id="L86">      throw new HoodieIOException(e.getMessage(), e);</span>
+    }
+  }
+
+  private static GenericRecord convertJsonToAvro(Map&lt;String, Object&gt; inputJson, Schema schema) {
+<span class="nc" id="L91">    GenericRecord avroRecord = new GenericData.Record(schema);</span>
+<span class="nc bnc" id="L92" title="All 2 branches missed.">    for (Schema.Field f : schema.getFields()) {</span>
+<span class="nc" id="L93">      Object val = inputJson.get(f.name());</span>
+<span class="nc bnc" id="L94" title="All 2 branches missed.">      if (val != null) {</span>
+<span class="nc" id="L95">        avroRecord.put(f.pos(), convertJsonToAvroField(val, f.name(), f.schema()));</span>
+      }
+<span class="nc" id="L97">    }</span>
+<span class="nc" id="L98">    return avroRecord;</span>
+  }
+
+  private static Schema getNonNull(Schema schema) {
+<span class="nc" id="L102">    List&lt;Schema&gt; types = schema.getTypes();</span>
+<span class="nc" id="L103">    Schema.Type firstType = types.get(0).getType();</span>
+<span class="nc bnc" id="L104" title="All 2 branches missed.">    return firstType.equals(Schema.Type.NULL) ? types.get(1) : types.get(0);</span>
+  }
+
+  private static boolean isOptional(Schema schema) {
+<span class="nc bnc" id="L108" title="All 4 branches missed.">    return schema.getType().equals(Schema.Type.UNION) &amp;&amp; schema.getTypes().size() == 2</span>
+<span class="nc bnc" id="L109" title="All 2 branches missed.">        &amp;&amp; (schema.getTypes().get(0).getType().equals(Schema.Type.NULL)</span>
+<span class="nc bnc" id="L110" title="All 2 branches missed.">            || schema.getTypes().get(1).getType().equals(Schema.Type.NULL));</span>
+  }
+
+  private static Object convertJsonToAvroField(Object value, String name, Schema schema) {
+
+<span class="nc bnc" id="L115" title="All 2 branches missed.">    if (isOptional(schema)) {</span>
+<span class="nc bnc" id="L116" title="All 2 branches missed.">      if (value == null) {</span>
+<span class="nc" id="L117">        return null;</span>
+      } else {
+<span class="nc" id="L119">        schema = getNonNull(schema);</span>
+      }
+<span class="nc bnc" id="L121" title="All 2 branches missed.">    } else if (value == null) {</span>
+      // Always fail on null for non-nullable schemas
+<span class="nc" id="L123">      throw new HoodieJsonToAvroConversionException(null, name, schema);</span>
+    }
+
+<span class="nc" id="L126">    JsonToAvroFieldProcessor processor = FIELD_TYPE_PROCESSORS.get(schema.getType());</span>
+<span class="nc bnc" id="L127" title="All 2 branches missed.">    if (null != processor) {</span>
+<span class="nc" id="L128">      return processor.convertToAvro(value, name, schema);</span>
+    }
+<span class="nc" id="L130">    throw new IllegalArgumentException(&quot;JsonConverter cannot handle type: &quot; + schema.getType());</span>
+  }
+
+  /**
+   * Base Class for converting json to avro fields.
+   */
+  private abstract static class JsonToAvroFieldProcessor implements Serializable {
+
+    public Object convertToAvro(Object value, String name, Schema schema) {
+<span class="nc" id="L139">      Pair&lt;Boolean, Object&gt; res = convert(value, name, schema);</span>
+<span class="nc bnc" id="L140" title="All 2 branches missed.">      if (!res.getLeft()) {</span>
+<span class="nc" id="L141">        throw new HoodieJsonToAvroConversionException(value, name, schema);</span>
+      }
+<span class="nc" id="L143">      return res.getRight();</span>
+    }
+
+    protected abstract Pair&lt;Boolean, Object&gt; convert(Object value, String name, Schema schema);
+  }
+
+  private static JsonToAvroFieldProcessor generateBooleanTypeHandler() {
+<span class="nc" id="L150">    return new JsonToAvroFieldProcessor() {</span>
+      @Override
+      public Pair&lt;Boolean, Object&gt; convert(Object value, String name, Schema schema) {
+<span class="nc bnc" id="L153" title="All 2 branches missed.">        if (value instanceof Boolean) {</span>
+<span class="nc" id="L154">          return Pair.of(true, value);</span>
+        }
+<span class="nc" id="L156">        return Pair.of(false, null);</span>
+      }
+    };
+  }
+
+  private static JsonToAvroFieldProcessor generateIntTypeHandler() {
+<span class="nc" id="L162">    return new JsonToAvroFieldProcessor() {</span>
+      @Override
+      public Pair&lt;Boolean, Object&gt; convert(Object value, String name, Schema schema) {
+<span class="nc bnc" id="L165" title="All 2 branches missed.">        if (value instanceof Number) {</span>
+<span class="nc" id="L166">          return Pair.of(true, ((Number) value).intValue());</span>
+<span class="nc bnc" id="L167" title="All 2 branches missed.">        } else if (value instanceof String) {</span>
+<span class="nc" id="L168">          return Pair.of(true, Integer.valueOf((String) value));</span>
+        }
+<span class="nc" id="L170">        return Pair.of(false, null);</span>
+      }
+    };
+  }
+
+  private static JsonToAvroFieldProcessor generateDoubleTypeHandler() {
+<span class="nc" id="L176">    return new JsonToAvroFieldProcessor() {</span>
+      @Override
+      public Pair&lt;Boolean, Object&gt; convert(Object value, String name, Schema schema) {
+<span class="nc bnc" id="L179" title="All 2 branches missed.">        if (value instanceof Number) {</span>
+<span class="nc" id="L180">          return Pair.of(true, ((Number) value).doubleValue());</span>
+<span class="nc bnc" id="L181" title="All 2 branches missed.">        } else if (value instanceof String) {</span>
+<span class="nc" id="L182">          return Pair.of(true, Double.valueOf((String) value));</span>
+        }
+<span class="nc" id="L184">        return Pair.of(false, null);</span>
+      }
+    };
+  }
+
+  private static JsonToAvroFieldProcessor generateFloatTypeHandler() {
+<span class="nc" id="L190">    return new JsonToAvroFieldProcessor() {</span>
+      @Override
+      public Pair&lt;Boolean, Object&gt; convert(Object value, String name, Schema schema) {
+<span class="nc bnc" id="L193" title="All 2 branches missed.">        if (value instanceof Number) {</span>
+<span class="nc" id="L194">          return Pair.of(true, ((Number) value).floatValue());</span>
+<span class="nc bnc" id="L195" title="All 2 branches missed.">        } else if (value instanceof String) {</span>
+<span class="nc" id="L196">          return Pair.of(true, Float.valueOf((String) value));</span>
+        }
+<span class="nc" id="L198">        return Pair.of(false, null);</span>
+      }
+    };
+  }
+
+  private static JsonToAvroFieldProcessor generateLongTypeHandler() {
+<span class="nc" id="L204">    return new JsonToAvroFieldProcessor() {</span>
+      @Override
+      public Pair&lt;Boolean, Object&gt; convert(Object value, String name, Schema schema) {
+<span class="nc bnc" id="L207" title="All 2 branches missed.">        if (value instanceof Number) {</span>
+<span class="nc" id="L208">          return Pair.of(true, ((Number) value).longValue());</span>
+<span class="nc bnc" id="L209" title="All 2 branches missed.">        } else if (value instanceof String) {</span>
+<span class="nc" id="L210">          return Pair.of(true, Long.valueOf((String) value));</span>
+        }
+<span class="nc" id="L212">        return Pair.of(false, null);</span>
+      }
+    };
+  }
+
+  private static JsonToAvroFieldProcessor generateStringTypeHandler() {
+<span class="nc" id="L218">    return new JsonToAvroFieldProcessor() {</span>
+      @Override
+      public Pair&lt;Boolean, Object&gt; convert(Object value, String name, Schema schema) {
+<span class="nc" id="L221">        return Pair.of(true, value.toString());</span>
+      }
+    };
+  }
+
+  private static JsonToAvroFieldProcessor generateBytesTypeHandler() {
+<span class="nc" id="L227">    return new JsonToAvroFieldProcessor() {</span>
+      @Override
+      public Pair&lt;Boolean, Object&gt; convert(Object value, String name, Schema schema) {
+<span class="nc" id="L230">        return Pair.of(true, value.toString().getBytes());</span>
+      }
+    };
+  }
+
+  private static JsonToAvroFieldProcessor generateFixedTypeHandler() {
+<span class="nc" id="L236">    return new JsonToAvroFieldProcessor() {</span>
+      @Override
+      public Pair&lt;Boolean, Object&gt; convert(Object value, String name, Schema schema) {
+<span class="nc" id="L239">        byte[] src = value.toString().getBytes();</span>
+<span class="nc" id="L240">        byte[] dst = new byte[schema.getFixedSize()];</span>
+<span class="nc" id="L241">        System.arraycopy(src, 0, dst, 0, Math.min(schema.getFixedSize(), src.length));</span>
+<span class="nc" id="L242">        return Pair.of(true, dst);</span>
+      }
+    };
+  }
+
+  private static JsonToAvroFieldProcessor generateEnumTypeHandler() {
+<span class="nc" id="L248">    return new JsonToAvroFieldProcessor() {</span>
+      @Override
+      public Pair&lt;Boolean, Object&gt; convert(Object value, String name, Schema schema) {
+<span class="nc bnc" id="L251" title="All 2 branches missed.">        if (schema.getEnumSymbols().contains(value.toString())) {</span>
+<span class="nc" id="L252">          return Pair.of(true, new GenericData.EnumSymbol(schema, value.toString()));</span>
+        }
+<span class="nc" id="L254">        throw new HoodieJsonToAvroConversionException(String.format(&quot;Symbol %s not in enum&quot;, value.toString()),</span>
+<span class="nc" id="L255">            schema.getFullName(), schema);</span>
+      }
+    };
+  }
+
+  private static JsonToAvroFieldProcessor generateRecordTypeHandler() {
+<span class="nc" id="L261">    return new JsonToAvroFieldProcessor() {</span>
+      @Override
+      public Pair&lt;Boolean, Object&gt; convert(Object value, String name, Schema schema) {
+<span class="nc" id="L264">        GenericRecord result = new GenericData.Record(schema);</span>
+<span class="nc" id="L265">        return Pair.of(true, convertJsonToAvro((Map&lt;String, Object&gt;) value, schema));</span>
+      }
+    };
+  }
+
+  private static JsonToAvroFieldProcessor generateArrayTypeHandler() {
+<span class="nc" id="L271">    return new JsonToAvroFieldProcessor() {</span>
+      @Override
+      public Pair&lt;Boolean, Object&gt; convert(Object value, String name, Schema schema) {
+<span class="nc" id="L274">        Schema elementSchema = schema.getElementType();</span>
+<span class="nc" id="L275">        List&lt;Object&gt; listRes = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L276" title="All 2 branches missed.">        for (Object v : (List) value) {</span>
+<span class="nc" id="L277">          listRes.add(convertJsonToAvroField(v, name, elementSchema));</span>
+<span class="nc" id="L278">        }</span>
+<span class="nc" id="L279">        return Pair.of(true, listRes);</span>
+      }
+    };
+  }
+
+  private static JsonToAvroFieldProcessor generateMapTypeHandler() {
+<span class="nc" id="L285">    return new JsonToAvroFieldProcessor() {</span>
+      @Override
+      public Pair&lt;Boolean, Object&gt; convert(Object value, String name, Schema schema) {
+<span class="nc" id="L288">        Schema valueSchema = schema.getValueType();</span>
+<span class="nc" id="L289">        Map&lt;String, Object&gt; mapRes = new HashMap&lt;&gt;();</span>
+<span class="nc bnc" id="L290" title="All 2 branches missed.">        for (Map.Entry&lt;String, Object&gt; v : ((Map&lt;String, Object&gt;) value).entrySet()) {</span>
+<span class="nc" id="L291">          mapRes.put(v.getKey(), convertJsonToAvroField(v.getValue(), name, valueSchema));</span>
+<span class="nc" id="L292">        }</span>
+<span class="nc" id="L293">        return Pair.of(true, mapRes);</span>
+      }
+    };
+  }
+
+  /**
+   * Exception Class for any schema conversion issue.
+   */
+  public static class HoodieJsonToAvroConversionException extends HoodieException {
+
+    private Object value;
+    private String fieldName;
+    private Schema schema;
+
+<span class="nc" id="L307">    public HoodieJsonToAvroConversionException(Object value, String fieldName, Schema schema) {</span>
+<span class="nc" id="L308">      this.value = value;</span>
+<span class="nc" id="L309">      this.fieldName = fieldName;</span>
+<span class="nc" id="L310">      this.schema = schema;</span>
+<span class="nc" id="L311">    }</span>
+
+    @Override
+    public String toString() {
+<span class="nc" id="L315">      return String.format(&quot;Json to Avro Type conversion error for field %s, %s for %s&quot;, fieldName, value, schema);</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

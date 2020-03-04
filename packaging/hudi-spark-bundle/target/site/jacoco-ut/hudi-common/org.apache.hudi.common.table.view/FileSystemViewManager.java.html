@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>FileSystemViewManager.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.table.view</a> &gt; <span class="el_source">FileSystemViewManager.java</span></div><h1>FileSystemViewManager.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.table.view;
+
+import org.apache.hudi.common.SerializableConfiguration;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.common.table.HoodieTimeline;
+import org.apache.hudi.common.table.SyncableFileSystemView;
+import org.apache.hudi.common.util.Functions.Function2;
+
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * A container that can potentially hold one or more table's file-system views. There is one view for each table.
+ * This is a view built against a timeline containing completed actions. In an embedded timeline-server mode, this
+ * typically holds only one table's view. In a stand-alone server mode, this can hold more than one table's views.
+ *
+ * FileSystemView can be stored &quot;locally&quot; using the following storage mechanisms: a. In Memory b. Spillable Map c.
+ * RocksDB
+ *
+ * But there can be cases where the file-system view is managed remoted. For example : Embedded Timeline Server). In
+ * this case, the clients will configure a remote filesystem view client (RemoteHoodieTableFileSystemView) for the
+ * table which can connect to the remote file system view and fetch views. THere are 2 modes here : REMOTE_FIRST and
+ * REMOTE_ONLY REMOTE_FIRST : The file-system view implementation on client side will act as a remote proxy. In case, if
+ * there is problem (or exceptions) querying remote file-system view, a backup local file-system view(using either one
+ * of in-memory, spillable, rocksDB) is used to server file-system view queries REMOTE_ONLY : In this case, there is no
+ * backup local file-system view. If there is problem (or exceptions) querying remote file-system view, then the
+ * exceptions are percolated back to client.
+ *
+ * FileSystemViewManager is designed to encapsulate the file-system view storage from clients using the file-system
+ * view. FileSystemViewManager uses a factory to construct specific implementation of file-system view and passes it to
+ * clients for querying.
+ */
+public class FileSystemViewManager {
+<span class="nc" id="L54">  private static final Logger LOG = LogManager.getLogger(FileSystemViewManager.class);</span>
+
+  private final SerializableConfiguration conf;
+  // The View Storage config used to store file-system views
+  private final FileSystemViewStorageConfig viewStorageConfig;
+  // Map from Base-Path to View
+  private final ConcurrentHashMap&lt;String, SyncableFileSystemView&gt; globalViewMap;
+  // Factory Map to create file-system views
+  private final Function2&lt;String, FileSystemViewStorageConfig, SyncableFileSystemView&gt; viewCreator;
+
+  public FileSystemViewManager(SerializableConfiguration conf, FileSystemViewStorageConfig viewStorageConfig,
+<span class="nc" id="L65">      Function2&lt;String, FileSystemViewStorageConfig, SyncableFileSystemView&gt; viewCreator) {</span>
+<span class="nc" id="L66">    this.conf = new SerializableConfiguration(conf);</span>
+<span class="nc" id="L67">    this.viewStorageConfig = viewStorageConfig;</span>
+<span class="nc" id="L68">    this.globalViewMap = new ConcurrentHashMap&lt;&gt;();</span>
+<span class="nc" id="L69">    this.viewCreator = viewCreator;</span>
+<span class="nc" id="L70">  }</span>
+
+  /**
+   * Drops reference to File-System Views. Future calls to view results in creating a new view
+   * 
+   * @param basePath
+   */
+  public void clearFileSystemView(String basePath) {
+<span class="nc" id="L78">    SyncableFileSystemView view = globalViewMap.remove(basePath);</span>
+<span class="nc bnc" id="L79" title="All 2 branches missed.">    if (view != null) {</span>
+<span class="nc" id="L80">      view.close();</span>
+    }
+<span class="nc" id="L82">  }</span>
+
+  /**
+   * Main API to get the file-system view for the base-path.
+   * 
+   * @param basePath
+   * @return
+   */
+  public SyncableFileSystemView getFileSystemView(String basePath) {
+<span class="nc" id="L91">    return globalViewMap.computeIfAbsent(basePath, (path) -&gt; viewCreator.apply(path, viewStorageConfig));</span>
+  }
+
+  /**
+   * Closes all views opened.
+   */
+  public void close() {
+<span class="nc" id="L98">    this.globalViewMap.values().forEach(SyncableFileSystemView::close);</span>
+<span class="nc" id="L99">    this.globalViewMap.clear();</span>
+<span class="nc" id="L100">  }</span>
+
+  // FACTORY METHODS FOR CREATING FILE-SYSTEM VIEWS
+
+  /**
+   * Create RocksDB based file System view for a table.
+   * 
+   * @param conf Hadoop Configuration
+   * @param viewConf View Storage Configuration
+   * @param basePath Base Path of table
+   * @return
+   */
+  private static RocksDbBasedFileSystemView createRocksDBBasedFileSystemView(SerializableConfiguration conf,
+      FileSystemViewStorageConfig viewConf, String basePath) {
+<span class="nc" id="L114">    HoodieTableMetaClient metaClient = new HoodieTableMetaClient(conf.newCopy(), basePath, true);</span>
+<span class="nc" id="L115">    HoodieTimeline timeline = metaClient.getActiveTimeline().filterCompletedAndCompactionInstants();</span>
+<span class="nc" id="L116">    return new RocksDbBasedFileSystemView(metaClient, timeline, viewConf);</span>
+  }
+
+  /**
+   * Create a spillable Map based file System view for a table.
+   * 
+   * @param conf Hadoop Configuration
+   * @param viewConf View Storage Configuration
+   * @param basePath Base Path of table
+   * @return
+   */
+  private static SpillableMapBasedFileSystemView createSpillableMapBasedFileSystemView(SerializableConfiguration conf,
+      FileSystemViewStorageConfig viewConf, String basePath) {
+<span class="nc" id="L129">    LOG.info(&quot;Creating SpillableMap based view for basePath &quot; + basePath);</span>
+<span class="nc" id="L130">    HoodieTableMetaClient metaClient = new HoodieTableMetaClient(conf.newCopy(), basePath, true);</span>
+<span class="nc" id="L131">    HoodieTimeline timeline = metaClient.getActiveTimeline().filterCompletedAndCompactionInstants();</span>
+<span class="nc" id="L132">    return new SpillableMapBasedFileSystemView(metaClient, timeline, viewConf);</span>
+  }
+
+  /**
+   * Create an in-memory file System view for a table.
+   * 
+   * @param conf Hadoop Configuration
+   * @param viewConf View Storage Configuration
+   * @param basePath Base Path of table
+   * @return
+   */
+  private static HoodieTableFileSystemView createInMemoryFileSystemView(SerializableConfiguration conf,
+      FileSystemViewStorageConfig viewConf, String basePath) {
+<span class="nc" id="L145">    LOG.info(&quot;Creating InMemory based view for basePath &quot; + basePath);</span>
+<span class="nc" id="L146">    HoodieTableMetaClient metaClient = new HoodieTableMetaClient(conf.newCopy(), basePath, true);</span>
+<span class="nc" id="L147">    HoodieTimeline timeline = metaClient.getActiveTimeline().filterCompletedAndCompactionInstants();</span>
+<span class="nc" id="L148">    return new HoodieTableFileSystemView(metaClient, timeline, viewConf.isIncrementalTimelineSyncEnabled());</span>
+  }
+
+  /**
+   * Create a remote file System view for a table.
+   * 
+   * @param conf Hadoop Configuration
+   * @param viewConf View Storage Configuration
+   * @param metaClient Hoodie Table MetaClient for the table.
+   * @return
+   */
+  private static RemoteHoodieTableFileSystemView createRemoteFileSystemView(SerializableConfiguration conf,
+      FileSystemViewStorageConfig viewConf, HoodieTableMetaClient metaClient) {
+<span class="nc" id="L161">    LOG.info(&quot;Creating remote view for basePath &quot; + metaClient.getBasePath() + &quot;. Server=&quot;</span>
+<span class="nc" id="L162">        + viewConf.getRemoteViewServerHost() + &quot;:&quot; + viewConf.getRemoteViewServerPort());</span>
+<span class="nc" id="L163">    return new RemoteHoodieTableFileSystemView(viewConf.getRemoteViewServerHost(), viewConf.getRemoteViewServerPort(),</span>
+        metaClient);
+  }
+
+  /**
+   * Main Factory method for building file-system views.
+   * 
+   * @param conf Hadoop Configuration
+   * @param config View Storage Configuration
+   * @return
+   */
+  public static FileSystemViewManager createViewManager(final SerializableConfiguration conf,
+      final FileSystemViewStorageConfig config) {
+<span class="nc" id="L176">    LOG.info(&quot;Creating View Manager with storage type :&quot; + config.getStorageType());</span>
+<span class="nc bnc" id="L177" title="All 6 branches missed.">    switch (config.getStorageType()) {</span>
+      case EMBEDDED_KV_STORE:
+<span class="nc" id="L179">        LOG.info(&quot;Creating embedded rocks-db based Table View&quot;);</span>
+<span class="nc" id="L180">        return new FileSystemViewManager(conf, config,</span>
+<span class="nc" id="L181">            (basePath, viewConf) -&gt; createRocksDBBasedFileSystemView(conf, viewConf, basePath));</span>
+      case SPILLABLE_DISK:
+<span class="nc" id="L183">        LOG.info(&quot;Creating Spillable Disk based Table View&quot;);</span>
+<span class="nc" id="L184">        return new FileSystemViewManager(conf, config,</span>
+<span class="nc" id="L185">            (basePath, viewConf) -&gt; createSpillableMapBasedFileSystemView(conf, viewConf, basePath));</span>
+      case MEMORY:
+<span class="nc" id="L187">        LOG.info(&quot;Creating in-memory based Table View&quot;);</span>
+<span class="nc" id="L188">        return new FileSystemViewManager(conf, config,</span>
+<span class="nc" id="L189">            (basePath, viewConfig) -&gt; createInMemoryFileSystemView(conf, viewConfig, basePath));</span>
+      case REMOTE_ONLY:
+<span class="nc" id="L191">        LOG.info(&quot;Creating remote only table view&quot;);</span>
+<span class="nc" id="L192">        return new FileSystemViewManager(conf, config, (basePath, viewConfig) -&gt; createRemoteFileSystemView(conf,</span>
+<span class="nc" id="L193">            viewConfig, new HoodieTableMetaClient(conf.newCopy(), basePath)));</span>
+      case REMOTE_FIRST:
+<span class="nc" id="L195">        LOG.info(&quot;Creating remote first table view&quot;);</span>
+<span class="nc" id="L196">        return new FileSystemViewManager(conf, config, (basePath, viewConfig) -&gt; {</span>
+<span class="nc" id="L197">          RemoteHoodieTableFileSystemView remoteFileSystemView =</span>
+<span class="nc" id="L198">              createRemoteFileSystemView(conf, viewConfig, new HoodieTableMetaClient(conf.newCopy(), basePath));</span>
+          SyncableFileSystemView secondaryView;
+<span class="nc bnc" id="L200" title="All 4 branches missed.">          switch (viewConfig.getSecondaryStorageType()) {</span>
+            case MEMORY:
+<span class="nc" id="L202">              secondaryView = createInMemoryFileSystemView(conf, viewConfig, basePath);</span>
+<span class="nc" id="L203">              break;</span>
+            case EMBEDDED_KV_STORE:
+<span class="nc" id="L205">              secondaryView = createRocksDBBasedFileSystemView(conf, viewConfig, basePath);</span>
+<span class="nc" id="L206">              break;</span>
+            case SPILLABLE_DISK:
+<span class="nc" id="L208">              secondaryView = createSpillableMapBasedFileSystemView(conf, viewConfig, basePath);</span>
+<span class="nc" id="L209">              break;</span>
+            default:
+<span class="nc" id="L211">              throw new IllegalArgumentException(&quot;Secondary Storage type can only be in-memory or spillable. Was :&quot;</span>
+<span class="nc" id="L212">                  + viewConfig.getSecondaryStorageType());</span>
+          }
+<span class="nc" id="L214">          return new PriorityBasedFileSystemView(remoteFileSystemView, secondaryView);</span>
+        });
+      default:
+<span class="nc" id="L217">        throw new IllegalArgumentException(&quot;Unknown file system view type :&quot; + config.getStorageType());</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

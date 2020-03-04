@@ -1,0 +1,359 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieCommitMetadata.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.model</a> &gt; <span class="el_source">HoodieCommitMetadata.java</span></div><h1>HoodieCommitMetadata.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.model;
+
+import org.apache.hudi.common.util.FSUtils;
+
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.PropertyAccessor;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+import java.io.IOException;
+import java.io.Serializable;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * All the metadata that gets stored along with a commit.
+ */
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class HoodieCommitMetadata implements Serializable {
+
+  public static final String SCHEMA_KEY = &quot;schema&quot;;
+<span class="nc" id="L46">  private static final Logger LOG = LogManager.getLogger(HoodieCommitMetadata.class);</span>
+  protected Map&lt;String, List&lt;HoodieWriteStat&gt;&gt; partitionToWriteStats;
+  protected Boolean compacted;
+
+  private Map&lt;String, String&gt; extraMetadata;
+
+<span class="nc" id="L52">  private WriteOperationType operationType = WriteOperationType.UNKNOWN;</span>
+
+  // for ser/deser
+  public HoodieCommitMetadata() {
+<span class="nc" id="L56">    this(false);</span>
+<span class="nc" id="L57">  }</span>
+
+<span class="nc" id="L59">  public HoodieCommitMetadata(boolean compacted) {</span>
+<span class="nc" id="L60">    extraMetadata = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L61">    partitionToWriteStats = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L62">    this.compacted = compacted;</span>
+<span class="nc" id="L63">  }</span>
+
+  public void addWriteStat(String partitionPath, HoodieWriteStat stat) {
+<span class="nc bnc" id="L66" title="All 2 branches missed.">    if (!partitionToWriteStats.containsKey(partitionPath)) {</span>
+<span class="nc" id="L67">      partitionToWriteStats.put(partitionPath, new ArrayList&lt;&gt;());</span>
+    }
+<span class="nc" id="L69">    partitionToWriteStats.get(partitionPath).add(stat);</span>
+<span class="nc" id="L70">  }</span>
+
+  public void addMetadata(String metaKey, String value) {
+<span class="nc" id="L73">    extraMetadata.put(metaKey, value);</span>
+<span class="nc" id="L74">  }</span>
+
+  public List&lt;HoodieWriteStat&gt; getWriteStats(String partitionPath) {
+<span class="nc" id="L77">    return partitionToWriteStats.get(partitionPath);</span>
+  }
+
+  public Map&lt;String, String&gt; getExtraMetadata() {
+<span class="nc" id="L81">    return extraMetadata;</span>
+  }
+
+  public Map&lt;String, List&lt;HoodieWriteStat&gt;&gt; getPartitionToWriteStats() {
+<span class="nc" id="L85">    return partitionToWriteStats;</span>
+  }
+
+  public String getMetadata(String metaKey) {
+<span class="nc" id="L89">    return extraMetadata.get(metaKey);</span>
+  }
+
+  public Boolean getCompacted() {
+<span class="nc" id="L93">    return compacted;</span>
+  }
+
+  public void setCompacted(Boolean compacted) {
+<span class="nc" id="L97">    this.compacted = compacted;</span>
+<span class="nc" id="L98">  }</span>
+
+  public HashMap&lt;String, String&gt; getFileIdAndRelativePaths() {
+<span class="nc" id="L101">    HashMap&lt;String, String&gt; filePaths = new HashMap&lt;&gt;();</span>
+    // list all partitions paths
+<span class="nc bnc" id="L103" title="All 2 branches missed.">    for (Map.Entry&lt;String, List&lt;HoodieWriteStat&gt;&gt; entry : getPartitionToWriteStats().entrySet()) {</span>
+<span class="nc bnc" id="L104" title="All 2 branches missed.">      for (HoodieWriteStat stat : entry.getValue()) {</span>
+<span class="nc" id="L105">        filePaths.put(stat.getFileId(), stat.getPath());</span>
+<span class="nc" id="L106">      }</span>
+<span class="nc" id="L107">    }</span>
+<span class="nc" id="L108">    return filePaths;</span>
+  }
+
+  public void setOperationType(WriteOperationType type) {
+<span class="nc" id="L112">    this.operationType = type;</span>
+<span class="nc" id="L113">  }</span>
+
+  public WriteOperationType getOperationType() {
+<span class="nc" id="L116">    return this.operationType;</span>
+  }
+
+  public HashMap&lt;String, String&gt; getFileIdAndFullPaths(String basePath) {
+<span class="nc" id="L120">    HashMap&lt;String, String&gt; fullPaths = new HashMap&lt;&gt;();</span>
+<span class="nc bnc" id="L121" title="All 2 branches missed.">    for (Map.Entry&lt;String, String&gt; entry : getFileIdAndRelativePaths().entrySet()) {</span>
+<span class="nc" id="L122">      String fullPath =</span>
+<span class="nc bnc" id="L123" title="All 2 branches missed.">          (entry.getValue() != null) ? (FSUtils.getPartitionPath(basePath, entry.getValue())).toString() : null;</span>
+<span class="nc" id="L124">      fullPaths.put(entry.getKey(), fullPath);</span>
+<span class="nc" id="L125">    }</span>
+<span class="nc" id="L126">    return fullPaths;</span>
+  }
+
+  public String toJsonString() throws IOException {
+<span class="nc bnc" id="L130" title="All 2 branches missed.">    if (partitionToWriteStats.containsKey(null)) {</span>
+<span class="nc" id="L131">      LOG.info(&quot;partition path is null for &quot; + partitionToWriteStats.get(null));</span>
+<span class="nc" id="L132">      partitionToWriteStats.remove(null);</span>
+    }
+<span class="nc" id="L134">    return getObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(this);</span>
+  }
+
+  public static &lt;T&gt; T fromJsonString(String jsonStr, Class&lt;T&gt; clazz) throws Exception {
+<span class="nc bnc" id="L138" title="All 4 branches missed.">    if (jsonStr == null || jsonStr.isEmpty()) {</span>
+      // For empty commit file (no data or somethings bad happen).
+<span class="nc" id="L140">      return clazz.newInstance();</span>
+    }
+<span class="nc" id="L142">    return getObjectMapper().readValue(jsonStr, clazz);</span>
+  }
+
+  // Here the functions are named &quot;fetch&quot; instead of &quot;get&quot;, to get avoid of the json conversion.
+  public long fetchTotalPartitionsWritten() {
+<span class="nc" id="L147">    return partitionToWriteStats.size();</span>
+  }
+
+  public long fetchTotalFilesInsert() {
+<span class="nc" id="L151">    long totalFilesInsert = 0;</span>
+<span class="nc bnc" id="L152" title="All 2 branches missed.">    for (List&lt;HoodieWriteStat&gt; stats : partitionToWriteStats.values()) {</span>
+<span class="nc bnc" id="L153" title="All 2 branches missed.">      for (HoodieWriteStat stat : stats) {</span>
+<span class="nc bnc" id="L154" title="All 4 branches missed.">        if (stat.getPrevCommit() != null &amp;&amp; stat.getPrevCommit().equalsIgnoreCase(&quot;null&quot;)) {</span>
+<span class="nc" id="L155">          totalFilesInsert++;</span>
+        }
+<span class="nc" id="L157">      }</span>
+<span class="nc" id="L158">    }</span>
+<span class="nc" id="L159">    return totalFilesInsert;</span>
+  }
+
+  public long fetchTotalFilesUpdated() {
+<span class="nc" id="L163">    long totalFilesUpdated = 0;</span>
+<span class="nc bnc" id="L164" title="All 2 branches missed.">    for (List&lt;HoodieWriteStat&gt; stats : partitionToWriteStats.values()) {</span>
+<span class="nc bnc" id="L165" title="All 2 branches missed.">      for (HoodieWriteStat stat : stats) {</span>
+<span class="nc bnc" id="L166" title="All 4 branches missed.">        if (stat.getPrevCommit() != null &amp;&amp; !stat.getPrevCommit().equalsIgnoreCase(&quot;null&quot;)) {</span>
+<span class="nc" id="L167">          totalFilesUpdated++;</span>
+        }
+<span class="nc" id="L169">      }</span>
+<span class="nc" id="L170">    }</span>
+<span class="nc" id="L171">    return totalFilesUpdated;</span>
+  }
+
+  public long fetchTotalUpdateRecordsWritten() {
+<span class="nc" id="L175">    long totalUpdateRecordsWritten = 0;</span>
+<span class="nc bnc" id="L176" title="All 2 branches missed.">    for (List&lt;HoodieWriteStat&gt; stats : partitionToWriteStats.values()) {</span>
+<span class="nc bnc" id="L177" title="All 2 branches missed.">      for (HoodieWriteStat stat : stats) {</span>
+<span class="nc" id="L178">        totalUpdateRecordsWritten += stat.getNumUpdateWrites();</span>
+<span class="nc" id="L179">      }</span>
+<span class="nc" id="L180">    }</span>
+<span class="nc" id="L181">    return totalUpdateRecordsWritten;</span>
+  }
+
+  public long fetchTotalInsertRecordsWritten() {
+<span class="nc" id="L185">    long totalInsertRecordsWritten = 0;</span>
+<span class="nc bnc" id="L186" title="All 2 branches missed.">    for (List&lt;HoodieWriteStat&gt; stats : partitionToWriteStats.values()) {</span>
+<span class="nc bnc" id="L187" title="All 2 branches missed.">      for (HoodieWriteStat stat : stats) {</span>
+        // determine insert rows in every file
+<span class="nc bnc" id="L189" title="All 2 branches missed.">        if (stat.getPrevCommit() != null) {</span>
+<span class="nc" id="L190">          totalInsertRecordsWritten += stat.getNumInserts();</span>
+        }
+<span class="nc" id="L192">      }</span>
+<span class="nc" id="L193">    }</span>
+<span class="nc" id="L194">    return totalInsertRecordsWritten;</span>
+  }
+
+  public long fetchTotalRecordsWritten() {
+<span class="nc" id="L198">    long totalRecordsWritten = 0;</span>
+<span class="nc bnc" id="L199" title="All 2 branches missed.">    for (List&lt;HoodieWriteStat&gt; stats : partitionToWriteStats.values()) {</span>
+<span class="nc bnc" id="L200" title="All 2 branches missed.">      for (HoodieWriteStat stat : stats) {</span>
+<span class="nc" id="L201">        totalRecordsWritten += stat.getNumWrites();</span>
+<span class="nc" id="L202">      }</span>
+<span class="nc" id="L203">    }</span>
+<span class="nc" id="L204">    return totalRecordsWritten;</span>
+  }
+
+  public long fetchTotalBytesWritten() {
+<span class="nc" id="L208">    long totalBytesWritten = 0;</span>
+<span class="nc bnc" id="L209" title="All 2 branches missed.">    for (List&lt;HoodieWriteStat&gt; stats : partitionToWriteStats.values()) {</span>
+<span class="nc bnc" id="L210" title="All 2 branches missed.">      for (HoodieWriteStat stat : stats) {</span>
+<span class="nc" id="L211">        totalBytesWritten += stat.getTotalWriteBytes();</span>
+<span class="nc" id="L212">      }</span>
+<span class="nc" id="L213">    }</span>
+<span class="nc" id="L214">    return totalBytesWritten;</span>
+  }
+
+  public long fetchTotalWriteErrors() {
+<span class="nc" id="L218">    long totalWriteErrors = 0;</span>
+<span class="nc bnc" id="L219" title="All 2 branches missed.">    for (List&lt;HoodieWriteStat&gt; stats : partitionToWriteStats.values()) {</span>
+<span class="nc bnc" id="L220" title="All 2 branches missed.">      for (HoodieWriteStat stat : stats) {</span>
+<span class="nc" id="L221">        totalWriteErrors += stat.getTotalWriteErrors();</span>
+<span class="nc" id="L222">      }</span>
+<span class="nc" id="L223">    }</span>
+<span class="nc" id="L224">    return totalWriteErrors;</span>
+  }
+
+  public long getTotalRecordsDeleted() {
+<span class="nc" id="L228">    long totalDeletes = 0;</span>
+<span class="nc bnc" id="L229" title="All 2 branches missed.">    for (List&lt;HoodieWriteStat&gt; stats : partitionToWriteStats.values()) {</span>
+<span class="nc bnc" id="L230" title="All 2 branches missed.">      for (HoodieWriteStat stat : stats) {</span>
+<span class="nc" id="L231">        totalDeletes += stat.getNumDeletes();</span>
+<span class="nc" id="L232">      }</span>
+<span class="nc" id="L233">    }</span>
+<span class="nc" id="L234">    return totalDeletes;</span>
+  }
+
+  public Long getTotalLogRecordsCompacted() {
+<span class="nc" id="L238">    Long totalLogRecords = 0L;</span>
+<span class="nc bnc" id="L239" title="All 2 branches missed.">    for (Map.Entry&lt;String, List&lt;HoodieWriteStat&gt;&gt; entry : partitionToWriteStats.entrySet()) {</span>
+<span class="nc bnc" id="L240" title="All 2 branches missed.">      for (HoodieWriteStat writeStat : entry.getValue()) {</span>
+<span class="nc" id="L241">        totalLogRecords += writeStat.getTotalLogRecords();</span>
+<span class="nc" id="L242">      }</span>
+<span class="nc" id="L243">    }</span>
+<span class="nc" id="L244">    return totalLogRecords;</span>
+  }
+
+  public Long getTotalLogFilesCompacted() {
+<span class="nc" id="L248">    Long totalLogFiles = 0L;</span>
+<span class="nc bnc" id="L249" title="All 2 branches missed.">    for (Map.Entry&lt;String, List&lt;HoodieWriteStat&gt;&gt; entry : partitionToWriteStats.entrySet()) {</span>
+<span class="nc bnc" id="L250" title="All 2 branches missed.">      for (HoodieWriteStat writeStat : entry.getValue()) {</span>
+<span class="nc" id="L251">        totalLogFiles += writeStat.getTotalLogFilesCompacted();</span>
+<span class="nc" id="L252">      }</span>
+<span class="nc" id="L253">    }</span>
+<span class="nc" id="L254">    return totalLogFiles;</span>
+  }
+
+  public Long getTotalCompactedRecordsUpdated() {
+<span class="nc" id="L258">    Long totalUpdateRecords = 0L;</span>
+<span class="nc bnc" id="L259" title="All 2 branches missed.">    for (Map.Entry&lt;String, List&lt;HoodieWriteStat&gt;&gt; entry : partitionToWriteStats.entrySet()) {</span>
+<span class="nc bnc" id="L260" title="All 2 branches missed.">      for (HoodieWriteStat writeStat : entry.getValue()) {</span>
+<span class="nc" id="L261">        totalUpdateRecords += writeStat.getTotalUpdatedRecordsCompacted();</span>
+<span class="nc" id="L262">      }</span>
+<span class="nc" id="L263">    }</span>
+<span class="nc" id="L264">    return totalUpdateRecords;</span>
+  }
+
+  public Long getTotalLogFilesSize() {
+<span class="nc" id="L268">    Long totalLogFilesSize = 0L;</span>
+<span class="nc bnc" id="L269" title="All 2 branches missed.">    for (Map.Entry&lt;String, List&lt;HoodieWriteStat&gt;&gt; entry : partitionToWriteStats.entrySet()) {</span>
+<span class="nc bnc" id="L270" title="All 2 branches missed.">      for (HoodieWriteStat writeStat : entry.getValue()) {</span>
+<span class="nc" id="L271">        totalLogFilesSize += writeStat.getTotalLogSizeCompacted();</span>
+<span class="nc" id="L272">      }</span>
+<span class="nc" id="L273">    }</span>
+<span class="nc" id="L274">    return totalLogFilesSize;</span>
+  }
+
+  public Long getTotalScanTime() {
+<span class="nc" id="L278">    Long totalScanTime = 0L;</span>
+<span class="nc bnc" id="L279" title="All 2 branches missed.">    for (Map.Entry&lt;String, List&lt;HoodieWriteStat&gt;&gt; entry : partitionToWriteStats.entrySet()) {</span>
+<span class="nc bnc" id="L280" title="All 2 branches missed.">      for (HoodieWriteStat writeStat : entry.getValue()) {</span>
+<span class="nc bnc" id="L281" title="All 2 branches missed.">        if (writeStat.getRuntimeStats() != null) {</span>
+<span class="nc" id="L282">          totalScanTime += writeStat.getRuntimeStats().getTotalScanTime();</span>
+        }
+<span class="nc" id="L284">      }</span>
+<span class="nc" id="L285">    }</span>
+<span class="nc" id="L286">    return totalScanTime;</span>
+  }
+
+  public Long getTotalCreateTime() {
+<span class="nc" id="L290">    Long totalCreateTime = 0L;</span>
+<span class="nc bnc" id="L291" title="All 2 branches missed.">    for (Map.Entry&lt;String, List&lt;HoodieWriteStat&gt;&gt; entry : partitionToWriteStats.entrySet()) {</span>
+<span class="nc bnc" id="L292" title="All 2 branches missed.">      for (HoodieWriteStat writeStat : entry.getValue()) {</span>
+<span class="nc bnc" id="L293" title="All 2 branches missed.">        if (writeStat.getRuntimeStats() != null) {</span>
+<span class="nc" id="L294">          totalCreateTime += writeStat.getRuntimeStats().getTotalCreateTime();</span>
+        }
+<span class="nc" id="L296">      }</span>
+<span class="nc" id="L297">    }</span>
+<span class="nc" id="L298">    return totalCreateTime;</span>
+  }
+
+  public Long getTotalUpsertTime() {
+<span class="nc" id="L302">    Long totalUpsertTime = 0L;</span>
+<span class="nc bnc" id="L303" title="All 2 branches missed.">    for (Map.Entry&lt;String, List&lt;HoodieWriteStat&gt;&gt; entry : partitionToWriteStats.entrySet()) {</span>
+<span class="nc bnc" id="L304" title="All 2 branches missed.">      for (HoodieWriteStat writeStat : entry.getValue()) {</span>
+<span class="nc bnc" id="L305" title="All 2 branches missed.">        if (writeStat.getRuntimeStats() != null) {</span>
+<span class="nc" id="L306">          totalUpsertTime += writeStat.getRuntimeStats().getTotalUpsertTime();</span>
+        }
+<span class="nc" id="L308">      }</span>
+<span class="nc" id="L309">    }</span>
+<span class="nc" id="L310">    return totalUpsertTime;</span>
+  }
+
+  @Override
+  public boolean equals(Object o) {
+<span class="nc bnc" id="L315" title="All 2 branches missed.">    if (this == o) {</span>
+<span class="nc" id="L316">      return true;</span>
+    }
+<span class="nc bnc" id="L318" title="All 4 branches missed.">    if (o == null || getClass() != o.getClass()) {</span>
+<span class="nc" id="L319">      return false;</span>
+    }
+
+<span class="nc" id="L322">    HoodieCommitMetadata that = (HoodieCommitMetadata) o;</span>
+
+<span class="nc bnc" id="L324" title="All 2 branches missed.">    if (!partitionToWriteStats.equals(that.partitionToWriteStats)) {</span>
+<span class="nc" id="L325">      return false;</span>
+    }
+<span class="nc" id="L327">    return compacted.equals(that.compacted);</span>
+
+  }
+
+  @Override
+  public int hashCode() {
+<span class="nc" id="L333">    int result = partitionToWriteStats.hashCode();</span>
+<span class="nc" id="L334">    result = 31 * result + compacted.hashCode();</span>
+<span class="nc" id="L335">    return result;</span>
+  }
+
+  public static &lt;T&gt; T fromBytes(byte[] bytes, Class&lt;T&gt; clazz) throws IOException {
+    try {
+<span class="nc" id="L340">      return fromJsonString(new String(bytes, StandardCharsets.UTF_8), clazz);</span>
+<span class="nc" id="L341">    } catch (Exception e) {</span>
+<span class="nc" id="L342">      throw new IOException(&quot;unable to read commit metadata&quot;, e);</span>
+    }
+  }
+
+  protected static ObjectMapper getObjectMapper() {
+<span class="nc" id="L347">    ObjectMapper mapper = new ObjectMapper();</span>
+<span class="nc" id="L348">    mapper.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);</span>
+<span class="nc" id="L349">    mapper.setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY);</span>
+<span class="nc" id="L350">    return mapper;</span>
+  }
+
+  @Override
+  public String toString() {
+<span class="nc" id="L355">    return &quot;HoodieCommitMetadata{partitionToWriteStats=&quot; + partitionToWriteStats + &quot;, compacted=&quot; + compacted</span>
+        + &quot;, extraMetadata=&quot; + extraMetadata + '}';
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieDataSourceHelpers.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-spark_2.11</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi</a> &gt; <span class="el_source">HoodieDataSourceHelpers.java</span></div><h1>HoodieDataSourceHelpers.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi;
+
+import org.apache.hudi.common.model.HoodieTableType;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.common.table.HoodieTimeline;
+import org.apache.hudi.common.table.timeline.HoodieActiveTimeline;
+import org.apache.hudi.common.table.timeline.HoodieInstant;
+
+import com.google.common.collect.Sets;
+import org.apache.hadoop.fs.FileSystem;
+
+import java.util.List;
+import java.util.stream.Collectors;
+
+/**
+ * List of helpers to aid, construction of instanttime for read and write operations using datasource.
+ */
+<span class="nc" id="L36">public class HoodieDataSourceHelpers {</span>
+
+  /**
+   * Checks if the Hoodie table has new data since given timestamp. This can be subsequently fed to an incremental
+   * view read, to perform incremental processing.
+   */
+  public static boolean hasNewCommits(FileSystem fs, String basePath, String commitTimestamp) {
+<span class="nc bnc" id="L43" title="All 2 branches missed.">    return listCommitsSince(fs, basePath, commitTimestamp).size() &gt; 0;</span>
+  }
+
+  /**
+   * Get a list of instant times that have occurred, from the given instant timestamp.
+   */
+  public static List&lt;String&gt; listCommitsSince(FileSystem fs, String basePath, String instantTimestamp) {
+<span class="nc" id="L50">    HoodieTimeline timeline = allCompletedCommitsCompactions(fs, basePath);</span>
+<span class="nc" id="L51">    return timeline.findInstantsAfter(instantTimestamp, Integer.MAX_VALUE).getInstants()</span>
+<span class="nc" id="L52">        .map(HoodieInstant::getTimestamp).collect(Collectors.toList());</span>
+  }
+
+  /**
+   * Returns the last successful write operation's instant time.
+   */
+  public static String latestCommit(FileSystem fs, String basePath) {
+<span class="nc" id="L59">    HoodieTimeline timeline = allCompletedCommitsCompactions(fs, basePath);</span>
+<span class="nc" id="L60">    return timeline.lastInstant().get().getTimestamp();</span>
+  }
+
+  /**
+   * Obtain all the commits, compactions that have occurred on the timeline, whose instant times could be fed into the
+   * datasource options.
+   */
+  public static HoodieTimeline allCompletedCommitsCompactions(FileSystem fs, String basePath) {
+<span class="nc" id="L68">    HoodieTableMetaClient metaClient = new HoodieTableMetaClient(fs.getConf(), basePath, true);</span>
+<span class="nc bnc" id="L69" title="All 2 branches missed.">    if (metaClient.getTableType().equals(HoodieTableType.MERGE_ON_READ)) {</span>
+<span class="nc" id="L70">      return metaClient.getActiveTimeline().getTimelineOfActions(</span>
+<span class="nc" id="L71">          Sets.newHashSet(HoodieActiveTimeline.COMMIT_ACTION, HoodieActiveTimeline.DELTA_COMMIT_ACTION));</span>
+    } else {
+<span class="nc" id="L73">      return metaClient.getCommitTimeline().filterCompletedInstants();</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

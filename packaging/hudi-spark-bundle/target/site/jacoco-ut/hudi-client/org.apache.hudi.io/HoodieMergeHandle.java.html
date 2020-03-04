@@ -1,0 +1,366 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieMergeHandle.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-client</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.io</a> &gt; <span class="el_source">HoodieMergeHandle.java</span></div><h1>HoodieMergeHandle.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.io;
+
+import org.apache.hudi.client.WriteStatus;
+import org.apache.hudi.common.model.HoodieBaseFile;
+import org.apache.hudi.common.model.HoodiePartitionMetadata;
+import org.apache.hudi.common.model.HoodieRecord;
+import org.apache.hudi.common.model.HoodieRecordLocation;
+import org.apache.hudi.common.model.HoodieRecordPayload;
+import org.apache.hudi.common.model.HoodieWriteStat;
+import org.apache.hudi.common.model.HoodieWriteStat.RuntimeStats;
+import org.apache.hudi.common.util.DefaultSizeEstimator;
+import org.apache.hudi.common.util.FSUtils;
+import org.apache.hudi.common.util.HoodieAvroUtils;
+import org.apache.hudi.common.util.HoodieRecordSizeEstimator;
+import org.apache.hudi.common.util.Option;
+import org.apache.hudi.common.util.collection.ExternalSpillableMap;
+import org.apache.hudi.config.HoodieWriteConfig;
+import org.apache.hudi.exception.HoodieIOException;
+import org.apache.hudi.exception.HoodieUpsertException;
+import org.apache.hudi.io.storage.HoodieStorageWriter;
+import org.apache.hudi.io.storage.HoodieStorageWriterFactory;
+import org.apache.hudi.table.HoodieTable;
+
+import org.apache.avro.Schema;
+import org.apache.avro.generic.GenericRecord;
+import org.apache.avro.generic.IndexedRecord;
+import org.apache.hadoop.fs.Path;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+import org.apache.spark.TaskContext;
+
+import java.io.IOException;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Set;
+
+@SuppressWarnings(&quot;Duplicates&quot;)
+public class HoodieMergeHandle&lt;T extends HoodieRecordPayload&gt; extends HoodieWriteHandle&lt;T&gt; {
+
+<span class="nc" id="L59">  private static final Logger LOG = LogManager.getLogger(HoodieMergeHandle.class);</span>
+
+  private Map&lt;String, HoodieRecord&lt;T&gt;&gt; keyToNewRecords;
+  private Set&lt;String&gt; writtenRecordKeys;
+  private HoodieStorageWriter&lt;IndexedRecord&gt; storageWriter;
+  private Path newFilePath;
+  private Path oldFilePath;
+<span class="nc" id="L66">  private long recordsWritten = 0;</span>
+<span class="nc" id="L67">  private long recordsDeleted = 0;</span>
+<span class="nc" id="L68">  private long updatedRecordsWritten = 0;</span>
+<span class="nc" id="L69">  private long insertRecordsWritten = 0;</span>
+  private boolean useWriterSchema;
+
+  public HoodieMergeHandle(HoodieWriteConfig config, String commitTime, HoodieTable&lt;T&gt; hoodieTable,
+      Iterator&lt;HoodieRecord&lt;T&gt;&gt; recordItr, String fileId) {
+<span class="nc" id="L74">    super(config, commitTime, fileId, hoodieTable);</span>
+<span class="nc" id="L75">    String partitionPath = init(fileId, recordItr);</span>
+<span class="nc" id="L76">    init(fileId, partitionPath, hoodieTable.getBaseFileOnlyView().getLatestBaseFile(partitionPath, fileId).get());</span>
+<span class="nc" id="L77">  }</span>
+
+  /**
+   * Called by compactor code path.
+   */
+  public HoodieMergeHandle(HoodieWriteConfig config, String commitTime, HoodieTable&lt;T&gt; hoodieTable,
+      Map&lt;String, HoodieRecord&lt;T&gt;&gt; keyToNewRecords, String fileId, HoodieBaseFile dataFileToBeMerged) {
+<span class="nc" id="L84">    super(config, commitTime, fileId, hoodieTable);</span>
+<span class="nc" id="L85">    this.keyToNewRecords = keyToNewRecords;</span>
+<span class="nc" id="L86">    this.useWriterSchema = true;</span>
+<span class="nc" id="L87">    init(fileId, keyToNewRecords.get(keyToNewRecords.keySet().stream().findFirst().get()).getPartitionPath(),</span>
+        dataFileToBeMerged);
+<span class="nc" id="L89">  }</span>
+
+  public static Schema createHoodieWriteSchema(Schema originalSchema) {
+<span class="nc" id="L92">    return HoodieAvroUtils.addMetadataFields(originalSchema);</span>
+  }
+
+  @Override
+  public Path makeNewPath(String partitionPath) {
+<span class="nc" id="L97">    Path path = FSUtils.getPartitionPath(config.getBasePath(), partitionPath);</span>
+    try {
+<span class="nc" id="L99">      fs.mkdirs(path); // create a new partition as needed.</span>
+<span class="nc" id="L100">    } catch (IOException e) {</span>
+<span class="nc" id="L101">      throw new HoodieIOException(&quot;Failed to make dir &quot; + path, e);</span>
+<span class="nc" id="L102">    }</span>
+
+<span class="nc" id="L104">    return new Path(path.toString(), FSUtils.makeDataFileName(instantTime, writeToken, fileId));</span>
+  }
+
+  @Override
+  public Schema getWriterSchema() {
+<span class="nc" id="L109">    return writerSchema;</span>
+  }
+
+  /**
+   * Determines whether we can accept the incoming records, into the current file. Depending on
+   * &lt;p&gt;
+   * - Whether it belongs to the same partitionPath as existing records - Whether the current file written bytes lt max
+   * file size
+   */
+  @Override
+  public boolean canWrite(HoodieRecord record) {
+<span class="nc" id="L120">    return false;</span>
+  }
+
+  /**
+   * Perform the actual writing of the given record into the backing file.
+   */
+  @Override
+  public void write(HoodieRecord record, Option&lt;IndexedRecord&gt; insertValue) {
+    // NO_OP
+<span class="nc" id="L129">  }</span>
+
+  /**
+   * Perform the actual writing of the given record into the backing file.
+   */
+  @Override
+  public void write(HoodieRecord record, Option&lt;IndexedRecord&gt; avroRecord, Option&lt;Exception&gt; exception) {
+<span class="nc" id="L136">    Option recordMetadata = record.getData().getMetadata();</span>
+<span class="nc bnc" id="L137" title="All 4 branches missed.">    if (exception.isPresent() &amp;&amp; exception.get() instanceof Throwable) {</span>
+      // Not throwing exception from here, since we don't want to fail the entire job for a single record
+<span class="nc" id="L139">      writeStatus.markFailure(record, exception.get(), recordMetadata);</span>
+<span class="nc" id="L140">      LOG.error(&quot;Error writing record &quot; + record, exception.get());</span>
+    } else {
+<span class="nc" id="L142">      write(record, avroRecord);</span>
+    }
+<span class="nc" id="L144">  }</span>
+
+  /**
+   * Rewrite the GenericRecord with the Schema containing the Hoodie Metadata fields.
+   */
+  @Override
+  protected GenericRecord rewriteRecord(GenericRecord record) {
+<span class="nc" id="L151">    return HoodieAvroUtils.rewriteRecord(record, writerSchema);</span>
+  }
+
+  /**
+   * Extract old file path, initialize StorageWriter and WriteStatus.
+   */
+  private void init(String fileId, String partitionPath, HoodieBaseFile dataFileToBeMerged) {
+<span class="nc" id="L158">    LOG.info(&quot;partitionPath:&quot; + partitionPath + &quot;, fileId to be merged:&quot; + fileId);</span>
+<span class="nc" id="L159">    this.writtenRecordKeys = new HashSet&lt;&gt;();</span>
+<span class="nc" id="L160">    writeStatus.setStat(new HoodieWriteStat());</span>
+    try {
+<span class="nc" id="L162">      String latestValidFilePath = dataFileToBeMerged.getFileName();</span>
+<span class="nc" id="L163">      writeStatus.getStat().setPrevCommit(FSUtils.getCommitTime(latestValidFilePath));</span>
+
+<span class="nc" id="L165">      HoodiePartitionMetadata partitionMetadata = new HoodiePartitionMetadata(fs, instantTime,</span>
+<span class="nc" id="L166">          new Path(config.getBasePath()), FSUtils.getPartitionPath(config.getBasePath(), partitionPath));</span>
+<span class="nc" id="L167">      partitionMetadata.trySave(TaskContext.getPartitionId());</span>
+
+<span class="nc" id="L169">      oldFilePath = new Path(config.getBasePath() + &quot;/&quot; + partitionPath + &quot;/&quot; + latestValidFilePath);</span>
+<span class="nc bnc" id="L170" title="All 2 branches missed.">      String relativePath = new Path((partitionPath.isEmpty() ? &quot;&quot; : partitionPath + &quot;/&quot;)</span>
+<span class="nc" id="L171">          + FSUtils.makeDataFileName(instantTime, writeToken, fileId)).toString();</span>
+<span class="nc" id="L172">      newFilePath = new Path(config.getBasePath(), relativePath);</span>
+
+<span class="nc" id="L174">      LOG.info(String.format(&quot;Merging new data into oldPath %s, as newPath %s&quot;, oldFilePath.toString(),</span>
+<span class="nc" id="L175">          newFilePath.toString()));</span>
+      // file name is same for all records, in this bunch
+<span class="nc" id="L177">      writeStatus.setFileId(fileId);</span>
+<span class="nc" id="L178">      writeStatus.setPartitionPath(partitionPath);</span>
+<span class="nc" id="L179">      writeStatus.getStat().setPartitionPath(partitionPath);</span>
+<span class="nc" id="L180">      writeStatus.getStat().setFileId(fileId);</span>
+<span class="nc" id="L181">      writeStatus.getStat().setPath(new Path(config.getBasePath()), newFilePath);</span>
+
+      // Create Marker file
+<span class="nc" id="L184">      createMarkerFile(partitionPath);</span>
+
+      // Create the writer for writing the new version file
+<span class="nc" id="L187">      storageWriter =</span>
+<span class="nc" id="L188">          HoodieStorageWriterFactory.getStorageWriter(instantTime, newFilePath, hoodieTable, config, writerSchema);</span>
+<span class="nc" id="L189">    } catch (IOException io) {</span>
+<span class="nc" id="L190">      LOG.error(&quot;Error in update task at commit &quot; + instantTime, io);</span>
+<span class="nc" id="L191">      writeStatus.setGlobalError(io);</span>
+<span class="nc" id="L192">      throw new HoodieUpsertException(&quot;Failed to initialize HoodieUpdateHandle for FileId: &quot; + fileId + &quot; on commit &quot;</span>
+<span class="nc" id="L193">          + instantTime + &quot; on path &quot; + hoodieTable.getMetaClient().getBasePath(), io);</span>
+<span class="nc" id="L194">    }</span>
+<span class="nc" id="L195">  }</span>
+
+  /**
+   * Load the new incoming records in a map and return partitionPath.
+   */
+  private String init(String fileId, Iterator&lt;HoodieRecord&lt;T&gt;&gt; newRecordsItr) {
+    try {
+      // Load the new records in a map
+<span class="nc" id="L203">      long memoryForMerge = config.getMaxMemoryPerPartitionMerge();</span>
+<span class="nc" id="L204">      LOG.info(&quot;MaxMemoryPerPartitionMerge =&gt; &quot; + memoryForMerge);</span>
+<span class="nc" id="L205">      this.keyToNewRecords = new ExternalSpillableMap&lt;&gt;(memoryForMerge, config.getSpillableMapBasePath(),</span>
+          new DefaultSizeEstimator(), new HoodieRecordSizeEstimator(originalSchema));
+<span class="nc" id="L207">    } catch (IOException io) {</span>
+<span class="nc" id="L208">      throw new HoodieIOException(&quot;Cannot instantiate an ExternalSpillableMap&quot;, io);</span>
+<span class="nc" id="L209">    }</span>
+<span class="nc" id="L210">    String partitionPath = null;</span>
+<span class="nc bnc" id="L211" title="All 2 branches missed.">    while (newRecordsItr.hasNext()) {</span>
+<span class="nc" id="L212">      HoodieRecord&lt;T&gt; record = newRecordsItr.next();</span>
+<span class="nc" id="L213">      partitionPath = record.getPartitionPath();</span>
+      // update the new location of the record, so we know where to find it next
+<span class="nc" id="L215">      record.unseal();</span>
+<span class="nc" id="L216">      record.setNewLocation(new HoodieRecordLocation(instantTime, fileId));</span>
+<span class="nc" id="L217">      record.seal();</span>
+      // NOTE: Once Records are added to map (spillable-map), DO NOT change it as they won't persist
+<span class="nc" id="L219">      keyToNewRecords.put(record.getRecordKey(), record);</span>
+<span class="nc" id="L220">    }</span>
+<span class="nc" id="L221">    LOG.info(&quot;Number of entries in MemoryBasedMap =&gt; &quot;</span>
+<span class="nc" id="L222">        + ((ExternalSpillableMap) keyToNewRecords).getInMemoryMapNumEntries()</span>
+        + &quot;Total size in bytes of MemoryBasedMap =&gt; &quot;
+<span class="nc" id="L224">        + ((ExternalSpillableMap) keyToNewRecords).getCurrentInMemoryMapSize() + &quot;Number of entries in DiskBasedMap =&gt; &quot;</span>
+<span class="nc" id="L225">        + ((ExternalSpillableMap) keyToNewRecords).getDiskBasedMapNumEntries() + &quot;Size of file spilled to disk =&gt; &quot;</span>
+<span class="nc" id="L226">        + ((ExternalSpillableMap) keyToNewRecords).getSizeOfFileOnDiskInBytes());</span>
+<span class="nc" id="L227">    return partitionPath;</span>
+  }
+
+  private boolean writeUpdateRecord(HoodieRecord&lt;T&gt; hoodieRecord, Option&lt;IndexedRecord&gt; indexedRecord) {
+<span class="nc bnc" id="L231" title="All 2 branches missed.">    if (indexedRecord.isPresent()) {</span>
+<span class="nc" id="L232">      updatedRecordsWritten++;</span>
+    }
+<span class="nc" id="L234">    return writeRecord(hoodieRecord, indexedRecord);</span>
+  }
+
+  private boolean writeRecord(HoodieRecord&lt;T&gt; hoodieRecord, Option&lt;IndexedRecord&gt; indexedRecord) {
+<span class="nc" id="L238">    Option recordMetadata = hoodieRecord.getData().getMetadata();</span>
+    try {
+<span class="nc bnc" id="L240" title="All 2 branches missed.">      if (indexedRecord.isPresent()) {</span>
+        // Convert GenericRecord to GenericRecord with hoodie commit metadata in schema
+<span class="nc" id="L242">        IndexedRecord recordWithMetadataInSchema = rewriteRecord((GenericRecord) indexedRecord.get());</span>
+<span class="nc" id="L243">        storageWriter.writeAvroWithMetadata(recordWithMetadataInSchema, hoodieRecord);</span>
+<span class="nc" id="L244">        recordsWritten++;</span>
+<span class="nc" id="L245">      } else {</span>
+<span class="nc" id="L246">        recordsDeleted++;</span>
+      }
+
+<span class="nc" id="L249">      writeStatus.markSuccess(hoodieRecord, recordMetadata);</span>
+      // deflate record payload after recording success. This will help users access payload as a
+      // part of marking
+      // record successful.
+<span class="nc" id="L253">      hoodieRecord.deflate();</span>
+<span class="nc" id="L254">      return true;</span>
+<span class="nc" id="L255">    } catch (Exception e) {</span>
+<span class="nc" id="L256">      LOG.error(&quot;Error writing record  &quot; + hoodieRecord, e);</span>
+<span class="nc" id="L257">      writeStatus.markFailure(hoodieRecord, e, recordMetadata);</span>
+    }
+<span class="nc" id="L259">    return false;</span>
+  }
+
+  /**
+   * Go through an old record. Here if we detect a newer version shows up, we write the new one to the file.
+   */
+  public void write(GenericRecord oldRecord) {
+<span class="nc" id="L266">    String key = oldRecord.get(HoodieRecord.RECORD_KEY_METADATA_FIELD).toString();</span>
+<span class="nc" id="L267">    boolean copyOldRecord = true;</span>
+<span class="nc bnc" id="L268" title="All 2 branches missed.">    if (keyToNewRecords.containsKey(key)) {</span>
+      // If we have duplicate records that we are updating, then the hoodie record will be deflated after
+      // writing the first record. So make a copy of the record to be merged
+<span class="nc" id="L271">      HoodieRecord&lt;T&gt; hoodieRecord = new HoodieRecord&lt;&gt;(keyToNewRecords.get(key));</span>
+      try {
+<span class="nc" id="L273">        Option&lt;IndexedRecord&gt; combinedAvroRecord =</span>
+<span class="nc bnc" id="L274" title="All 2 branches missed.">            hoodieRecord.getData().combineAndGetUpdateValue(oldRecord, useWriterSchema ? writerSchema : originalSchema);</span>
+<span class="nc bnc" id="L275" title="All 2 branches missed.">        if (writeUpdateRecord(hoodieRecord, combinedAvroRecord)) {</span>
+          /*
+           * ONLY WHEN 1) we have an update for this key AND 2) We are able to successfully write the the combined new
+           * value
+           *
+           * We no longer need to copy the old record over.
+           */
+<span class="nc" id="L282">          copyOldRecord = false;</span>
+        }
+<span class="nc" id="L284">        writtenRecordKeys.add(key);</span>
+<span class="nc" id="L285">      } catch (Exception e) {</span>
+<span class="nc" id="L286">        throw new HoodieUpsertException(&quot;Failed to combine/merge new record with old value in storage, for new record {&quot;</span>
+<span class="nc" id="L287">            + keyToNewRecords.get(key) + &quot;}, old value {&quot; + oldRecord + &quot;}&quot;, e);</span>
+<span class="nc" id="L288">      }</span>
+    }
+
+<span class="nc bnc" id="L291" title="All 2 branches missed.">    if (copyOldRecord) {</span>
+      // this should work as it is, since this is an existing record
+<span class="nc" id="L293">      String errMsg = &quot;Failed to merge old record into new file for key &quot; + key + &quot; from old file &quot; + getOldFilePath()</span>
+          + &quot; to new file &quot; + newFilePath;
+      try {
+<span class="nc" id="L296">        storageWriter.writeAvro(key, oldRecord);</span>
+<span class="nc" id="L297">      } catch (ClassCastException e) {</span>
+<span class="nc" id="L298">        LOG.error(&quot;Schema mismatch when rewriting old record &quot; + oldRecord + &quot; from file &quot; + getOldFilePath()</span>
+<span class="nc" id="L299">            + &quot; to file &quot; + newFilePath + &quot; with writerSchema &quot; + writerSchema.toString(true));</span>
+<span class="nc" id="L300">        throw new HoodieUpsertException(errMsg, e);</span>
+<span class="nc" id="L301">      } catch (IOException e) {</span>
+<span class="nc" id="L302">        LOG.error(&quot;Failed to merge old record into new file for key &quot; + key + &quot; from old file &quot; + getOldFilePath()</span>
+            + &quot; to new file &quot; + newFilePath, e);
+<span class="nc" id="L304">        throw new HoodieUpsertException(errMsg, e);</span>
+<span class="nc" id="L305">      }</span>
+<span class="nc" id="L306">      recordsWritten++;</span>
+    }
+<span class="nc" id="L308">  }</span>
+
+  @Override
+  public WriteStatus close() {
+    try {
+      // write out any pending records (this can happen when inserts are turned into updates)
+<span class="nc bnc" id="L314" title="All 2 branches missed.">      Iterator&lt;HoodieRecord&lt;T&gt;&gt; newRecordsItr = (keyToNewRecords instanceof ExternalSpillableMap)</span>
+<span class="nc" id="L315">          ? ((ExternalSpillableMap)keyToNewRecords).iterator() : keyToNewRecords.values().iterator();</span>
+<span class="nc bnc" id="L316" title="All 2 branches missed.">      while (newRecordsItr.hasNext()) {</span>
+<span class="nc" id="L317">        HoodieRecord&lt;T&gt; hoodieRecord = newRecordsItr.next();</span>
+<span class="nc bnc" id="L318" title="All 2 branches missed.">        if (!writtenRecordKeys.contains(hoodieRecord.getRecordKey())) {</span>
+<span class="nc bnc" id="L319" title="All 2 branches missed.">          if (useWriterSchema) {</span>
+<span class="nc" id="L320">            writeRecord(hoodieRecord, hoodieRecord.getData().getInsertValue(writerSchema));</span>
+          } else {
+<span class="nc" id="L322">            writeRecord(hoodieRecord, hoodieRecord.getData().getInsertValue(originalSchema));</span>
+          }
+<span class="nc" id="L324">          insertRecordsWritten++;</span>
+        }
+<span class="nc" id="L326">      }</span>
+<span class="nc" id="L327">      keyToNewRecords.clear();</span>
+<span class="nc" id="L328">      writtenRecordKeys.clear();</span>
+
+<span class="nc bnc" id="L330" title="All 2 branches missed.">      if (storageWriter != null) {</span>
+<span class="nc" id="L331">        storageWriter.close();</span>
+      }
+
+<span class="nc" id="L334">      long fileSizeInBytes = FSUtils.getFileSize(fs, newFilePath);</span>
+<span class="nc" id="L335">      HoodieWriteStat stat = writeStatus.getStat();</span>
+
+<span class="nc" id="L337">      stat.setTotalWriteBytes(fileSizeInBytes);</span>
+<span class="nc" id="L338">      stat.setFileSizeInBytes(fileSizeInBytes);</span>
+<span class="nc" id="L339">      stat.setNumWrites(recordsWritten);</span>
+<span class="nc" id="L340">      stat.setNumDeletes(recordsDeleted);</span>
+<span class="nc" id="L341">      stat.setNumUpdateWrites(updatedRecordsWritten);</span>
+<span class="nc" id="L342">      stat.setNumInserts(insertRecordsWritten);</span>
+<span class="nc" id="L343">      stat.setTotalWriteErrors(writeStatus.getTotalErrorRecords());</span>
+<span class="nc" id="L344">      RuntimeStats runtimeStats = new RuntimeStats();</span>
+<span class="nc" id="L345">      runtimeStats.setTotalUpsertTime(timer.endTimer());</span>
+<span class="nc" id="L346">      stat.setRuntimeStats(runtimeStats);</span>
+
+<span class="nc" id="L348">      LOG.info(String.format(&quot;MergeHandle for partitionPath %s fileID %s, took %d ms.&quot;, stat.getPartitionPath(),</span>
+<span class="nc" id="L349">          stat.getFileId(), runtimeStats.getTotalUpsertTime()));</span>
+
+<span class="nc" id="L351">      return writeStatus;</span>
+<span class="nc" id="L352">    } catch (IOException e) {</span>
+<span class="nc" id="L353">      throw new HoodieUpsertException(&quot;Failed to close UpdateHandle&quot;, e);</span>
+    }
+  }
+
+  public Path getOldFilePath() {
+<span class="nc" id="L358">    return oldFilePath;</span>
+  }
+
+  @Override
+  public WriteStatus getWriteStatus() {
+<span class="nc" id="L363">    return writeStatus;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

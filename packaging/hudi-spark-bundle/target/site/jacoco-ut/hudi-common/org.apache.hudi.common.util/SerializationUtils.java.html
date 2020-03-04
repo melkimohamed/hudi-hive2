@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>SerializationUtils.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.util</a> &gt; <span class="el_source">SerializationUtils.java</span></div><h1>SerializationUtils.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.util;
+
+import org.apache.hudi.exception.HoodieSerializationException;
+
+import com.esotericsoftware.kryo.Kryo;
+import com.esotericsoftware.kryo.io.Input;
+import com.esotericsoftware.kryo.io.Output;
+import org.objenesis.strategy.StdInstantiatorStrategy;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.Serializable;
+
+/**
+ * {@link SerializationUtils} class internally uses {@link Kryo} serializer for serializing / deserializing objects.
+ */
+<span class="nc" id="L35">public class SerializationUtils {</span>
+
+  // Caching kryo serializer to avoid creating kryo instance for every serde operation
+<span class="nc" id="L38">  private static final ThreadLocal&lt;KryoSerializerInstance&gt; SERIALIZER_REF =</span>
+<span class="nc" id="L39">      ThreadLocal.withInitial(KryoSerializerInstance::new);</span>
+
+  // Serialize
+  // -----------------------------------------------------------------------
+
+  /**
+   * &lt;p&gt;
+   * Serializes an {@code Object} to a byte array for storage/serialization.
+   * &lt;/p&gt;
+   *
+   * @param obj the object to serialize to bytes
+   * @return a byte[] with the converted Serializable
+   * @throws IOException if the serialization fails
+   */
+  public static byte[] serialize(final Object obj) throws IOException {
+<span class="nc" id="L54">    return SERIALIZER_REF.get().serialize(obj);</span>
+  }
+
+  // Deserialize
+  // -----------------------------------------------------------------------
+
+  /**
+   * &lt;p&gt;
+   * Deserializes a single {@code Object} from an array of bytes.
+   * &lt;/p&gt;
+   *
+   * &lt;p&gt;
+   * If the call site incorrectly types the return value, a {@link ClassCastException} is thrown from the call site.
+   * Without Generics in this declaration, the call site must type cast and can cause the same ClassCastException. Note
+   * that in both cases, the ClassCastException is in the call site, not in this method.
+   * &lt;/p&gt;
+   *
+   * @param &lt;T&gt; the object type to be deserialized
+   * @param objectData the serialized object, must not be null
+   * @return the deserialized object
+   * @throws IllegalArgumentException if {@code objectData} is {@code null}
+   * @throws HoodieSerializationException (runtime) if the serialization fails
+   */
+  public static &lt;T&gt; T deserialize(final byte[] objectData) {
+<span class="nc bnc" id="L78" title="All 2 branches missed.">    if (objectData == null) {</span>
+<span class="nc" id="L79">      throw new IllegalArgumentException(&quot;The byte[] must not be null&quot;);</span>
+    }
+<span class="nc" id="L81">    return (T) SERIALIZER_REF.get().deserialize(objectData);</span>
+  }
+
+  private static class KryoSerializerInstance implements Serializable {
+    public static final int KRYO_SERIALIZER_INITIAL_BUFFER_SIZE = 1048576;
+    private final Kryo kryo;
+    // Caching ByteArrayOutputStream to avoid recreating it for every operation
+    private final ByteArrayOutputStream baos;
+
+<span class="nc" id="L90">    KryoSerializerInstance() {</span>
+<span class="nc" id="L91">      KryoInstantiator kryoInstantiator = new KryoInstantiator();</span>
+<span class="nc" id="L92">      kryo = kryoInstantiator.newKryo();</span>
+<span class="nc" id="L93">      baos = new ByteArrayOutputStream(KRYO_SERIALIZER_INITIAL_BUFFER_SIZE);</span>
+<span class="nc" id="L94">      kryo.setRegistrationRequired(false);</span>
+<span class="nc" id="L95">    }</span>
+
+    byte[] serialize(Object obj) {
+<span class="nc" id="L98">      kryo.reset();</span>
+<span class="nc" id="L99">      baos.reset();</span>
+<span class="nc" id="L100">      Output output = new Output(baos);</span>
+<span class="nc" id="L101">      this.kryo.writeClassAndObject(output, obj);</span>
+<span class="nc" id="L102">      output.close();</span>
+<span class="nc" id="L103">      return baos.toByteArray();</span>
+    }
+
+    Object deserialize(byte[] objectData) {
+<span class="nc" id="L107">      return this.kryo.readClassAndObject(new Input(objectData));</span>
+    }
+  }
+
+  /**
+   * This class has a no-arg constructor, suitable for use with reflection instantiation. For Details checkout
+   * com.twitter.chill.KryoBase.
+   */
+  private static class KryoInstantiator implements Serializable {
+
+    public Kryo newKryo() {
+
+<span class="nc" id="L119">      Kryo kryo = new Kryo();</span>
+      // ensure that kryo doesn't fail if classes are not registered with kryo.
+<span class="nc" id="L121">      kryo.setRegistrationRequired(false);</span>
+      // This would be used for object initialization if nothing else works out.
+<span class="nc" id="L123">      kryo.setInstantiatorStrategy(new Kryo.DefaultInstantiatorStrategy(new StdInstantiatorStrategy()));</span>
+      // Handle cases where we may have an odd classloader setup like with libjars
+      // for hadoop
+<span class="nc" id="L126">      kryo.setClassLoader(Thread.currentThread().getContextClassLoader());</span>
+<span class="nc" id="L127">      return kryo;</span>
+    }
+
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

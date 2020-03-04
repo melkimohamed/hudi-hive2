@@ -1,0 +1,301 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieDefaultTimeline.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.table.timeline</a> &gt; <span class="el_source">HoodieDefaultTimeline.java</span></div><h1>HoodieDefaultTimeline.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.table.timeline;
+
+import org.apache.hudi.common.table.HoodieTimeline;
+import org.apache.hudi.common.table.timeline.HoodieInstant.State;
+import org.apache.hudi.common.util.Option;
+import org.apache.hudi.common.util.StringUtils;
+import org.apache.hudi.exception.HoodieException;
+
+import com.google.common.collect.Sets;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+import java.io.Serializable;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import static java.util.Collections.reverse;
+
+/**
+ * HoodieDefaultTimeline is a default implementation of the HoodieTimeline. It provides methods to inspect a
+ * List[HoodieInstant]. Function to get the details of the instant is passed in as a lamdba.
+ *
+ * @see HoodieTimeline
+ */
+public class HoodieDefaultTimeline implements HoodieTimeline {
+
+<span class="nc" id="L52">  private static final Logger LOG = LogManager.getLogger(HoodieDefaultTimeline.class);</span>
+
+  private static final String HASHING_ALGORITHM = &quot;SHA-256&quot;;
+
+  protected transient Function&lt;HoodieInstant, Option&lt;byte[]&gt;&gt; details;
+  private List&lt;HoodieInstant&gt; instants;
+  private String timelineHash;
+
+<span class="nc" id="L60">  public HoodieDefaultTimeline(Stream&lt;HoodieInstant&gt; instants, Function&lt;HoodieInstant, Option&lt;byte[]&gt;&gt; details) {</span>
+<span class="nc" id="L61">    this.details = details;</span>
+<span class="nc" id="L62">    setInstants(instants.collect(Collectors.toList()));</span>
+<span class="nc" id="L63">  }</span>
+
+  public void setInstants(List&lt;HoodieInstant&gt; instants) {
+<span class="nc" id="L66">    this.instants = instants;</span>
+    final MessageDigest md;
+    try {
+<span class="nc" id="L69">      md = MessageDigest.getInstance(HASHING_ALGORITHM);</span>
+<span class="nc" id="L70">      this.instants.forEach(i -&gt; md</span>
+<span class="nc" id="L71">          .update(StringUtils.joinUsingDelim(&quot;_&quot;, i.getTimestamp(), i.getAction(), i.getState().name()).getBytes()));</span>
+<span class="nc" id="L72">    } catch (NoSuchAlgorithmException nse) {</span>
+<span class="nc" id="L73">      throw new HoodieException(nse);</span>
+<span class="nc" id="L74">    }</span>
+<span class="nc" id="L75">    this.timelineHash = StringUtils.toHexString(md.digest());</span>
+<span class="nc" id="L76">  }</span>
+
+  /**
+   * For serializing and de-serializing.
+   *
+   * @deprecated
+   */
+<span class="nc" id="L83">  public HoodieDefaultTimeline() {}</span>
+
+  @Override
+  public HoodieTimeline filterInflights() {
+<span class="nc" id="L87">    return new HoodieDefaultTimeline(instants.stream().filter(HoodieInstant::isInflight), details);</span>
+  }
+
+  @Override
+  public HoodieTimeline filterInflightsAndRequested() {
+<span class="nc" id="L92">    return new HoodieDefaultTimeline(</span>
+<span class="nc bnc" id="L93" title="All 4 branches missed.">        instants.stream().filter(i -&gt; i.getState().equals(State.REQUESTED) || i.getState().equals(State.INFLIGHT)),</span>
+        details);
+  }
+
+  @Override
+  public HoodieTimeline filterPendingExcludingCompaction() {
+<span class="nc bnc" id="L99" title="All 2 branches missed.">    return new HoodieDefaultTimeline(instants.stream().filter(instant -&gt; (!instant.isCompleted())</span>
+<span class="nc bnc" id="L100" title="All 2 branches missed.">            &amp;&amp; (!instant.getAction().equals(HoodieTimeline.COMPACTION_ACTION))), details);</span>
+  }
+
+  @Override
+  public HoodieTimeline filterCompletedInstants() {
+<span class="nc" id="L105">    return new HoodieDefaultTimeline(instants.stream().filter(HoodieInstant::isCompleted), details);</span>
+  }
+
+  @Override
+  public HoodieTimeline filterCompletedAndCompactionInstants() {
+<span class="nc bnc" id="L110" title="All 2 branches missed.">    return new HoodieDefaultTimeline(instants.stream().filter(s -&gt; !s.isInflight()</span>
+<span class="nc bnc" id="L111" title="All 2 branches missed.">            || s.getAction().equals(HoodieTimeline.COMPACTION_ACTION)), details);</span>
+  }
+
+  @Override
+  public HoodieTimeline getCommitsAndCompactionTimeline() {
+<span class="nc" id="L116">    Set&lt;String&gt; validActions = Sets.newHashSet(COMMIT_ACTION, DELTA_COMMIT_ACTION, COMPACTION_ACTION);</span>
+<span class="nc" id="L117">    return new HoodieDefaultTimeline(instants.stream().filter(s -&gt; validActions.contains(s.getAction())), details);</span>
+  }
+
+  @Override
+  public HoodieTimeline filterPendingCompactionTimeline() {
+<span class="nc" id="L122">    return new HoodieDefaultTimeline(</span>
+<span class="nc" id="L123">        instants.stream().filter(s -&gt; s.getAction().equals(HoodieTimeline.COMPACTION_ACTION)), details);</span>
+  }
+
+  @Override
+  public HoodieDefaultTimeline findInstantsInRange(String startTs, String endTs) {
+<span class="nc" id="L128">    return new HoodieDefaultTimeline(</span>
+<span class="nc" id="L129">        instants.stream().filter(s -&gt; HoodieTimeline.isInRange(s.getTimestamp(), startTs, endTs)), details);</span>
+  }
+
+  @Override
+  public HoodieDefaultTimeline findInstantsAfter(String commitTime, int numCommits) {
+<span class="nc" id="L134">    return new HoodieDefaultTimeline(instants.stream()</span>
+<span class="nc" id="L135">        .filter(s -&gt; HoodieTimeline.compareTimestamps(s.getTimestamp(), commitTime, GREATER)).limit(numCommits),</span>
+        details);
+  }
+
+  @Override
+  public HoodieTimeline filter(Predicate&lt;HoodieInstant&gt; filter) {
+<span class="nc" id="L141">    return new HoodieDefaultTimeline(instants.stream().filter(filter), details);</span>
+  }
+
+  /**
+   * Get all instants (commits, delta commits) that produce new data, in the active timeline.
+   */
+  public HoodieTimeline getCommitsTimeline() {
+<span class="nc" id="L148">    return getTimelineOfActions(Sets.newHashSet(COMMIT_ACTION, DELTA_COMMIT_ACTION));</span>
+  }
+
+  /**
+   * Get all instants (commits, delta commits, clean, savepoint, rollback) that result in actions, in the active
+   * timeline.
+   */
+  public HoodieTimeline getAllCommitsTimeline() {
+<span class="nc" id="L156">    return getTimelineOfActions(Sets.newHashSet(COMMIT_ACTION, DELTA_COMMIT_ACTION, CLEAN_ACTION, COMPACTION_ACTION,</span>
+            SAVEPOINT_ACTION, ROLLBACK_ACTION));
+  }
+
+  /**
+   * Get only pure commits (inflight and completed) in the active timeline.
+   */
+  public HoodieTimeline getCommitTimeline() {
+<span class="nc" id="L164">    return getTimelineOfActions(Collections.singleton(COMMIT_ACTION));</span>
+  }
+
+  /**
+   * Get only the delta commits (inflight and completed) in the active timeline.
+   */
+  public HoodieTimeline getDeltaCommitTimeline() {
+<span class="nc" id="L171">    return new HoodieDefaultTimeline(filterInstantsByAction(DELTA_COMMIT_ACTION),</span>
+            (Function&lt;HoodieInstant, Option&lt;byte[]&gt;&gt; &amp; Serializable) this::getInstantDetails);
+  }
+
+  /**
+   * Get a timeline of a specific set of actions. useful to create a merged timeline of multiple actions.
+   *
+   * @param actions actions allowed in the timeline
+   */
+  public HoodieTimeline getTimelineOfActions(Set&lt;String&gt; actions) {
+<span class="nc" id="L181">    return new HoodieDefaultTimeline(getInstants().filter(s -&gt; actions.contains(s.getAction())),</span>
+            (Function&lt;HoodieInstant, Option&lt;byte[]&gt;&gt; &amp; Serializable) this::getInstantDetails);
+  }
+
+  /**
+   * Get only the cleaner action (inflight and completed) in the active timeline.
+   */
+  public HoodieTimeline getCleanerTimeline() {
+<span class="nc" id="L189">    return new HoodieDefaultTimeline(filterInstantsByAction(CLEAN_ACTION),</span>
+            (Function&lt;HoodieInstant, Option&lt;byte[]&gt;&gt; &amp; Serializable) this::getInstantDetails);
+  }
+
+  /**
+   * Get only the rollback action (inflight and completed) in the active timeline.
+   */
+  public HoodieTimeline getRollbackTimeline() {
+<span class="nc" id="L197">    return new HoodieDefaultTimeline(filterInstantsByAction(ROLLBACK_ACTION),</span>
+            (Function&lt;HoodieInstant, Option&lt;byte[]&gt;&gt; &amp; Serializable) this::getInstantDetails);
+  }
+
+  /**
+   * Get only the save point action (inflight and completed) in the active timeline.
+   */
+  public HoodieTimeline getSavePointTimeline() {
+<span class="nc" id="L205">    return new HoodieDefaultTimeline(filterInstantsByAction(SAVEPOINT_ACTION),</span>
+            (Function&lt;HoodieInstant, Option&lt;byte[]&gt;&gt; &amp; Serializable) this::getInstantDetails);
+  }
+
+  /**
+   * Get only the restore action (inflight and completed) in the active timeline.
+   */
+  public HoodieTimeline getRestoreTimeline() {
+<span class="nc" id="L213">    return new HoodieDefaultTimeline(filterInstantsByAction(RESTORE_ACTION),</span>
+            (Function&lt;HoodieInstant, Option&lt;byte[]&gt;&gt; &amp; Serializable) this::getInstantDetails);
+  }
+
+  protected Stream&lt;HoodieInstant&gt; filterInstantsByAction(String action) {
+<span class="nc" id="L218">    return getInstants().filter(s -&gt; s.getAction().equals(action));</span>
+  }
+
+  @Override
+  public boolean empty() {
+<span class="nc bnc" id="L223" title="All 2 branches missed.">    return !instants.stream().findFirst().isPresent();</span>
+  }
+
+  @Override
+  public int countInstants() {
+<span class="nc" id="L228">    return instants.size();</span>
+  }
+
+  @Override
+  public Option&lt;HoodieInstant&gt; firstInstant() {
+<span class="nc" id="L233">    return Option.fromJavaOptional(instants.stream().findFirst());</span>
+  }
+
+  @Override
+  public Option&lt;HoodieInstant&gt; nthInstant(int n) {
+<span class="nc bnc" id="L238" title="All 4 branches missed.">    if (empty() || n &gt;= countInstants()) {</span>
+<span class="nc" id="L239">      return Option.empty();</span>
+    }
+<span class="nc" id="L241">    return Option.of(instants.get(n));</span>
+  }
+
+  @Override
+  public Option&lt;HoodieInstant&gt; lastInstant() {
+<span class="nc bnc" id="L246" title="All 2 branches missed.">    return empty() ? Option.empty() : nthInstant(countInstants() - 1);</span>
+  }
+
+  @Override
+  public Option&lt;HoodieInstant&gt; nthFromLastInstant(int n) {
+<span class="nc bnc" id="L251" title="All 2 branches missed.">    if (countInstants() &lt; n + 1) {</span>
+<span class="nc" id="L252">      return Option.empty();</span>
+    }
+<span class="nc" id="L254">    return nthInstant(countInstants() - 1 - n);</span>
+  }
+
+  @Override
+  public boolean containsInstant(HoodieInstant instant) {
+<span class="nc" id="L259">    return instants.stream().anyMatch(s -&gt; s.equals(instant));</span>
+  }
+
+  @Override
+  public boolean containsOrBeforeTimelineStarts(String instant) {
+<span class="nc bnc" id="L264" title="All 4 branches missed.">    return instants.stream().anyMatch(s -&gt; s.getTimestamp().equals(instant)) || isBeforeTimelineStarts(instant);</span>
+  }
+
+  @Override
+  public String getTimelineHash() {
+<span class="nc" id="L269">    return timelineHash;</span>
+  }
+
+  @Override
+  public Stream&lt;HoodieInstant&gt; getInstants() {
+<span class="nc" id="L274">    return instants.stream();</span>
+  }
+
+  @Override
+  public Stream&lt;HoodieInstant&gt; getReverseOrderedInstants() {
+<span class="nc" id="L279">    List&lt;HoodieInstant&gt; instants = getInstants().collect(Collectors.toList());</span>
+<span class="nc" id="L280">    reverse(instants);</span>
+<span class="nc" id="L281">    return instants.stream();</span>
+  }
+
+  @Override
+  public boolean isBeforeTimelineStarts(String instant) {
+<span class="nc" id="L286">    Option&lt;HoodieInstant&gt; firstCommit = firstInstant();</span>
+<span class="nc bnc" id="L287" title="All 2 branches missed.">    return firstCommit.isPresent()</span>
+<span class="nc bnc" id="L288" title="All 2 branches missed.">        &amp;&amp; HoodieTimeline.compareTimestamps(instant, firstCommit.get().getTimestamp(), LESSER);</span>
+  }
+
+  @Override
+  public Option&lt;byte[]&gt; getInstantDetails(HoodieInstant instant) {
+<span class="nc" id="L293">    return details.apply(instant);</span>
+  }
+
+  @Override
+  public String toString() {
+<span class="nc" id="L298">    return this.getClass().getName() + &quot;: &quot; + instants.stream().map(Object::toString).collect(Collectors.joining(&quot;,&quot;));</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

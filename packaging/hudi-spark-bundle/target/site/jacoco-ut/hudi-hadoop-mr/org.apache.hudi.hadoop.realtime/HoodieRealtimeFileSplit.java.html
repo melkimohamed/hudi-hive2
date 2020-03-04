@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieRealtimeFileSplit.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-hadoop-mr</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.hadoop.realtime</a> &gt; <span class="el_source">HoodieRealtimeFileSplit.java</span></div><h1>HoodieRealtimeFileSplit.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.hadoop.realtime;
+
+import org.apache.hadoop.mapred.FileSplit;
+
+import java.io.DataInput;
+import java.io.DataOutput;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Filesplit that wraps the base split and a list of log files to merge deltas from.
+ */
+public class HoodieRealtimeFileSplit extends FileSplit {
+
+  private List&lt;String&gt; deltaLogPaths;
+
+  private String maxCommitTime;
+
+  private String basePath;
+
+  public HoodieRealtimeFileSplit() {
+<span class="nc" id="L42">    super();</span>
+<span class="nc" id="L43">  }</span>
+
+  public HoodieRealtimeFileSplit(FileSplit baseSplit, String basePath, List&lt;String&gt; deltaLogPaths, String maxCommitTime)
+      throws IOException {
+<span class="nc" id="L47">    super(baseSplit.getPath(), baseSplit.getStart(), baseSplit.getLength(), baseSplit.getLocations());</span>
+<span class="nc" id="L48">    this.deltaLogPaths = deltaLogPaths;</span>
+<span class="nc" id="L49">    this.maxCommitTime = maxCommitTime;</span>
+<span class="nc" id="L50">    this.basePath = basePath;</span>
+<span class="nc" id="L51">  }</span>
+
+  public List&lt;String&gt; getDeltaLogPaths() {
+<span class="nc" id="L54">    return deltaLogPaths;</span>
+  }
+
+  public String getMaxCommitTime() {
+<span class="nc" id="L58">    return maxCommitTime;</span>
+  }
+
+  public String getBasePath() {
+<span class="nc" id="L62">    return basePath;</span>
+  }
+
+  private static void writeString(String str, DataOutput out) throws IOException {
+<span class="nc" id="L66">    byte[] bytes = str.getBytes(StandardCharsets.UTF_8);</span>
+<span class="nc" id="L67">    out.writeInt(bytes.length);</span>
+<span class="nc" id="L68">    out.write(bytes);</span>
+<span class="nc" id="L69">  }</span>
+
+  private static String readString(DataInput in) throws IOException {
+<span class="nc" id="L72">    byte[] bytes = new byte[in.readInt()];</span>
+<span class="nc" id="L73">    in.readFully(bytes);</span>
+<span class="nc" id="L74">    return new String(bytes, StandardCharsets.UTF_8);</span>
+  }
+
+  @Override
+  public void write(DataOutput out) throws IOException {
+<span class="nc" id="L79">    super.write(out);</span>
+<span class="nc" id="L80">    writeString(basePath, out);</span>
+<span class="nc" id="L81">    writeString(maxCommitTime, out);</span>
+<span class="nc" id="L82">    out.writeInt(deltaLogPaths.size());</span>
+<span class="nc bnc" id="L83" title="All 2 branches missed.">    for (String logFilePath : deltaLogPaths) {</span>
+<span class="nc" id="L84">      writeString(logFilePath, out);</span>
+<span class="nc" id="L85">    }</span>
+<span class="nc" id="L86">  }</span>
+
+  @Override
+  public void readFields(DataInput in) throws IOException {
+<span class="nc" id="L90">    super.readFields(in);</span>
+<span class="nc" id="L91">    basePath = readString(in);</span>
+<span class="nc" id="L92">    maxCommitTime = readString(in);</span>
+<span class="nc" id="L93">    int totalLogFiles = in.readInt();</span>
+<span class="nc" id="L94">    deltaLogPaths = new ArrayList&lt;&gt;(totalLogFiles);</span>
+<span class="nc bnc" id="L95" title="All 2 branches missed.">    for (int i = 0; i &lt; totalLogFiles; i++) {</span>
+<span class="nc" id="L96">      deltaLogPaths.add(readString(in));</span>
+    }
+<span class="nc" id="L98">  }</span>
+
+  @Override
+  public String toString() {
+<span class="nc" id="L102">    return &quot;HoodieRealtimeFileSplit{DataPath=&quot; + getPath() + &quot;, deltaLogPaths=&quot; + deltaLogPaths</span>
+        + &quot;, maxCommitTime='&quot; + maxCommitTime + '\'' + &quot;, basePath='&quot; + basePath + '\'' + '}';
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

@@ -1,0 +1,9 @@
+org/apache/hudi/timeline/service/handlers/FileSliceHandler.class
+org/apache/hudi/timeline/service/handlers/BaseFileHandler.class
+org/apache/hudi/timeline/service/FileSystemViewHandler$ViewHandler.class
+org/apache/hudi/timeline/service/TimelineService.class
+org/apache/hudi/timeline/service/FileSystemViewHandler.class
+org/apache/hudi/timeline/service/handlers/Handler.class
+org/apache/hudi/timeline/service/TimelineService$Config.class
+org/apache/hudi/timeline/service/TimelineService$1.class
+org/apache/hudi/timeline/service/handlers/TimelineHandler.class

@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>MetricsGraphiteReporter.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-client</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.metrics</a> &gt; <span class="el_source">MetricsGraphiteReporter.java</span></div><h1>MetricsGraphiteReporter.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.metrics;
+
+import org.apache.hudi.config.HoodieWriteConfig;
+
+import com.codahale.metrics.MetricFilter;
+import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.graphite.Graphite;
+import com.codahale.metrics.graphite.GraphiteReporter;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+import java.io.Closeable;
+import java.net.InetSocketAddress;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * Implementation of Graphite reporter, which connects to the Graphite server, and send metrics to that server.
+ */
+public class MetricsGraphiteReporter extends MetricsReporter {
+
+<span class="nc" id="L39">  private static final Logger LOG = LogManager.getLogger(MetricsGraphiteReporter.class);</span>
+  private final MetricRegistry registry;
+  private final GraphiteReporter graphiteReporter;
+  private final HoodieWriteConfig config;
+  private String serverHost;
+  private int serverPort;
+
+<span class="nc" id="L46">  public MetricsGraphiteReporter(HoodieWriteConfig config, MetricRegistry registry) {</span>
+<span class="nc" id="L47">    this.registry = registry;</span>
+<span class="nc" id="L48">    this.config = config;</span>
+
+    // Check the serverHost and serverPort here
+<span class="nc" id="L51">    this.serverHost = config.getGraphiteServerHost();</span>
+<span class="nc" id="L52">    this.serverPort = config.getGraphiteServerPort();</span>
+<span class="nc bnc" id="L53" title="All 4 branches missed.">    if (serverHost == null || serverPort == 0) {</span>
+<span class="nc" id="L54">      throw new RuntimeException(String.format(&quot;Graphite cannot be initialized with serverHost[%s] and serverPort[%s].&quot;,</span>
+<span class="nc" id="L55">          serverHost, serverPort));</span>
+    }
+
+<span class="nc" id="L58">    this.graphiteReporter = createGraphiteReport();</span>
+<span class="nc" id="L59">  }</span>
+
+  @Override
+  public void start() {
+<span class="nc bnc" id="L63" title="All 2 branches missed.">    if (graphiteReporter != null) {</span>
+<span class="nc" id="L64">      graphiteReporter.start(30, TimeUnit.SECONDS);</span>
+    } else {
+<span class="nc" id="L66">      LOG.error(&quot;Cannot start as the graphiteReporter is null.&quot;);</span>
+    }
+<span class="nc" id="L68">  }</span>
+
+  @Override
+  public void report() {
+<span class="nc bnc" id="L72" title="All 2 branches missed.">    if (graphiteReporter != null) {</span>
+<span class="nc" id="L73">      graphiteReporter.report();</span>
+    } else {
+<span class="nc" id="L75">      LOG.error(&quot;Cannot report metrics as the graphiteReporter is null.&quot;);</span>
+    }
+<span class="nc" id="L77">  }</span>
+
+  @Override
+  public Closeable getReporter() {
+<span class="nc" id="L81">    return graphiteReporter;</span>
+  }
+
+  private GraphiteReporter createGraphiteReport() {
+<span class="nc" id="L85">    Graphite graphite = new Graphite(new InetSocketAddress(serverHost, serverPort));</span>
+<span class="nc" id="L86">    String reporterPrefix = config.getGraphiteMetricPrefix();</span>
+<span class="nc" id="L87">    return GraphiteReporter.forRegistry(registry).prefixedWith(reporterPrefix).convertRatesTo(TimeUnit.SECONDS)</span>
+<span class="nc" id="L88">        .convertDurationsTo(TimeUnit.MILLISECONDS).filter(MetricFilter.ALL).build(graphite);</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

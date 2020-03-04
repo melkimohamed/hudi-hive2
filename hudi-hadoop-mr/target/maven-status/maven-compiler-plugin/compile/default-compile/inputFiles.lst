@@ -1,0 +1,16 @@
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/AbstractRealtimeRecordReader.java
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/com/uber/hoodie/hadoop/HoodieInputFormat.java
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/UseFileSplitsFromInputFormat.java
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/HoodieParquetRealtimeInputFormat.java
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/RealtimeCompactedRecordReader.java
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/com/uber/hoodie/hadoop/realtime/HoodieRealtimeInputFormat.java
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/InputPathHandler.java
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/SafeParquetRecordReaderWrapper.java
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/HoodieHiveUtil.java
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/HoodieRealtimeRecordReader.java
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/RealtimeUnmergedRecordReader.java
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/HoodieROTablePathFilter.java
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/HoodieParquetInputFormat.java
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/HoodieRealtimeFileSplit.java
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/RecordReaderValueIterator.java
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/HoodieParquetSerde.java

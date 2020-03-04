@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieROTablePathFilter.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-hadoop-mr</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.hadoop</a> &gt; <span class="el_source">HoodieROTablePathFilter.java</span></div><h1>HoodieROTablePathFilter.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.hadoop;
+
+import org.apache.hudi.common.model.HoodieBaseFile;
+import org.apache.hudi.common.model.HoodiePartitionMetadata;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.common.table.view.HoodieTableFileSystemView;
+import org.apache.hudi.exception.TableNotFoundException;
+import org.apache.hudi.exception.HoodieException;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.PathFilter;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+import java.io.Serializable;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.stream.Collectors;
+
+/**
+ * Given a path is a part of - Hoodie table = accepts ONLY the latest version of each path - Non-Hoodie table = then
+ * always accept
+ * &lt;p&gt;
+ * We can set this filter, on a query engine's Hadoop Config and if it respects path filters, then you should be able to
+ * query both hoodie and non-hoodie tables as you would normally do.
+ * &lt;p&gt;
+ * hadoopConf.setClass(&quot;mapreduce.input.pathFilter.class&quot;, org.apache.hudi.hadoop .HoodieROTablePathFilter.class,
+ * org.apache.hadoop.fs.PathFilter.class)
+ */
+public class HoodieROTablePathFilter implements PathFilter, Serializable {
+
+<span class="nc" id="L53">  private static final Logger LOG = LogManager.getLogger(HoodieROTablePathFilter.class);</span>
+
+  /**
+   * Its quite common, to have all files from a given partition path be passed into accept(), cache the check for hoodie
+   * metadata for known partition paths and the latest versions of files.
+   */
+  private HashMap&lt;String, HashSet&lt;Path&gt;&gt; hoodiePathCache;
+
+  /**
+   * Paths that are known to be non-hoodie tables.
+   */
+  private HashSet&lt;String&gt; nonHoodiePathCache;
+
+
+  private transient FileSystem fs;
+
+<span class="nc" id="L69">  public HoodieROTablePathFilter() {</span>
+<span class="nc" id="L70">    hoodiePathCache = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L71">    nonHoodiePathCache = new HashSet&lt;&gt;();</span>
+<span class="nc" id="L72">  }</span>
+
+  /**
+   * Obtain the path, two levels from provided path.
+   *
+   * @return said path if available, null otherwise
+   */
+  private Path safeGetParentsParent(Path path) {
+<span class="nc bnc" id="L80" title="All 4 branches missed.">    if (path.getParent() != null &amp;&amp; path.getParent().getParent() != null</span>
+<span class="nc bnc" id="L81" title="All 2 branches missed.">        &amp;&amp; path.getParent().getParent().getParent() != null) {</span>
+<span class="nc" id="L82">      return path.getParent().getParent().getParent();</span>
+    }
+<span class="nc" id="L84">    return null;</span>
+  }
+
+  @Override
+  public boolean accept(Path path) {
+
+<span class="nc bnc" id="L90" title="All 2 branches missed.">    if (LOG.isDebugEnabled()) {</span>
+<span class="nc" id="L91">      LOG.debug(&quot;Checking acceptance for path &quot; + path);</span>
+    }
+<span class="nc" id="L93">    Path folder = null;</span>
+    try {
+<span class="nc bnc" id="L95" title="All 2 branches missed.">      if (fs == null) {</span>
+<span class="nc" id="L96">        fs = path.getFileSystem(new Configuration());</span>
+      }
+
+      // Assumes path is a file
+<span class="nc" id="L100">      folder = path.getParent(); // get the immediate parent.</span>
+      // Try to use the caches.
+<span class="nc bnc" id="L102" title="All 2 branches missed.">      if (nonHoodiePathCache.contains(folder.toString())) {</span>
+<span class="nc bnc" id="L103" title="All 2 branches missed.">        if (LOG.isDebugEnabled()) {</span>
+<span class="nc" id="L104">          LOG.debug(&quot;Accepting non-hoodie path from cache: &quot; + path);</span>
+        }
+<span class="nc" id="L106">        return true;</span>
+      }
+
+<span class="nc bnc" id="L109" title="All 2 branches missed.">      if (hoodiePathCache.containsKey(folder.toString())) {</span>
+<span class="nc bnc" id="L110" title="All 2 branches missed.">        if (LOG.isDebugEnabled()) {</span>
+<span class="nc" id="L111">          LOG.debug(String.format(&quot;%s Hoodie path checked against cache, accept =&gt; %s \n&quot;, path,</span>
+<span class="nc" id="L112">              hoodiePathCache.get(folder.toString()).contains(path)));</span>
+        }
+<span class="nc" id="L114">        return hoodiePathCache.get(folder.toString()).contains(path);</span>
+      }
+
+      // Skip all files that are descendants of .hoodie in its path.
+<span class="nc" id="L118">      String filePath = path.toString();</span>
+<span class="nc bnc" id="L119" title="All 2 branches missed.">      if (filePath.contains(&quot;/&quot; + HoodieTableMetaClient.METAFOLDER_NAME + &quot;/&quot;)</span>
+<span class="nc bnc" id="L120" title="All 2 branches missed.">          || filePath.endsWith(&quot;/&quot; + HoodieTableMetaClient.METAFOLDER_NAME)) {</span>
+<span class="nc bnc" id="L121" title="All 2 branches missed.">        if (LOG.isDebugEnabled()) {</span>
+<span class="nc" id="L122">          LOG.debug(String.format(&quot;Skipping Hoodie Metadata file  %s \n&quot;, filePath));</span>
+        }
+<span class="nc" id="L124">        return false;</span>
+      }
+
+      // Perform actual checking.
+      Path baseDir;
+<span class="nc bnc" id="L129" title="All 2 branches missed.">      if (HoodiePartitionMetadata.hasPartitionMetadata(fs, folder)) {</span>
+<span class="nc" id="L130">        HoodiePartitionMetadata metadata = new HoodiePartitionMetadata(fs, folder);</span>
+<span class="nc" id="L131">        metadata.readFromFS();</span>
+<span class="nc" id="L132">        baseDir = HoodieHiveUtil.getNthParent(folder, metadata.getPartitionDepth());</span>
+<span class="nc" id="L133">      } else {</span>
+<span class="nc" id="L134">        baseDir = safeGetParentsParent(folder);</span>
+      }
+
+<span class="nc bnc" id="L137" title="All 2 branches missed.">      if (baseDir != null) {</span>
+        try {
+<span class="nc" id="L139">          HoodieTableMetaClient metaClient = new HoodieTableMetaClient(fs.getConf(), baseDir.toString());</span>
+<span class="nc" id="L140">          HoodieTableFileSystemView fsView = new HoodieTableFileSystemView(metaClient,</span>
+<span class="nc" id="L141">              metaClient.getActiveTimeline().getCommitsTimeline().filterCompletedInstants(), fs.listStatus(folder));</span>
+<span class="nc" id="L142">          List&lt;HoodieBaseFile&gt; latestFiles = fsView.getLatestBaseFiles().collect(Collectors.toList());</span>
+          // populate the cache
+<span class="nc bnc" id="L144" title="All 2 branches missed.">          if (!hoodiePathCache.containsKey(folder.toString())) {</span>
+<span class="nc" id="L145">            hoodiePathCache.put(folder.toString(), new HashSet&lt;&gt;());</span>
+          }
+<span class="nc" id="L147">          LOG.info(&quot;Based on hoodie metadata from base path: &quot; + baseDir.toString() + &quot;, caching &quot; + latestFiles.size()</span>
+              + &quot; files under &quot; + folder);
+<span class="nc bnc" id="L149" title="All 2 branches missed.">          for (HoodieBaseFile lfile : latestFiles) {</span>
+<span class="nc" id="L150">            hoodiePathCache.get(folder.toString()).add(new Path(lfile.getPath()));</span>
+<span class="nc" id="L151">          }</span>
+
+          // accept the path, if its among the latest files.
+<span class="nc bnc" id="L154" title="All 2 branches missed.">          if (LOG.isDebugEnabled()) {</span>
+<span class="nc" id="L155">            LOG.debug(String.format(&quot;%s checked after cache population, accept =&gt; %s \n&quot;, path,</span>
+<span class="nc" id="L156">                hoodiePathCache.get(folder.toString()).contains(path)));</span>
+          }
+<span class="nc" id="L158">          return hoodiePathCache.get(folder.toString()).contains(path);</span>
+<span class="nc" id="L159">        } catch (TableNotFoundException e) {</span>
+          // Non-hoodie path, accept it.
+<span class="nc bnc" id="L161" title="All 2 branches missed.">          if (LOG.isDebugEnabled()) {</span>
+<span class="nc" id="L162">            LOG.debug(String.format(&quot;(1) Caching non-hoodie path under %s \n&quot;, folder.toString()));</span>
+          }
+<span class="nc" id="L164">          nonHoodiePathCache.add(folder.toString());</span>
+<span class="nc" id="L165">          return true;</span>
+        }
+      } else {
+        // files is at &lt; 3 level depth in FS tree, can't be hoodie dataset
+<span class="nc bnc" id="L169" title="All 2 branches missed.">        if (LOG.isDebugEnabled()) {</span>
+<span class="nc" id="L170">          LOG.debug(String.format(&quot;(2) Caching non-hoodie path under %s \n&quot;, folder.toString()));</span>
+        }
+<span class="nc" id="L172">        nonHoodiePathCache.add(folder.toString());</span>
+<span class="nc" id="L173">        return true;</span>
+      }
+<span class="nc" id="L175">    } catch (Exception e) {</span>
+<span class="nc" id="L176">      String msg = &quot;Error checking path :&quot; + path + &quot;, under folder: &quot; + folder;</span>
+<span class="nc" id="L177">      LOG.error(msg, e);</span>
+<span class="nc" id="L178">      throw new HoodieException(msg, e);</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

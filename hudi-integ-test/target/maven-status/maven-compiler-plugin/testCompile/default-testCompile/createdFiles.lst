@@ -1,0 +1,5 @@
+org/apache/hudi/integ/ITTestHoodieSanity.class
+org/apache/hudi/integ/ITTestBase$TestExecStartResultCallback.class
+org/apache/hudi/integ/ITTestBase.class
+org/apache/hudi/integ/ITTestHoodieDemo.class
+org/apache/hudi/integ/ITTestHoodieSanity$PartitionType.class

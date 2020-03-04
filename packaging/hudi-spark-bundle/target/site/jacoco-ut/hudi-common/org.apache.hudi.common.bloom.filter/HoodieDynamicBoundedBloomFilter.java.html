@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieDynamicBoundedBloomFilter.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.bloom.filter</a> &gt; <span class="el_source">HoodieDynamicBoundedBloomFilter.java</span></div><h1>HoodieDynamicBoundedBloomFilter.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.bloom.filter;
+
+import org.apache.hudi.exception.HoodieIndexException;
+
+import org.apache.hadoop.util.bloom.Key;
+
+import javax.xml.bind.DatatypeConverter;
+
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+
+/**
+ * Hoodie's dynamic bloom bounded bloom filter. This is based largely on Hadoop's DynamicBloomFilter, but with a bound
+ * on amount of entries to dynamically expand to. Once the entries added reach the bound, false positive ratio may not
+ * be guaranteed.
+ */
+public class HoodieDynamicBoundedBloomFilter implements BloomFilter {
+
+  public static final String TYPE_CODE_PREFIX = &quot;DYNAMIC&quot;;
+  private InternalDynamicBloomFilter internalDynamicBloomFilter;
+
+  /**
+   * Instantiates {@link HoodieDynamicBoundedBloomFilter} with the given args.
+   *
+   * @param numEntries The total number of entries.
+   * @param errorRate  maximum allowable error rate.
+   * @param hashType   type of the hashing function (see {@link org.apache.hadoop.util.hash.Hash}).
+   * @return the {@link HoodieDynamicBoundedBloomFilter} thus created
+   */
+<span class="nc" id="L52">  HoodieDynamicBoundedBloomFilter(int numEntries, double errorRate, int hashType, int maxNoOfEntries) {</span>
+    // Bit size
+<span class="nc" id="L54">    int bitSize = BloomFilterUtils.getBitSize(numEntries, errorRate);</span>
+    // Number of the hash functions
+<span class="nc" id="L56">    int numHashs = BloomFilterUtils.getNumHashes(bitSize, numEntries);</span>
+<span class="nc" id="L57">    this.internalDynamicBloomFilter = new InternalDynamicBloomFilter(bitSize, numHashs, hashType, numEntries,</span>
+        maxNoOfEntries);
+<span class="nc" id="L59">  }</span>
+
+  /**
+   * Generate {@link HoodieDynamicBoundedBloomFilter} from the given {@code serString} serialized string.
+   *
+   * @param serString the serialized string which represents the {@link HoodieDynamicBoundedBloomFilter}
+   * @param typeCode  type code of the bloom filter
+   */
+<span class="nc" id="L67">  HoodieDynamicBoundedBloomFilter(String serString, BloomFilterTypeCode typeCode) {</span>
+    // ignoring the type code for now, since we have just one version
+<span class="nc" id="L69">    byte[] bytes = DatatypeConverter.parseBase64Binary(serString);</span>
+<span class="nc" id="L70">    DataInputStream dis = new DataInputStream(new ByteArrayInputStream(bytes));</span>
+    try {
+<span class="nc" id="L72">      internalDynamicBloomFilter = new InternalDynamicBloomFilter();</span>
+<span class="nc" id="L73">      internalDynamicBloomFilter.readFields(dis);</span>
+<span class="nc" id="L74">      dis.close();</span>
+<span class="nc" id="L75">    } catch (IOException e) {</span>
+<span class="nc" id="L76">      throw new HoodieIndexException(&quot;Could not deserialize BloomFilter instance&quot;, e);</span>
+<span class="nc" id="L77">    }</span>
+<span class="nc" id="L78">  }</span>
+
+  @Override
+  public void add(String key) {
+<span class="nc" id="L82">    internalDynamicBloomFilter.add(new Key(key.getBytes(StandardCharsets.UTF_8)));</span>
+<span class="nc" id="L83">  }</span>
+
+  @Override
+  public boolean mightContain(String key) {
+<span class="nc" id="L87">    return internalDynamicBloomFilter.membershipTest(new Key(key.getBytes(StandardCharsets.UTF_8)));</span>
+  }
+
+  @Override
+  public String serializeToString() {
+<span class="nc" id="L92">    ByteArrayOutputStream baos = new ByteArrayOutputStream();</span>
+<span class="nc" id="L93">    DataOutputStream dos = new DataOutputStream(baos);</span>
+    try {
+<span class="nc" id="L95">      internalDynamicBloomFilter.write(dos);</span>
+<span class="nc" id="L96">      byte[] bytes = baos.toByteArray();</span>
+<span class="nc" id="L97">      dos.close();</span>
+<span class="nc" id="L98">      return DatatypeConverter.printBase64Binary(bytes);</span>
+<span class="nc" id="L99">    } catch (IOException e) {</span>
+<span class="nc" id="L100">      throw new HoodieIndexException(&quot;Could not serialize BloomFilter instance&quot;, e);</span>
+    }
+  }
+
+  @Override
+  public BloomFilterTypeCode getBloomFilterTypeCode() {
+<span class="nc" id="L106">    return BloomFilterTypeCode.DYNAMIC_V0;</span>
+  }
+}
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

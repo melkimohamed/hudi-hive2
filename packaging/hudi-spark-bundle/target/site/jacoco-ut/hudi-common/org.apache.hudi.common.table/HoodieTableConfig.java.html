@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieTableConfig.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.table</a> &gt; <span class="el_source">HoodieTableConfig.java</span></div><h1>HoodieTableConfig.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.table;
+
+import org.apache.hudi.common.model.HoodieFileFormat;
+import org.apache.hudi.common.model.HoodieTableType;
+import org.apache.hudi.common.model.OverwriteWithLatestAvroPayload;
+import org.apache.hudi.common.model.TimelineLayoutVersion;
+import org.apache.hudi.common.util.Option;
+import org.apache.hudi.exception.HoodieIOException;
+
+import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FSDataOutputStream;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+import java.io.IOException;
+import java.io.Serializable;
+import java.util.Date;
+import java.util.Map;
+import java.util.Properties;
+import java.util.stream.Collectors;
+
+/**
+ * Configurations on the Hoodie Table like type of ingestion, storage formats, hive table name etc Configurations are
+ * loaded from hoodie.properties, these properties are usually set during initializing a path as hoodie base path and
+ * never changes during the lifetime of a hoodie table.
+ *
+ * @see HoodieTableMetaClient
+ * @since 0.3.0
+ */
+public class HoodieTableConfig implements Serializable {
+
+<span class="nc" id="L52">  private static final Logger LOG = LogManager.getLogger(HoodieTableConfig.class);</span>
+
+  public static final String HOODIE_PROPERTIES_FILE = &quot;hoodie.properties&quot;;
+  public static final String HOODIE_TABLE_NAME_PROP_NAME = &quot;hoodie.table.name&quot;;
+  public static final String HOODIE_TABLE_TYPE_PROP_NAME = &quot;hoodie.table.type&quot;;
+  @Deprecated
+  public static final String HOODIE_RO_FILE_FORMAT_PROP_NAME = &quot;hoodie.table.ro.file.format&quot;;
+  @Deprecated
+  public static final String HOODIE_RT_FILE_FORMAT_PROP_NAME = &quot;hoodie.table.rt.file.format&quot;;
+  public static final String HOODIE_BASE_FILE_FORMAT_PROP_NAME = &quot;hoodie.table.base.file.format&quot;;
+  public static final String HOODIE_LOG_FILE_FORMAT_PROP_NAME = &quot;hoodie.table.log.file.format&quot;;
+  public static final String HOODIE_TIMELINE_LAYOUT_VERSION = &quot;hoodie.timeline.layout.version&quot;;
+  public static final String HOODIE_PAYLOAD_CLASS_PROP_NAME = &quot;hoodie.compaction.payload.class&quot;;
+  public static final String HOODIE_ARCHIVELOG_FOLDER_PROP_NAME = &quot;hoodie.archivelog.folder&quot;;
+
+<span class="nc" id="L67">  public static final HoodieTableType DEFAULT_TABLE_TYPE = HoodieTableType.COPY_ON_WRITE;</span>
+<span class="nc" id="L68">  public static final HoodieFileFormat DEFAULT_BASE_FILE_FORMAT = HoodieFileFormat.PARQUET;</span>
+<span class="nc" id="L69">  public static final HoodieFileFormat DEFAULT_LOG_FILE_FORMAT = HoodieFileFormat.HOODIE_LOG;</span>
+<span class="nc" id="L70">  public static final String DEFAULT_PAYLOAD_CLASS = OverwriteWithLatestAvroPayload.class.getName();</span>
+<span class="nc" id="L71">  public static final Integer DEFAULT_TIMELINE_LAYOUT_VERSION = TimelineLayoutVersion.VERSION_0;</span>
+  public static final String DEFAULT_ARCHIVELOG_FOLDER = &quot;&quot;;
+  private Properties props;
+
+<span class="nc" id="L75">  public HoodieTableConfig(FileSystem fs, String metaPath, String payloadClassName) {</span>
+<span class="nc" id="L76">    Properties props = new Properties();</span>
+<span class="nc" id="L77">    Path propertyPath = new Path(metaPath, HOODIE_PROPERTIES_FILE);</span>
+<span class="nc" id="L78">    LOG.info(&quot;Loading table properties from &quot; + propertyPath);</span>
+    try {
+<span class="nc" id="L80">      try (FSDataInputStream inputStream = fs.open(propertyPath)) {</span>
+<span class="nc" id="L81">        props.load(inputStream);</span>
+      }
+<span class="nc bnc" id="L83" title="All 4 branches missed.">      if (props.containsKey(HOODIE_PAYLOAD_CLASS_PROP_NAME) &amp;&amp; payloadClassName != null</span>
+<span class="nc bnc" id="L84" title="All 2 branches missed.">          &amp;&amp; !props.getProperty(HOODIE_PAYLOAD_CLASS_PROP_NAME).equals(payloadClassName)) {</span>
+<span class="nc" id="L85">        props.setProperty(HOODIE_PAYLOAD_CLASS_PROP_NAME, payloadClassName);</span>
+<span class="nc" id="L86">        try (FSDataOutputStream outputStream = fs.create(propertyPath)) {</span>
+<span class="nc" id="L87">          props.store(outputStream, &quot;Properties saved on &quot; + new Date(System.currentTimeMillis()));</span>
+        }
+      }
+<span class="nc" id="L90">    } catch (IOException e) {</span>
+<span class="nc" id="L91">      throw new HoodieIOException(&quot;Could not load Hoodie properties from &quot; + propertyPath, e);</span>
+<span class="nc" id="L92">    }</span>
+<span class="nc" id="L93">    this.props = props;</span>
+<span class="nc" id="L94">  }</span>
+
+<span class="nc" id="L96">  public HoodieTableConfig(Properties props) {</span>
+<span class="nc" id="L97">    this.props = props;</span>
+<span class="nc" id="L98">  }</span>
+
+  /**
+   * For serailizing and de-serializing.
+   *
+   * @deprecated
+   */
+<span class="nc" id="L105">  public HoodieTableConfig() {}</span>
+
+  /**
+   * Initialize the hoodie meta directory and any necessary files inside the meta (including the hoodie.properties).
+   */
+  public static void createHoodieProperties(FileSystem fs, Path metadataFolder, Properties properties)
+      throws IOException {
+<span class="nc bnc" id="L112" title="All 2 branches missed.">    if (!fs.exists(metadataFolder)) {</span>
+<span class="nc" id="L113">      fs.mkdirs(metadataFolder);</span>
+    }
+<span class="nc" id="L115">    Path propertyPath = new Path(metadataFolder, HOODIE_PROPERTIES_FILE);</span>
+<span class="nc" id="L116">    try (FSDataOutputStream outputStream = fs.create(propertyPath)) {</span>
+<span class="nc bnc" id="L117" title="All 2 branches missed.">      if (!properties.containsKey(HOODIE_TABLE_NAME_PROP_NAME)) {</span>
+<span class="nc" id="L118">        throw new IllegalArgumentException(HOODIE_TABLE_NAME_PROP_NAME + &quot; property needs to be specified&quot;);</span>
+      }
+<span class="nc bnc" id="L120" title="All 2 branches missed.">      if (!properties.containsKey(HOODIE_TABLE_TYPE_PROP_NAME)) {</span>
+<span class="nc" id="L121">        properties.setProperty(HOODIE_TABLE_TYPE_PROP_NAME, DEFAULT_TABLE_TYPE.name());</span>
+      }
+<span class="nc bnc" id="L123" title="All 2 branches missed.">      if (properties.getProperty(HOODIE_TABLE_TYPE_PROP_NAME).equals(HoodieTableType.MERGE_ON_READ.name())</span>
+<span class="nc bnc" id="L124" title="All 2 branches missed.">          &amp;&amp; !properties.containsKey(HOODIE_PAYLOAD_CLASS_PROP_NAME)) {</span>
+<span class="nc" id="L125">        properties.setProperty(HOODIE_PAYLOAD_CLASS_PROP_NAME, DEFAULT_PAYLOAD_CLASS);</span>
+      }
+<span class="nc bnc" id="L127" title="All 2 branches missed.">      if (!properties.containsKey(HOODIE_ARCHIVELOG_FOLDER_PROP_NAME)) {</span>
+<span class="nc" id="L128">        properties.setProperty(HOODIE_ARCHIVELOG_FOLDER_PROP_NAME, DEFAULT_ARCHIVELOG_FOLDER);</span>
+      }
+<span class="nc bnc" id="L130" title="All 2 branches missed.">      if (!properties.containsKey(HOODIE_TIMELINE_LAYOUT_VERSION)) {</span>
+        // Use latest Version as default unless forced by client
+<span class="nc" id="L132">        properties.setProperty(HOODIE_TIMELINE_LAYOUT_VERSION, TimelineLayoutVersion.CURR_VERSION.toString());</span>
+      }
+<span class="nc" id="L134">      properties.store(outputStream, &quot;Properties saved on &quot; + new Date(System.currentTimeMillis()));</span>
+    }
+<span class="nc" id="L136">  }</span>
+
+  /**
+   * Read the table type from the table properties and if not found, return the default.
+   */
+  public HoodieTableType getTableType() {
+<span class="nc bnc" id="L142" title="All 2 branches missed.">    if (props.containsKey(HOODIE_TABLE_TYPE_PROP_NAME)) {</span>
+<span class="nc" id="L143">      return HoodieTableType.valueOf(props.getProperty(HOODIE_TABLE_TYPE_PROP_NAME));</span>
+    }
+<span class="nc" id="L145">    return DEFAULT_TABLE_TYPE;</span>
+  }
+
+  public Option&lt;TimelineLayoutVersion&gt; getTimelineLayoutVersion() {
+<span class="nc bnc" id="L149" title="All 2 branches missed.">    return props.containsKey(HOODIE_TIMELINE_LAYOUT_VERSION)</span>
+<span class="nc" id="L150">        ? Option.of(new TimelineLayoutVersion(Integer.valueOf(props.getProperty(HOODIE_TIMELINE_LAYOUT_VERSION))))</span>
+<span class="nc" id="L151">        : Option.empty();</span>
+  }
+
+  /**
+   * Read the payload class for HoodieRecords from the table properties.
+   */
+  public String getPayloadClass() {
+    // There could be tables written with payload class from com.uber.hoodie. Need to transparently
+    // change to org.apache.hudi
+<span class="nc" id="L160">    return props.getProperty(HOODIE_PAYLOAD_CLASS_PROP_NAME, DEFAULT_PAYLOAD_CLASS).replace(&quot;com.uber.hoodie&quot;,</span>
+        &quot;org.apache.hudi&quot;);
+  }
+
+  /**
+   * Read the table name.
+   */
+  public String getTableName() {
+<span class="nc" id="L168">    return props.getProperty(HOODIE_TABLE_NAME_PROP_NAME);</span>
+  }
+
+  /**
+   * Get the base file storage format.
+   *
+   * @return HoodieFileFormat for the base file Storage format
+   */
+  public HoodieFileFormat getBaseFileFormat() {
+<span class="nc bnc" id="L177" title="All 2 branches missed.">    if (props.containsKey(HOODIE_BASE_FILE_FORMAT_PROP_NAME)) {</span>
+<span class="nc" id="L178">      return HoodieFileFormat.valueOf(props.getProperty(HOODIE_BASE_FILE_FORMAT_PROP_NAME));</span>
+    }
+<span class="nc bnc" id="L180" title="All 2 branches missed.">    if (props.containsKey(HOODIE_RO_FILE_FORMAT_PROP_NAME)) {</span>
+<span class="nc" id="L181">      return HoodieFileFormat.valueOf(props.getProperty(HOODIE_RO_FILE_FORMAT_PROP_NAME));</span>
+    }
+<span class="nc" id="L183">    return DEFAULT_BASE_FILE_FORMAT;</span>
+  }
+
+  /**
+   * Get the log Storage Format.
+   *
+   * @return HoodieFileFormat for the log Storage format
+   */
+  public HoodieFileFormat getLogFileFormat() {
+<span class="nc bnc" id="L192" title="All 2 branches missed.">    if (props.containsKey(HOODIE_LOG_FILE_FORMAT_PROP_NAME)) {</span>
+<span class="nc" id="L193">      return HoodieFileFormat.valueOf(props.getProperty(HOODIE_LOG_FILE_FORMAT_PROP_NAME));</span>
+    }
+<span class="nc bnc" id="L195" title="All 2 branches missed.">    if (props.containsKey(HOODIE_RT_FILE_FORMAT_PROP_NAME)) {</span>
+<span class="nc" id="L196">      return HoodieFileFormat.valueOf(props.getProperty(HOODIE_RT_FILE_FORMAT_PROP_NAME));</span>
+    }
+<span class="nc" id="L198">    return DEFAULT_LOG_FILE_FORMAT;</span>
+  }
+
+  /**
+   * Get the relative path of archive log folder under metafolder, for this table.
+   */
+  public String getArchivelogFolder() {
+<span class="nc" id="L205">    return props.getProperty(HOODIE_ARCHIVELOG_FOLDER_PROP_NAME, DEFAULT_ARCHIVELOG_FOLDER);</span>
+  }
+
+  public Map&lt;String, String&gt; getProps() {
+<span class="nc" id="L209">    return props.entrySet().stream()</span>
+<span class="nc" id="L210">        .collect(Collectors.toMap(e -&gt; String.valueOf(e.getKey()), e -&gt; String.valueOf(e.getValue())));</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

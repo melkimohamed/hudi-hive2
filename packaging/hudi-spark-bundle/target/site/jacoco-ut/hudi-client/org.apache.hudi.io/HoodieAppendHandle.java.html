@@ -1,0 +1,328 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieAppendHandle.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-client</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.io</a> &gt; <span class="el_source">HoodieAppendHandle.java</span></div><h1>HoodieAppendHandle.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.io;
+
+import org.apache.hudi.client.WriteStatus;
+import org.apache.hudi.common.model.FileSlice;
+import org.apache.hudi.common.model.HoodieDeltaWriteStat;
+import org.apache.hudi.common.model.HoodieKey;
+import org.apache.hudi.common.model.HoodieLogFile;
+import org.apache.hudi.common.model.HoodiePartitionMetadata;
+import org.apache.hudi.common.model.HoodieRecord;
+import org.apache.hudi.common.model.HoodieRecordLocation;
+import org.apache.hudi.common.model.HoodieRecordPayload;
+import org.apache.hudi.common.model.HoodieWriteStat;
+import org.apache.hudi.common.model.HoodieWriteStat.RuntimeStats;
+import org.apache.hudi.common.table.TableFileSystemView.SliceView;
+import org.apache.hudi.common.table.log.HoodieLogFormat;
+import org.apache.hudi.common.table.log.HoodieLogFormat.Writer;
+import org.apache.hudi.common.table.log.block.HoodieAvroDataBlock;
+import org.apache.hudi.common.table.log.block.HoodieDeleteBlock;
+import org.apache.hudi.common.table.log.block.HoodieLogBlock;
+import org.apache.hudi.common.table.log.block.HoodieLogBlock.HeaderMetadataType;
+import org.apache.hudi.common.util.FSUtils;
+import org.apache.hudi.common.util.HoodieAvroUtils;
+import org.apache.hudi.common.util.Option;
+import org.apache.hudi.config.HoodieWriteConfig;
+import org.apache.hudi.exception.HoodieAppendException;
+import org.apache.hudi.exception.HoodieUpsertException;
+import org.apache.hudi.table.HoodieTable;
+
+import org.apache.avro.generic.GenericRecord;
+import org.apache.avro.generic.IndexedRecord;
+import org.apache.hadoop.fs.Path;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+import org.apache.spark.TaskContext;
+import org.apache.spark.util.SizeEstimator;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
+
+/**
+ * IO Operation to append data onto an existing file.
+ */
+public class HoodieAppendHandle&lt;T extends HoodieRecordPayload&gt; extends HoodieWriteHandle&lt;T&gt; {
+
+<span class="nc" id="L68">  private static final Logger LOG = LogManager.getLogger(HoodieAppendHandle.class);</span>
+  // This acts as the sequenceID for records written
+<span class="nc" id="L70">  private static AtomicLong recordIndex = new AtomicLong(1);</span>
+  private final String fileId;
+  // Buffer for holding records in memory before they are flushed to disk
+<span class="nc" id="L73">  private List&lt;IndexedRecord&gt; recordList = new ArrayList&lt;&gt;();</span>
+  // Buffer for holding records (to be deleted) in memory before they are flushed to disk
+<span class="nc" id="L75">  private List&lt;HoodieKey&gt; keysToDelete = new ArrayList&lt;&gt;();</span>
+
+  private String partitionPath;
+  private Iterator&lt;HoodieRecord&lt;T&gt;&gt; recordItr;
+  // Total number of records written during an append
+<span class="nc" id="L80">  private long recordsWritten = 0;</span>
+  // Total number of records deleted during an append
+<span class="nc" id="L82">  private long recordsDeleted = 0;</span>
+  // Total number of records updated during an append
+<span class="nc" id="L84">  private long updatedRecordsWritten = 0;</span>
+  // Average record size for a HoodieRecord. This size is updated at the end of every log block flushed to disk
+<span class="nc" id="L86">  private long averageRecordSize = 0;</span>
+  private HoodieLogFile currentLogFile;
+  private Writer writer;
+  // Flag used to initialize some metadata
+<span class="nc" id="L90">  private boolean doInit = true;</span>
+  // Total number of bytes written during this append phase (an estimation)
+  private long estimatedNumberOfBytesWritten;
+  // Total number of bytes written to file
+<span class="nc" id="L94">  private long sizeInBytes = 0;</span>
+  // Number of records that must be written to meet the max block size for a log block
+<span class="nc" id="L96">  private int numberOfRecords = 0;</span>
+  // Max block size to limit to for a log block
+<span class="nc" id="L98">  private int maxBlockSize = config.getLogFileDataBlockMaxSize();</span>
+  // Header metadata for a log block
+<span class="nc" id="L100">  private Map&lt;HeaderMetadataType, String&gt; header = new HashMap&lt;&gt;();</span>
+  // Total number of new records inserted into the delta file
+<span class="nc" id="L102">  private long insertRecordsWritten = 0;</span>
+
+  public HoodieAppendHandle(HoodieWriteConfig config, String commitTime, HoodieTable&lt;T&gt; hoodieTable, String fileId,
+      Iterator&lt;HoodieRecord&lt;T&gt;&gt; recordItr) {
+<span class="nc" id="L106">    super(config, commitTime, fileId, hoodieTable);</span>
+<span class="nc" id="L107">    writeStatus.setStat(new HoodieDeltaWriteStat());</span>
+<span class="nc" id="L108">    this.fileId = fileId;</span>
+<span class="nc" id="L109">    this.recordItr = recordItr;</span>
+<span class="nc" id="L110">  }</span>
+
+  public HoodieAppendHandle(HoodieWriteConfig config, String commitTime, HoodieTable&lt;T&gt; hoodieTable, String fileId) {
+<span class="nc" id="L113">    this(config, commitTime, hoodieTable, fileId, null);</span>
+<span class="nc" id="L114">  }</span>
+
+  private void init(HoodieRecord record) {
+<span class="nc bnc" id="L117" title="All 2 branches missed.">    if (doInit) {</span>
+<span class="nc" id="L118">      this.partitionPath = record.getPartitionPath();</span>
+      // extract some information from the first record
+<span class="nc" id="L120">      SliceView rtView = hoodieTable.getSliceView();</span>
+<span class="nc" id="L121">      Option&lt;FileSlice&gt; fileSlice = rtView.getLatestFileSlice(partitionPath, fileId);</span>
+      // Set the base commit time as the current commitTime for new inserts into log files
+<span class="nc" id="L123">      String baseInstantTime = instantTime;</span>
+<span class="nc bnc" id="L124" title="All 2 branches missed.">      if (fileSlice.isPresent()) {</span>
+<span class="nc" id="L125">        baseInstantTime = fileSlice.get().getBaseInstantTime();</span>
+      } else {
+        // This means there is no base data file, start appending to a new log file
+<span class="nc" id="L128">        fileSlice = Option.of(new FileSlice(partitionPath, baseInstantTime, this.fileId));</span>
+<span class="nc" id="L129">        LOG.info(&quot;New InsertHandle for partition :&quot; + partitionPath);</span>
+      }
+<span class="nc" id="L131">      writeStatus.getStat().setPrevCommit(baseInstantTime);</span>
+<span class="nc" id="L132">      writeStatus.setFileId(fileId);</span>
+<span class="nc" id="L133">      writeStatus.setPartitionPath(partitionPath);</span>
+<span class="nc" id="L134">      writeStatus.getStat().setPartitionPath(partitionPath);</span>
+<span class="nc" id="L135">      writeStatus.getStat().setFileId(fileId);</span>
+<span class="nc" id="L136">      averageRecordSize = SizeEstimator.estimate(record);</span>
+      try {
+        //save hoodie partition meta in the partition path
+<span class="nc" id="L139">        HoodiePartitionMetadata partitionMetadata = new HoodiePartitionMetadata(fs, baseInstantTime,</span>
+<span class="nc" id="L140">            new Path(config.getBasePath()), FSUtils.getPartitionPath(config.getBasePath(), partitionPath));</span>
+<span class="nc" id="L141">        partitionMetadata.trySave(TaskContext.getPartitionId());</span>
+<span class="nc" id="L142">        this.writer = createLogWriter(fileSlice, baseInstantTime);</span>
+<span class="nc" id="L143">        this.currentLogFile = writer.getLogFile();</span>
+<span class="nc" id="L144">        ((HoodieDeltaWriteStat) writeStatus.getStat()).setLogVersion(currentLogFile.getLogVersion());</span>
+<span class="nc" id="L145">        ((HoodieDeltaWriteStat) writeStatus.getStat()).setLogOffset(writer.getCurrentSize());</span>
+<span class="nc" id="L146">      } catch (Exception e) {</span>
+<span class="nc" id="L147">        LOG.error(&quot;Error in update task at commit &quot; + instantTime, e);</span>
+<span class="nc" id="L148">        writeStatus.setGlobalError(e);</span>
+<span class="nc" id="L149">        throw new HoodieUpsertException(&quot;Failed to initialize HoodieAppendHandle for FileId: &quot; + fileId + &quot; on commit &quot;</span>
+<span class="nc" id="L150">            + instantTime + &quot; on HDFS path &quot; + hoodieTable.getMetaClient().getBasePath() + partitionPath, e);</span>
+<span class="nc" id="L151">      }</span>
+<span class="nc bnc" id="L152" title="All 2 branches missed.">      Path path = partitionPath.length() == 0 ? new Path(writer.getLogFile().getFileName())</span>
+<span class="nc" id="L153">          : new Path(partitionPath, writer.getLogFile().getFileName());</span>
+<span class="nc" id="L154">      writeStatus.getStat().setPath(path.toString());</span>
+<span class="nc" id="L155">      doInit = false;</span>
+    }
+<span class="nc" id="L157">  }</span>
+
+  private Option&lt;IndexedRecord&gt; getIndexedRecord(HoodieRecord&lt;T&gt; hoodieRecord) {
+<span class="nc" id="L160">    Option recordMetadata = hoodieRecord.getData().getMetadata();</span>
+    try {
+<span class="nc" id="L162">      Option&lt;IndexedRecord&gt; avroRecord = hoodieRecord.getData().getInsertValue(originalSchema);</span>
+<span class="nc bnc" id="L163" title="All 2 branches missed.">      if (avroRecord.isPresent()) {</span>
+        // Convert GenericRecord to GenericRecord with hoodie commit metadata in schema
+<span class="nc" id="L165">        avroRecord = Option.of(rewriteRecord((GenericRecord) avroRecord.get()));</span>
+<span class="nc" id="L166">        String seqId =</span>
+<span class="nc" id="L167">            HoodieRecord.generateSequenceId(instantTime, TaskContext.getPartitionId(), recordIndex.getAndIncrement());</span>
+<span class="nc" id="L168">        HoodieAvroUtils.addHoodieKeyToRecord((GenericRecord) avroRecord.get(), hoodieRecord.getRecordKey(),</span>
+<span class="nc" id="L169">            hoodieRecord.getPartitionPath(), fileId);</span>
+<span class="nc" id="L170">        HoodieAvroUtils.addCommitMetadataToRecord((GenericRecord) avroRecord.get(), instantTime, seqId);</span>
+        // If currentLocation is present, then this is an update
+<span class="nc bnc" id="L172" title="All 2 branches missed.">        if (hoodieRecord.getCurrentLocation() != null) {</span>
+<span class="nc" id="L173">          updatedRecordsWritten++;</span>
+        } else {
+<span class="nc" id="L175">          insertRecordsWritten++;</span>
+        }
+<span class="nc" id="L177">        recordsWritten++;</span>
+<span class="nc" id="L178">      } else {</span>
+<span class="nc" id="L179">        recordsDeleted++;</span>
+      }
+
+<span class="nc" id="L182">      writeStatus.markSuccess(hoodieRecord, recordMetadata);</span>
+      // deflate record payload after recording success. This will help users access payload as a
+      // part of marking
+      // record successful.
+<span class="nc" id="L186">      hoodieRecord.deflate();</span>
+<span class="nc" id="L187">      return avroRecord;</span>
+<span class="nc" id="L188">    } catch (Exception e) {</span>
+<span class="nc" id="L189">      LOG.error(&quot;Error writing record  &quot; + hoodieRecord, e);</span>
+<span class="nc" id="L190">      writeStatus.markFailure(hoodieRecord, e, recordMetadata);</span>
+    }
+<span class="nc" id="L192">    return Option.empty();</span>
+  }
+
+  // TODO (NA) - Perform a writerSchema check of current input record with the last writerSchema on log file
+  // to make sure we don't append records with older (shorter) writerSchema than already appended
+  public void doAppend() {
+<span class="nc bnc" id="L198" title="All 2 branches missed.">    while (recordItr.hasNext()) {</span>
+<span class="nc" id="L199">      HoodieRecord record = recordItr.next();</span>
+<span class="nc" id="L200">      init(record);</span>
+<span class="nc" id="L201">      flushToDiskIfRequired(record);</span>
+<span class="nc" id="L202">      writeToBuffer(record);</span>
+<span class="nc" id="L203">    }</span>
+<span class="nc" id="L204">    doAppend(header);</span>
+<span class="nc" id="L205">    estimatedNumberOfBytesWritten += averageRecordSize * numberOfRecords;</span>
+<span class="nc" id="L206">  }</span>
+
+  private void doAppend(Map&lt;HeaderMetadataType, String&gt; header) {
+    try {
+<span class="nc" id="L210">      header.put(HoodieLogBlock.HeaderMetadataType.INSTANT_TIME, instantTime);</span>
+<span class="nc" id="L211">      header.put(HoodieLogBlock.HeaderMetadataType.SCHEMA, writerSchema.toString());</span>
+<span class="nc bnc" id="L212" title="All 2 branches missed.">      if (recordList.size() &gt; 0) {</span>
+<span class="nc" id="L213">        writer = writer.appendBlock(new HoodieAvroDataBlock(recordList, header));</span>
+<span class="nc" id="L214">        recordList.clear();</span>
+      }
+<span class="nc bnc" id="L216" title="All 2 branches missed.">      if (keysToDelete.size() &gt; 0) {</span>
+<span class="nc" id="L217">        writer = writer.appendBlock(new HoodieDeleteBlock(keysToDelete.toArray(new HoodieKey[keysToDelete.size()]), header));</span>
+<span class="nc" id="L218">        keysToDelete.clear();</span>
+      }
+<span class="nc" id="L220">    } catch (Exception e) {</span>
+<span class="nc" id="L221">      throw new HoodieAppendException(&quot;Failed while appending records to &quot; + currentLogFile.getPath(), e);</span>
+<span class="nc" id="L222">    }</span>
+<span class="nc" id="L223">  }</span>
+
+  @Override
+  public boolean canWrite(HoodieRecord record) {
+<span class="nc" id="L227">    return config.getParquetMaxFileSize() &gt;= estimatedNumberOfBytesWritten</span>
+<span class="nc bnc" id="L228" title="All 2 branches missed.">        * config.getLogFileToParquetCompressionRatio();</span>
+  }
+
+  @Override
+  public void write(HoodieRecord record, Option&lt;IndexedRecord&gt; insertValue) {
+<span class="nc" id="L233">    Option recordMetadata = record.getData().getMetadata();</span>
+    try {
+<span class="nc" id="L235">      init(record);</span>
+<span class="nc" id="L236">      flushToDiskIfRequired(record);</span>
+<span class="nc" id="L237">      writeToBuffer(record);</span>
+<span class="nc" id="L238">    } catch (Throwable t) {</span>
+      // Not throwing exception from here, since we don't want to fail the entire job
+      // for a single record
+<span class="nc" id="L241">      writeStatus.markFailure(record, t, recordMetadata);</span>
+<span class="nc" id="L242">      LOG.error(&quot;Error writing record &quot; + record, t);</span>
+<span class="nc" id="L243">    }</span>
+<span class="nc" id="L244">  }</span>
+
+  @Override
+  public WriteStatus close() {
+    try {
+      // flush any remaining records to disk
+<span class="nc" id="L250">      doAppend(header);</span>
+
+<span class="nc bnc" id="L252" title="All 2 branches missed.">      if (writer != null) {</span>
+<span class="nc" id="L253">        sizeInBytes = writer.getCurrentSize();</span>
+<span class="nc" id="L254">        writer.close();</span>
+      }
+
+<span class="nc" id="L257">      HoodieWriteStat stat = writeStatus.getStat();</span>
+<span class="nc" id="L258">      stat.setFileId(this.fileId);</span>
+<span class="nc" id="L259">      stat.setNumWrites(recordsWritten);</span>
+<span class="nc" id="L260">      stat.setNumUpdateWrites(updatedRecordsWritten);</span>
+<span class="nc" id="L261">      stat.setNumInserts(insertRecordsWritten);</span>
+<span class="nc" id="L262">      stat.setNumDeletes(recordsDeleted);</span>
+<span class="nc" id="L263">      stat.setTotalWriteBytes(estimatedNumberOfBytesWritten);</span>
+<span class="nc" id="L264">      stat.setFileSizeInBytes(sizeInBytes);</span>
+<span class="nc" id="L265">      stat.setTotalWriteErrors(writeStatus.getTotalErrorRecords());</span>
+<span class="nc" id="L266">      RuntimeStats runtimeStats = new RuntimeStats();</span>
+<span class="nc" id="L267">      runtimeStats.setTotalUpsertTime(timer.endTimer());</span>
+<span class="nc" id="L268">      stat.setRuntimeStats(runtimeStats);</span>
+
+<span class="nc" id="L270">      LOG.info(String.format(&quot;AppendHandle for partitionPath %s fileID %s, took %d ms.&quot;, stat.getPartitionPath(),</span>
+<span class="nc" id="L271">          stat.getFileId(), runtimeStats.getTotalUpsertTime()));</span>
+
+<span class="nc" id="L273">      return writeStatus;</span>
+<span class="nc" id="L274">    } catch (IOException e) {</span>
+<span class="nc" id="L275">      throw new HoodieUpsertException(&quot;Failed to close UpdateHandle&quot;, e);</span>
+    }
+  }
+
+  @Override
+  public WriteStatus getWriteStatus() {
+<span class="nc" id="L281">    return writeStatus;</span>
+  }
+
+  private Writer createLogWriter(Option&lt;FileSlice&gt; fileSlice, String baseCommitTime)
+      throws IOException, InterruptedException {
+<span class="nc" id="L286">    Option&lt;HoodieLogFile&gt; latestLogFile = fileSlice.get().getLatestLogFile();</span>
+
+<span class="nc" id="L288">    return HoodieLogFormat.newWriterBuilder()</span>
+<span class="nc" id="L289">        .onParentPath(FSUtils.getPartitionPath(hoodieTable.getMetaClient().getBasePath(), partitionPath))</span>
+<span class="nc" id="L290">        .withFileId(fileId).overBaseCommit(baseCommitTime)</span>
+<span class="nc" id="L291">        .withLogVersion(latestLogFile.map(HoodieLogFile::getLogVersion).orElse(HoodieLogFile.LOGFILE_BASE_VERSION))</span>
+<span class="nc" id="L292">        .withSizeThreshold(config.getLogFileMaxSize()).withFs(fs)</span>
+<span class="nc" id="L293">        .withLogWriteToken(latestLogFile.map(x -&gt; FSUtils.getWriteTokenFromLogPath(x.getPath())).orElse(writeToken))</span>
+<span class="nc" id="L294">        .withRolloverLogWriteToken(writeToken).withFileExtension(HoodieLogFile.DELTA_EXTENSION).build();</span>
+  }
+
+  private void writeToBuffer(HoodieRecord&lt;T&gt; record) {
+    // update the new location of the record, so we know where to find it next
+<span class="nc" id="L299">    record.unseal();</span>
+<span class="nc" id="L300">    record.setNewLocation(new HoodieRecordLocation(instantTime, fileId));</span>
+<span class="nc" id="L301">    record.seal();</span>
+<span class="nc" id="L302">    Option&lt;IndexedRecord&gt; indexedRecord = getIndexedRecord(record);</span>
+<span class="nc bnc" id="L303" title="All 2 branches missed.">    if (indexedRecord.isPresent()) {</span>
+<span class="nc" id="L304">      recordList.add(indexedRecord.get());</span>
+    } else {
+<span class="nc" id="L306">      keysToDelete.add(record.getKey());</span>
+    }
+<span class="nc" id="L308">    numberOfRecords++;</span>
+<span class="nc" id="L309">  }</span>
+
+  /**
+   * Checks if the number of records have reached the set threshold and then flushes the records to disk.
+   */
+  private void flushToDiskIfRequired(HoodieRecord record) {
+    // Append if max number of records reached to achieve block size
+<span class="nc bnc" id="L316" title="All 2 branches missed.">    if (numberOfRecords &gt;= (int) (maxBlockSize / averageRecordSize)) {</span>
+      // Recompute averageRecordSize before writing a new block and update existing value with
+      // avg of new and old
+<span class="nc" id="L319">      LOG.info(&quot;AvgRecordSize =&gt; &quot; + averageRecordSize);</span>
+<span class="nc" id="L320">      averageRecordSize = (averageRecordSize + SizeEstimator.estimate(record)) / 2;</span>
+<span class="nc" id="L321">      doAppend(header);</span>
+<span class="nc" id="L322">      estimatedNumberOfBytesWritten += averageRecordSize * numberOfRecords;</span>
+<span class="nc" id="L323">      numberOfRecords = 0;</span>
+    }
+<span class="nc" id="L325">  }</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieMergedLogRecordScanner.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.table.log</a> &gt; <span class="el_source">HoodieMergedLogRecordScanner.java</span></div><h1>HoodieMergedLogRecordScanner.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.table.log;
+
+import org.apache.hudi.common.model.HoodieKey;
+import org.apache.hudi.common.model.HoodieRecord;
+import org.apache.hudi.common.model.HoodieRecordPayload;
+import org.apache.hudi.common.util.DefaultSizeEstimator;
+import org.apache.hudi.common.util.HoodieRecordSizeEstimator;
+import org.apache.hudi.common.util.HoodieTimer;
+import org.apache.hudi.common.util.SpillableMapUtils;
+import org.apache.hudi.common.util.collection.ExternalSpillableMap;
+import org.apache.hudi.exception.HoodieIOException;
+
+import org.apache.avro.Schema;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+import java.io.IOException;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Scans through all the blocks in a list of HoodieLogFile and builds up a compacted/merged list of records which will
+ * be used as a lookup table when merging the base columnar file with the redo log file.
+ *
+ * NOTE: If readBlockLazily is turned on, does not merge, instead keeps reading log blocks and merges everything at once
+ * This is an optimization to avoid seek() back and forth to read new block (forward seek()) and lazily read content of
+ * seen block (reverse and forward seek()) during merge | | Read Block 1 Metadata | | Read Block 1 Data | | | Read Block
+ * 2 Metadata | | Read Block 2 Data | | I/O Pass 1 | ..................... | I/O Pass 2 | ................. | | | Read
+ * Block N Metadata | | Read Block N Data |
+ * &lt;p&gt;
+ * This results in two I/O passes over the log file.
+ */
+
+public class HoodieMergedLogRecordScanner extends AbstractHoodieLogRecordScanner
+    implements Iterable&lt;HoodieRecord&lt;? extends HoodieRecordPayload&gt;&gt; {
+
+<span class="nc" id="L57">  private static final Logger LOG = LogManager.getLogger(HoodieMergedLogRecordScanner.class);</span>
+
+  // Final map of compacted/merged records
+  private final ExternalSpillableMap&lt;String, HoodieRecord&lt;? extends HoodieRecordPayload&gt;&gt; records;
+
+  // count of merged records in log
+  private long numMergedRecordsInLog;
+
+  // Stores the total time taken to perform reading and merging of log blocks
+  private final long totalTimeTakenToReadAndMergeBlocks;
+  // A timer for calculating elapsed time in millis
+<span class="nc" id="L68">  public final HoodieTimer timer = new HoodieTimer();</span>
+
+  @SuppressWarnings(&quot;unchecked&quot;)
+  public HoodieMergedLogRecordScanner(FileSystem fs, String basePath, List&lt;String&gt; logFilePaths, Schema readerSchema,
+      String latestInstantTime, Long maxMemorySizeInBytes, boolean readBlocksLazily, boolean reverseReader,
+      int bufferSize, String spillableMapBasePath) {
+<span class="nc" id="L74">    super(fs, basePath, logFilePaths, readerSchema, latestInstantTime, readBlocksLazily, reverseReader, bufferSize);</span>
+    try {
+      // Store merged records for all versions for this log file, set the in-memory footprint to maxInMemoryMapSize
+<span class="nc" id="L77">      this.records = new ExternalSpillableMap&lt;&gt;(maxMemorySizeInBytes, spillableMapBasePath, new DefaultSizeEstimator(),</span>
+          new HoodieRecordSizeEstimator(readerSchema));
+      // Do the scan and merge
+<span class="nc" id="L80">      timer.startTimer();</span>
+<span class="nc" id="L81">      scan();</span>
+<span class="nc" id="L82">      this.totalTimeTakenToReadAndMergeBlocks = timer.endTimer();</span>
+<span class="nc" id="L83">      this.numMergedRecordsInLog = records.size();</span>
+<span class="nc" id="L84">      LOG.info(&quot;MaxMemoryInBytes allowed for compaction =&gt; &quot; + maxMemorySizeInBytes);</span>
+<span class="nc" id="L85">      LOG.info(&quot;Number of entries in MemoryBasedMap in ExternalSpillableMap =&gt; &quot; + records.getInMemoryMapNumEntries());</span>
+<span class="nc" id="L86">      LOG.info(</span>
+<span class="nc" id="L87">          &quot;Total size in bytes of MemoryBasedMap in ExternalSpillableMap =&gt; &quot; + records.getCurrentInMemoryMapSize());</span>
+<span class="nc" id="L88">      LOG.info(&quot;Number of entries in DiskBasedMap in ExternalSpillableMap =&gt; &quot; + records.getDiskBasedMapNumEntries());</span>
+<span class="nc" id="L89">      LOG.info(&quot;Size of file spilled to disk =&gt; &quot; + records.getSizeOfFileOnDiskInBytes());</span>
+<span class="nc" id="L90">    } catch (IOException e) {</span>
+<span class="nc" id="L91">      throw new HoodieIOException(&quot;IOException when reading log file &quot;);</span>
+<span class="nc" id="L92">    }</span>
+<span class="nc" id="L93">  }</span>
+
+  @Override
+  public Iterator&lt;HoodieRecord&lt;? extends HoodieRecordPayload&gt;&gt; iterator() {
+<span class="nc" id="L97">    return records.iterator();</span>
+  }
+
+  public Map&lt;String, HoodieRecord&lt;? extends HoodieRecordPayload&gt;&gt; getRecords() {
+<span class="nc" id="L101">    return records;</span>
+  }
+
+  public long getNumMergedRecordsInLog() {
+<span class="nc" id="L105">    return numMergedRecordsInLog;</span>
+  }
+
+  @Override
+  protected void processNextRecord(HoodieRecord&lt;? extends HoodieRecordPayload&gt; hoodieRecord) throws IOException {
+<span class="nc" id="L110">    String key = hoodieRecord.getRecordKey();</span>
+<span class="nc bnc" id="L111" title="All 2 branches missed.">    if (records.containsKey(key)) {</span>
+      // Merge and store the merged record. The HoodieRecordPayload implementation is free to decide what should be
+      // done when a delete (empty payload) is encountered before or after an insert/update.
+<span class="nc" id="L114">      HoodieRecordPayload combinedValue = hoodieRecord.getData().preCombine(records.get(key).getData());</span>
+<span class="nc" id="L115">      records.put(key, new HoodieRecord&lt;&gt;(new HoodieKey(key, hoodieRecord.getPartitionPath()), combinedValue));</span>
+<span class="nc" id="L116">    } else {</span>
+      // Put the record as is
+<span class="nc" id="L118">      records.put(key, hoodieRecord);</span>
+    }
+<span class="nc" id="L120">  }</span>
+
+  @Override
+  protected void processNextDeletedKey(HoodieKey hoodieKey) {
+<span class="nc" id="L124">    records.put(hoodieKey.getRecordKey(), SpillableMapUtils.generateEmptyPayload(hoodieKey.getRecordKey(),</span>
+<span class="nc" id="L125">        hoodieKey.getPartitionPath(), getPayloadClassFQN()));</span>
+<span class="nc" id="L126">  }</span>
+
+  public long getTotalTimeTakenToReadAndMergeBlocks() {
+<span class="nc" id="L129">    return totalTimeTakenToReadAndMergeBlocks;</span>
+  }
+}
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

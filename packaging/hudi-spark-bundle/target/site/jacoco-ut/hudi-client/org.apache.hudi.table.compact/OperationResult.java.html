@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>OperationResult.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-client</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.table.compact</a> &gt; <span class="el_source">OperationResult.java</span></div><h1>OperationResult.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.table.compact;
+
+import org.apache.hudi.common.util.Option;
+
+import java.io.Serializable;
+
+/**
+ * Holds Operation result. Used as a result container for Compaction Admin Client (running as part of Spark-launcher
+ * process) to communicate results back to Hoodie CLI process.
+ */
+public class OperationResult&lt;T&gt; implements Serializable {
+
+  private T operation;
+  private boolean executed;
+  private boolean success;
+  private Option&lt;Exception&gt; exception;
+
+<span class="nc" id="L36">  public OperationResult() {}</span>
+
+<span class="nc" id="L38">  public OperationResult(T operation, boolean success, Option&lt;Exception&gt; exception) {</span>
+<span class="nc" id="L39">    this.operation = operation;</span>
+<span class="nc" id="L40">    this.success = success;</span>
+<span class="nc" id="L41">    this.exception = exception;</span>
+<span class="nc" id="L42">    this.executed = true;</span>
+<span class="nc" id="L43">  }</span>
+
+<span class="nc" id="L45">  public OperationResult(T operation, boolean executed, boolean success, Option&lt;Exception&gt; exception) {</span>
+<span class="nc" id="L46">    this.operation = operation;</span>
+<span class="nc" id="L47">    this.success = success;</span>
+<span class="nc" id="L48">    this.exception = exception;</span>
+<span class="nc" id="L49">    this.executed = executed;</span>
+<span class="nc" id="L50">  }</span>
+
+  public T getOperation() {
+<span class="nc" id="L53">    return operation;</span>
+  }
+
+  public boolean isSuccess() {
+<span class="nc" id="L57">    return success;</span>
+  }
+
+  public boolean isExecuted() {
+<span class="nc" id="L61">    return executed;</span>
+  }
+
+  public Option&lt;Exception&gt; getException() {
+<span class="nc" id="L65">    return exception;</span>
+  }
+
+  @Override
+  public String toString() {
+<span class="nc" id="L70">    return &quot;OperationResult{operation=&quot; + operation + &quot;, executed=&quot; + executed + &quot;, success=&quot; + success</span>
+        + &quot;, exception=&quot; + exception + '}';
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

@@ -1,0 +1,403 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>AbstractRealtimeRecordReader.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-hadoop-mr</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.hadoop.realtime</a> &gt; <span class="el_source">AbstractRealtimeRecordReader.java</span></div><h1>AbstractRealtimeRecordReader.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.hadoop.realtime;
+
+import org.apache.hudi.common.model.HoodieAvroPayload;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.common.util.HoodieAvroUtils;
+import org.apache.hudi.common.util.LogReaderUtils;
+import org.apache.hudi.common.util.collection.Pair;
+import org.apache.hudi.exception.HoodieException;
+import org.apache.hudi.exception.HoodieIOException;
+
+import org.apache.avro.Schema;
+import org.apache.avro.Schema.Field;
+import org.apache.avro.generic.GenericArray;
+import org.apache.avro.generic.GenericFixed;
+import org.apache.avro.generic.GenericRecord;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hive.metastore.api.hive_metastoreConstants;
+import org.apache.hadoop.hive.serde2.ColumnProjectionUtils;
+import org.apache.hadoop.hive.serde2.io.DoubleWritable;
+import org.apache.hadoop.io.ArrayWritable;
+import org.apache.hadoop.io.BooleanWritable;
+import org.apache.hadoop.io.BytesWritable;
+import org.apache.hadoop.io.FloatWritable;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.io.Writable;
+import org.apache.hadoop.mapred.JobConf;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+import org.apache.parquet.avro.AvroSchemaConverter;
+import org.apache.parquet.hadoop.ParquetFileReader;
+import org.apache.parquet.schema.MessageType;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.stream.Collectors;
+
+/**
+ * Record Reader implementation to merge fresh avro data with base parquet data, to support real time queries.
+ */
+public abstract class AbstractRealtimeRecordReader {
+
+  // Fraction of mapper/reducer task memory used for compaction of log files
+  public static final String COMPACTION_MEMORY_FRACTION_PROP = &quot;compaction.memory.fraction&quot;;
+  public static final String DEFAULT_COMPACTION_MEMORY_FRACTION = &quot;0.75&quot;;
+  // used to choose a trade off between IO vs Memory when performing compaction process
+  // Depending on outputfile size and memory provided, choose true to avoid OOM for large file
+  // size + small memory
+  public static final String COMPACTION_LAZY_BLOCK_READ_ENABLED_PROP = &quot;compaction.lazy.block.read.enabled&quot;;
+  public static final String DEFAULT_COMPACTION_LAZY_BLOCK_READ_ENABLED = &quot;true&quot;;
+
+  // Property to set the max memory for dfs inputstream buffer size
+  public static final String MAX_DFS_STREAM_BUFFER_SIZE_PROP = &quot;hoodie.memory.dfs.buffer.max.size&quot;;
+  // Setting this to lower value of 1 MB since no control over how many RecordReaders will be started in a mapper
+  public static final int DEFAULT_MAX_DFS_STREAM_BUFFER_SIZE = 1024 * 1024; // 1 MB
+  // Property to set file path prefix for spillable file
+  public static final String SPILLABLE_MAP_BASE_PATH_PROP = &quot;hoodie.memory.spillable.map.path&quot;;
+  // Default file path prefix for spillable file
+  public static final String DEFAULT_SPILLABLE_MAP_BASE_PATH = &quot;/tmp/&quot;;
+
+<span class="nc" id="L87">  private static final Logger LOG = LogManager.getLogger(AbstractRealtimeRecordReader.class);</span>
+
+  protected final HoodieRealtimeFileSplit split;
+  protected final JobConf jobConf;
+  private final MessageType baseFileSchema;
+  protected final boolean usesCustomPayload;
+  // Schema handles
+  private Schema readerSchema;
+  private Schema writerSchema;
+  private Schema hiveSchema;
+
+<span class="nc" id="L98">  public AbstractRealtimeRecordReader(HoodieRealtimeFileSplit split, JobConf job) {</span>
+<span class="nc" id="L99">    this.split = split;</span>
+<span class="nc" id="L100">    this.jobConf = job;</span>
+<span class="nc" id="L101">    LOG.info(&quot;cfg ==&gt; &quot; + job.get(ColumnProjectionUtils.READ_COLUMN_NAMES_CONF_STR));</span>
+<span class="nc" id="L102">    LOG.info(&quot;columnIds ==&gt; &quot; + job.get(ColumnProjectionUtils.READ_COLUMN_IDS_CONF_STR));</span>
+<span class="nc" id="L103">    LOG.info(&quot;partitioningColumns ==&gt; &quot; + job.get(hive_metastoreConstants.META_TABLE_PARTITION_COLUMNS, &quot;&quot;));</span>
+    try {
+<span class="nc" id="L105">      this.usesCustomPayload = usesCustomPayload();</span>
+<span class="nc" id="L106">      LOG.info(&quot;usesCustomPayload ==&gt; &quot; + this.usesCustomPayload);</span>
+<span class="nc" id="L107">      baseFileSchema = readSchema(jobConf, split.getPath());</span>
+<span class="nc" id="L108">      init();</span>
+<span class="nc" id="L109">    } catch (IOException e) {</span>
+<span class="nc" id="L110">      throw new HoodieIOException(&quot;Could not create HoodieRealtimeRecordReader on path &quot; + this.split.getPath(), e);</span>
+<span class="nc" id="L111">    }</span>
+<span class="nc" id="L112">  }</span>
+
+  private boolean usesCustomPayload() {
+<span class="nc" id="L115">    HoodieTableMetaClient metaClient = new HoodieTableMetaClient(jobConf, split.getBasePath());</span>
+<span class="nc bnc" id="L116" title="All 2 branches missed.">    return !(metaClient.getTableConfig().getPayloadClass().contains(HoodieAvroPayload.class.getName())</span>
+<span class="nc bnc" id="L117" title="All 2 branches missed.">        || metaClient.getTableConfig().getPayloadClass().contains(&quot;org.apache.hudi.OverwriteWithLatestAvroPayload&quot;));</span>
+  }
+
+  /**
+   * Reads the schema from the parquet file. This is different from ParquetUtils as it uses the twitter parquet to
+   * support hive 1.1.0
+   */
+  private static MessageType readSchema(Configuration conf, Path parquetFilePath) {
+    try {
+<span class="nc" id="L126">      return ParquetFileReader.readFooter(conf, parquetFilePath).getFileMetaData().getSchema();</span>
+<span class="nc" id="L127">    } catch (IOException e) {</span>
+<span class="nc" id="L128">      throw new HoodieIOException(&quot;Failed to read footer for parquet &quot; + parquetFilePath, e);</span>
+    }
+  }
+
+  /**
+   * Prints a JSON representation of the ArrayWritable for easier debuggability.
+   */
+  protected static String arrayWritableToString(ArrayWritable writable) {
+<span class="nc bnc" id="L136" title="All 2 branches missed.">    if (writable == null) {</span>
+<span class="nc" id="L137">      return &quot;null&quot;;</span>
+    }
+<span class="nc" id="L139">    StringBuilder builder = new StringBuilder();</span>
+<span class="nc" id="L140">    Writable[] values = writable.get();</span>
+<span class="nc" id="L141">    builder.append(&quot;\&quot;values_&quot; + Math.random() + &quot;_&quot; + values.length + &quot;\&quot;: {&quot;);</span>
+<span class="nc" id="L142">    int i = 0;</span>
+<span class="nc bnc" id="L143" title="All 2 branches missed.">    for (Writable w : values) {</span>
+<span class="nc bnc" id="L144" title="All 2 branches missed.">      if (w instanceof ArrayWritable) {</span>
+<span class="nc" id="L145">        builder.append(arrayWritableToString((ArrayWritable) w)).append(&quot;,&quot;);</span>
+      } else {
+<span class="nc" id="L147">        builder.append(&quot;\&quot;value&quot; + i + &quot;\&quot;:\&quot;&quot; + w + &quot;\&quot;&quot;).append(&quot;,&quot;);</span>
+<span class="nc bnc" id="L148" title="All 2 branches missed.">        if (w == null) {</span>
+<span class="nc" id="L149">          builder.append(&quot;\&quot;type&quot; + i + &quot;\&quot;:\&quot;unknown\&quot;&quot;).append(&quot;,&quot;);</span>
+        } else {
+<span class="nc" id="L151">          builder.append(&quot;\&quot;type&quot; + i + &quot;\&quot;:\&quot;&quot; + w.getClass().getSimpleName() + &quot;\&quot;&quot;).append(&quot;,&quot;);</span>
+        }
+      }
+<span class="nc" id="L154">      i++;</span>
+    }
+<span class="nc" id="L156">    builder.deleteCharAt(builder.length() - 1);</span>
+<span class="nc" id="L157">    builder.append(&quot;}&quot;);</span>
+<span class="nc" id="L158">    return builder.toString();</span>
+  }
+
+  /**
+   * Given a comma separated list of field names and positions at which they appear on Hive, return
+   * an ordered list of field names, that can be passed onto storage.
+   */
+  private static List&lt;String&gt; orderFields(String fieldNameCsv, String fieldOrderCsv, List&lt;String&gt; partitioningFields) {
+    // Need to convert the following to Set first since Hive does not handle duplicate field names correctly but
+    // handles duplicate fields orders correctly.
+    // Fields Orders -&gt; {@link https://github
+    // .com/apache/hive/blob/f37c5de6c32b9395d1b34fa3c02ed06d1bfbf6eb/serde/src/java
+    // /org/apache/hadoop/hive/serde2/ColumnProjectionUtils.java#L188}
+    // Field Names -&gt; {@link https://github.com/apache/hive/blob/f37c5de6c32b9395d1b34fa3c02ed06d1bfbf6eb/serde/src/java
+    // /org/apache/hadoop/hive/serde2/ColumnProjectionUtils.java#L229}
+<span class="nc" id="L173">    String[] fieldOrdersWithDups = fieldOrderCsv.split(&quot;,&quot;);</span>
+<span class="nc" id="L174">    Set&lt;String&gt; fieldOrdersSet = new LinkedHashSet&lt;&gt;(Arrays.asList(fieldOrdersWithDups));</span>
+<span class="nc" id="L175">    String[] fieldOrders = fieldOrdersSet.toArray(new String[0]);</span>
+<span class="nc" id="L176">    List&lt;String&gt; fieldNames = Arrays.stream(fieldNameCsv.split(&quot;,&quot;))</span>
+<span class="nc bnc" id="L177" title="All 2 branches missed.">        .filter(fn -&gt; !partitioningFields.contains(fn)).collect(Collectors.toList());</span>
+<span class="nc" id="L178">    Set&lt;String&gt; fieldNamesSet = new LinkedHashSet&lt;&gt;(fieldNames);</span>
+    // Hive does not provide ids for partitioning fields, so check for lengths excluding that.
+<span class="nc bnc" id="L180" title="All 2 branches missed.">    if (fieldNamesSet.size() != fieldOrders.length) {</span>
+<span class="nc" id="L181">      throw new HoodieException(String</span>
+<span class="nc" id="L182">          .format(&quot;Error ordering fields for storage read. #fieldNames: %d, #fieldPositions: %d&quot;,</span>
+<span class="nc" id="L183">              fieldNames.size(), fieldOrders.length));</span>
+    }
+<span class="nc" id="L185">    TreeMap&lt;Integer, String&gt; orderedFieldMap = new TreeMap&lt;&gt;();</span>
+<span class="nc" id="L186">    String[] fieldNamesArray = fieldNamesSet.toArray(new String[0]);</span>
+<span class="nc bnc" id="L187" title="All 2 branches missed.">    for (int ox = 0; ox &lt; fieldOrders.length; ox++) {</span>
+<span class="nc" id="L188">      orderedFieldMap.put(Integer.parseInt(fieldOrders[ox]), fieldNamesArray[ox]);</span>
+    }
+<span class="nc" id="L190">    return new ArrayList&lt;&gt;(orderedFieldMap.values());</span>
+  }
+
+  /**
+   * Generate a reader schema off the provided writeSchema, to just project out the provided columns.
+   */
+  public static Schema generateProjectionSchema(Schema writeSchema, Map&lt;String, Field&gt; schemaFieldsMap,
+      List&lt;String&gt; fieldNames) {
+    /**
+     * Avro &amp; Presto field names seems to be case sensitive (support fields differing only in case) whereas
+     * Hive/Impala/SparkSQL(default) are case-insensitive. Spark allows this to be configurable using
+     * spark.sql.caseSensitive=true
+     *
+     * For a RT table setup with no delta-files (for a latest file-slice) -&gt; we translate parquet schema to Avro Here
+     * the field-name case is dependent on parquet schema. Hive (1.x/2.x/CDH) translate column projections to
+     * lower-cases
+     *
+     */
+<span class="nc" id="L208">    List&lt;Schema.Field&gt; projectedFields = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L209" title="All 2 branches missed.">    for (String fn : fieldNames) {</span>
+<span class="nc" id="L210">      Schema.Field field = schemaFieldsMap.get(fn.toLowerCase());</span>
+<span class="nc bnc" id="L211" title="All 2 branches missed.">      if (field == null) {</span>
+<span class="nc" id="L212">        throw new HoodieException(&quot;Field &quot; + fn + &quot; not found in log schema. Query cannot proceed! &quot;</span>
+<span class="nc" id="L213">            + &quot;Derived Schema Fields: &quot; + new ArrayList&lt;&gt;(schemaFieldsMap.keySet()));</span>
+      } else {
+<span class="nc" id="L215">        projectedFields.add(new Schema.Field(field.name(), field.schema(), field.doc(), field.defaultValue()));</span>
+      }
+<span class="nc" id="L217">    }</span>
+
+<span class="nc" id="L219">    Schema projectedSchema = Schema.createRecord(writeSchema.getName(), writeSchema.getDoc(),</span>
+<span class="nc" id="L220">        writeSchema.getNamespace(), writeSchema.isError());</span>
+<span class="nc" id="L221">    projectedSchema.setFields(projectedFields);</span>
+<span class="nc" id="L222">    return projectedSchema;</span>
+  }
+
+  public static Map&lt;String, Field&gt; getNameToFieldMap(Schema schema) {
+<span class="nc" id="L226">    return schema.getFields().stream().map(r -&gt; Pair.of(r.name().toLowerCase(), r))</span>
+<span class="nc" id="L227">        .collect(Collectors.toMap(Pair::getLeft, Pair::getRight));</span>
+  }
+
+  /**
+   * Convert the projected read from delta record into an array writable.
+   */
+  public static Writable avroToArrayWritable(Object value, Schema schema) {
+
+<span class="nc bnc" id="L235" title="All 2 branches missed.">    if (value == null) {</span>
+<span class="nc" id="L236">      return null;</span>
+    }
+
+<span class="nc bnc" id="L239" title="All 15 branches missed.">    switch (schema.getType()) {</span>
+      case STRING:
+<span class="nc" id="L241">        return new Text(value.toString());</span>
+      case BYTES:
+<span class="nc" id="L243">        return new BytesWritable((byte[]) value);</span>
+      case INT:
+<span class="nc" id="L245">        return new IntWritable((Integer) value);</span>
+      case LONG:
+<span class="nc" id="L247">        return new LongWritable((Long) value);</span>
+      case FLOAT:
+<span class="nc" id="L249">        return new FloatWritable((Float) value);</span>
+      case DOUBLE:
+<span class="nc" id="L251">        return new DoubleWritable((Double) value);</span>
+      case BOOLEAN:
+<span class="nc" id="L253">        return new BooleanWritable((Boolean) value);</span>
+      case NULL:
+<span class="nc" id="L255">        return null;</span>
+      case RECORD:
+<span class="nc" id="L257">        GenericRecord record = (GenericRecord) value;</span>
+<span class="nc" id="L258">        Writable[] recordValues = new Writable[schema.getFields().size()];</span>
+<span class="nc" id="L259">        int recordValueIndex = 0;</span>
+<span class="nc bnc" id="L260" title="All 2 branches missed.">        for (Schema.Field field : schema.getFields()) {</span>
+<span class="nc" id="L261">          recordValues[recordValueIndex++] = avroToArrayWritable(record.get(field.name()), field.schema());</span>
+<span class="nc" id="L262">        }</span>
+<span class="nc" id="L263">        return new ArrayWritable(Writable.class, recordValues);</span>
+      case ENUM:
+<span class="nc" id="L265">        return new Text(value.toString());</span>
+      case ARRAY:
+<span class="nc" id="L267">        GenericArray arrayValue = (GenericArray) value;</span>
+<span class="nc" id="L268">        Writable[] arrayValues = new Writable[arrayValue.size()];</span>
+<span class="nc" id="L269">        int arrayValueIndex = 0;</span>
+<span class="nc bnc" id="L270" title="All 2 branches missed.">        for (Object obj : arrayValue) {</span>
+<span class="nc" id="L271">          arrayValues[arrayValueIndex++] = avroToArrayWritable(obj, schema.getElementType());</span>
+<span class="nc" id="L272">        }</span>
+        // Hive 1.x will fail here, it requires values2 to be wrapped into another ArrayWritable
+<span class="nc" id="L274">        return new ArrayWritable(Writable.class, arrayValues);</span>
+      case MAP:
+<span class="nc" id="L276">        Map mapValue = (Map) value;</span>
+<span class="nc" id="L277">        Writable[] mapValues = new Writable[mapValue.size()];</span>
+<span class="nc" id="L278">        int mapValueIndex = 0;</span>
+<span class="nc bnc" id="L279" title="All 2 branches missed.">        for (Object entry : mapValue.entrySet()) {</span>
+<span class="nc" id="L280">          Map.Entry mapEntry = (Map.Entry) entry;</span>
+<span class="nc" id="L281">          Writable[] nestedMapValues = new Writable[2];</span>
+<span class="nc" id="L282">          nestedMapValues[0] = new Text(mapEntry.getKey().toString());</span>
+<span class="nc" id="L283">          nestedMapValues[1] = avroToArrayWritable(mapEntry.getValue(), schema.getValueType());</span>
+<span class="nc" id="L284">          mapValues[mapValueIndex++] = new ArrayWritable(Writable.class, nestedMapValues);</span>
+<span class="nc" id="L285">        }</span>
+        // Hive 1.x will fail here, it requires values3 to be wrapped into another ArrayWritable
+<span class="nc" id="L287">        return new ArrayWritable(Writable.class, mapValues);</span>
+      case UNION:
+<span class="nc" id="L289">        List&lt;Schema&gt; types = schema.getTypes();</span>
+<span class="nc bnc" id="L290" title="All 2 branches missed.">        if (types.size() != 2) {</span>
+<span class="nc" id="L291">          throw new IllegalArgumentException(&quot;Only support union with 2 fields&quot;);</span>
+        }
+<span class="nc" id="L293">        Schema s1 = types.get(0);</span>
+<span class="nc" id="L294">        Schema s2 = types.get(1);</span>
+<span class="nc bnc" id="L295" title="All 2 branches missed.">        if (s1.getType() == Schema.Type.NULL) {</span>
+<span class="nc" id="L296">          return avroToArrayWritable(value, s2);</span>
+<span class="nc bnc" id="L297" title="All 2 branches missed.">        } else if (s2.getType() == Schema.Type.NULL) {</span>
+<span class="nc" id="L298">          return avroToArrayWritable(value, s1);</span>
+        } else {
+<span class="nc" id="L300">          throw new IllegalArgumentException(&quot;Only support union with null&quot;);</span>
+        }
+      case FIXED:
+<span class="nc" id="L303">        return new BytesWritable(((GenericFixed) value).bytes());</span>
+      default:
+<span class="nc" id="L305">        return null;</span>
+    }
+  }
+
+  /**
+   * Hive implementation of ParquetRecordReader results in partition columns not present in the original parquet file to
+   * also be part of the projected schema. Hive expects the record reader implementation to return the row in its
+   * entirety (with un-projected column having null values). As we use writerSchema for this, make sure writer schema
+   * also includes partition columns
+   *
+   * @param schema Schema to be changed
+   */
+  private static Schema addPartitionFields(Schema schema, List&lt;String&gt; partitioningFields) {
+<span class="nc" id="L318">    final Set&lt;String&gt; firstLevelFieldNames =</span>
+<span class="nc" id="L319">        schema.getFields().stream().map(Field::name).map(String::toLowerCase).collect(Collectors.toSet());</span>
+<span class="nc" id="L320">    List&lt;String&gt; fieldsToAdd = partitioningFields.stream().map(String::toLowerCase)</span>
+<span class="nc bnc" id="L321" title="All 2 branches missed.">        .filter(x -&gt; !firstLevelFieldNames.contains(x)).collect(Collectors.toList());</span>
+
+<span class="nc" id="L323">    return HoodieAvroUtils.appendNullSchemaFields(schema, fieldsToAdd);</span>
+  }
+
+  /**
+   * Goes through the log files in reverse order and finds the schema from the last available data block. If not, falls
+   * back to the schema from the latest parquet file. Finally, sets the partition column and projection fields into the
+   * job conf.
+   */
+  private void init() throws IOException {
+<span class="nc" id="L332">    Schema schemaFromLogFile =</span>
+<span class="nc" id="L333">        LogReaderUtils.readLatestSchemaFromLogFiles(split.getBasePath(), split.getDeltaLogPaths(), jobConf);</span>
+<span class="nc bnc" id="L334" title="All 2 branches missed.">    if (schemaFromLogFile == null) {</span>
+<span class="nc" id="L335">      writerSchema = new AvroSchemaConverter().convert(baseFileSchema);</span>
+<span class="nc" id="L336">      LOG.debug(&quot;Writer Schema From Parquet =&gt; &quot; + writerSchema.getFields());</span>
+    } else {
+<span class="nc" id="L338">      writerSchema = schemaFromLogFile;</span>
+<span class="nc" id="L339">      LOG.debug(&quot;Writer Schema From Log =&gt; &quot; + writerSchema.getFields());</span>
+    }
+    // Add partitioning fields to writer schema for resulting row to contain null values for these fields
+<span class="nc" id="L342">    String partitionFields = jobConf.get(hive_metastoreConstants.META_TABLE_PARTITION_COLUMNS, &quot;&quot;);</span>
+<span class="nc" id="L343">    List&lt;String&gt; partitioningFields =</span>
+<span class="nc bnc" id="L344" title="All 2 branches missed.">        partitionFields.length() &gt; 0 ? Arrays.stream(partitionFields.split(&quot;/&quot;)).collect(Collectors.toList())</span>
+            : new ArrayList&lt;&gt;();
+<span class="nc" id="L346">    writerSchema = addPartitionFields(writerSchema, partitioningFields);</span>
+<span class="nc" id="L347">    List&lt;String&gt; projectionFields = orderFields(jobConf.get(ColumnProjectionUtils.READ_COLUMN_NAMES_CONF_STR),</span>
+<span class="nc" id="L348">        jobConf.get(ColumnProjectionUtils.READ_COLUMN_IDS_CONF_STR), partitioningFields);</span>
+
+<span class="nc" id="L350">    Map&lt;String, Field&gt; schemaFieldsMap = getNameToFieldMap(writerSchema);</span>
+<span class="nc" id="L351">    hiveSchema = constructHiveOrderedSchema(writerSchema, schemaFieldsMap);</span>
+    // TODO(vc): In the future, the reader schema should be updated based on log files &amp; be able
+    // to null out fields not present before
+
+<span class="nc" id="L355">    readerSchema = generateProjectionSchema(writerSchema, schemaFieldsMap, projectionFields);</span>
+<span class="nc" id="L356">    LOG.info(String.format(&quot;About to read compacted logs %s for base split %s, projecting cols %s&quot;,</span>
+<span class="nc" id="L357">        split.getDeltaLogPaths(), split.getPath(), projectionFields));</span>
+<span class="nc" id="L358">  }</span>
+
+  private Schema constructHiveOrderedSchema(Schema writerSchema, Map&lt;String, Field&gt; schemaFieldsMap) {
+    // Get all column names of hive table
+<span class="nc" id="L362">    String hiveColumnString = jobConf.get(hive_metastoreConstants.META_TABLE_COLUMNS);</span>
+<span class="nc" id="L363">    String[] hiveColumns = hiveColumnString.split(&quot;,&quot;);</span>
+<span class="nc" id="L364">    List&lt;Field&gt; hiveSchemaFields = new ArrayList&lt;&gt;();</span>
+
+<span class="nc bnc" id="L366" title="All 2 branches missed.">    for (String columnName : hiveColumns) {</span>
+<span class="nc" id="L367">      Field field = schemaFieldsMap.get(columnName.toLowerCase());</span>
+
+<span class="nc bnc" id="L369" title="All 2 branches missed.">      if (field != null) {</span>
+<span class="nc" id="L370">        hiveSchemaFields.add(new Schema.Field(field.name(), field.schema(), field.doc(), field.defaultValue()));</span>
+      } else {
+        // Hive has some extra virtual columns like BLOCK__OFFSET__INSIDE__FILE which do not exist in table schema.
+        // They will get skipped as they won't be found in the original schema.
+<span class="nc" id="L374">        LOG.debug(&quot;Skipping Hive Column =&gt; &quot; + columnName);</span>
+      }
+    }
+
+<span class="nc" id="L378">    Schema hiveSchema = Schema.createRecord(writerSchema.getName(), writerSchema.getDoc(), writerSchema.getNamespace(),</span>
+<span class="nc" id="L379">        writerSchema.isError());</span>
+<span class="nc" id="L380">    hiveSchema.setFields(hiveSchemaFields);</span>
+<span class="nc" id="L381">    return hiveSchema;</span>
+  }
+
+  public Schema getReaderSchema() {
+<span class="nc" id="L385">    return readerSchema;</span>
+  }
+
+  public Schema getWriterSchema() {
+<span class="nc" id="L389">    return writerSchema;</span>
+  }
+
+  public Schema getHiveSchema() {
+<span class="nc" id="L393">    return hiveSchema;</span>
+  }
+
+  public long getMaxCompactionMemoryInBytes() {
+    // jobConf.getMemoryForMapTask() returns in MB
+<span class="nc" id="L398">    return (long) Math</span>
+<span class="nc" id="L399">        .ceil(Double.parseDouble(jobConf.get(COMPACTION_MEMORY_FRACTION_PROP, DEFAULT_COMPACTION_MEMORY_FRACTION))</span>
+<span class="nc" id="L400">            * jobConf.getMemoryForMapTask() * 1024 * 1024L);</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

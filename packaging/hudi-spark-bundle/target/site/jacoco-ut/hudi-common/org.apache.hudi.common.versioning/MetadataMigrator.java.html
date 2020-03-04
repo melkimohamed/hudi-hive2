@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>MetadataMigrator.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.versioning</a> &gt; <span class="el_source">MetadataMigrator.java</span></div><h1>MetadataMigrator.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.versioning;
+
+import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.common.util.collection.Pair;
+
+import com.google.common.base.Preconditions;
+
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+/**
+ * Migrates a specific metadata type stored in .hoodie folder to latest version.
+ * 
+ * @param &lt;T&gt;
+ */
+public class MetadataMigrator&lt;T&gt; {
+
+  private final Map&lt;Integer, VersionMigrator&lt;T&gt;&gt; migrators;
+  private final Integer latestVersion;
+  private final Integer oldestVersion;
+
+<span class="nc" id="L41">  public MetadataMigrator(HoodieTableMetaClient metaClient, List&lt;VersionMigrator&lt;T&gt;&gt; migratorList) {</span>
+<span class="nc" id="L42">    migrators = migratorList.stream().map(m -&gt; Pair.of(m.getManagedVersion(), m))</span>
+<span class="nc" id="L43">        .collect(Collectors.toMap(Pair::getKey, Pair::getValue));</span>
+<span class="nc bnc" id="L44" title="All 2 branches missed.">    latestVersion = migrators.keySet().stream().reduce((x, y) -&gt; x &gt; y ? x : y).get();</span>
+<span class="nc bnc" id="L45" title="All 2 branches missed.">    oldestVersion = migrators.keySet().stream().reduce((x, y) -&gt; x &lt; y ? x : y).get();</span>
+<span class="nc" id="L46">  }</span>
+
+  /**
+   * Upgrade Metadata version to its latest.
+   * 
+   * @param metadata Metadata
+   * @param metadataVersion Current version of metadata
+   * @return Metadata conforming to the latest version of this metadata
+   */
+  public T upgradeToLatest(T metadata, int metadataVersion) {
+<span class="nc bnc" id="L56" title="All 2 branches missed.">    if (metadataVersion == latestVersion) {</span>
+<span class="nc" id="L57">      return metadata;</span>
+    }
+
+<span class="nc" id="L60">    int newVersion = metadataVersion + 1;</span>
+<span class="nc bnc" id="L61" title="All 2 branches missed.">    while (newVersion &lt;= latestVersion) {</span>
+<span class="nc" id="L62">      VersionMigrator&lt;T&gt; upgrader = migrators.get(newVersion);</span>
+<span class="nc" id="L63">      metadata = upgrader.upgradeFrom(metadata);</span>
+<span class="nc" id="L64">      newVersion += 1;</span>
+<span class="nc" id="L65">    }</span>
+<span class="nc" id="L66">    return metadata;</span>
+  }
+
+  /**
+   * Migrate metadata to a specific version.
+   * 
+   * @param metadata Hoodie Table Meta Client
+   * @param metadataVersion Metadata Version
+   * @param targetVersion Target Version
+   * @return Metadata conforming to the target version
+   */
+  public T migrateToVersion(T metadata, int metadataVersion, int targetVersion) {
+<span class="nc bnc" id="L78" title="All 2 branches missed.">    Preconditions.checkArgument(targetVersion &gt;= oldestVersion);</span>
+<span class="nc bnc" id="L79" title="All 2 branches missed.">    Preconditions.checkArgument(targetVersion &lt;= latestVersion);</span>
+<span class="nc bnc" id="L80" title="All 2 branches missed.">    if (metadataVersion == targetVersion) {</span>
+<span class="nc" id="L81">      return metadata;</span>
+<span class="nc bnc" id="L82" title="All 2 branches missed.">    } else if (metadataVersion &gt; targetVersion) {</span>
+<span class="nc" id="L83">      return dowgradeToVersion(metadata, metadataVersion, targetVersion);</span>
+    } else {
+<span class="nc" id="L85">      return upgradeToVersion(metadata, metadataVersion, targetVersion);</span>
+    }
+  }
+
+  private T upgradeToVersion(T metadata, int metadataVersion, int targetVersion) {
+<span class="nc" id="L90">    int newVersion = metadataVersion + 1;</span>
+<span class="nc bnc" id="L91" title="All 2 branches missed.">    while (newVersion &lt;= targetVersion) {</span>
+<span class="nc" id="L92">      VersionMigrator&lt;T&gt; upgrader = migrators.get(newVersion);</span>
+<span class="nc" id="L93">      metadata = upgrader.upgradeFrom(metadata);</span>
+<span class="nc" id="L94">      newVersion += 1;</span>
+<span class="nc" id="L95">    }</span>
+<span class="nc" id="L96">    return metadata;</span>
+  }
+
+  private T dowgradeToVersion(T metadata, int metadataVersion, int targetVersion) {
+<span class="nc" id="L100">    int newVersion = metadataVersion - 1;</span>
+<span class="nc bnc" id="L101" title="All 2 branches missed.">    while (newVersion &gt;= targetVersion) {</span>
+<span class="nc" id="L102">      VersionMigrator&lt;T&gt; downgrader = migrators.get(newVersion);</span>
+<span class="nc" id="L103">      metadata = downgrader.downgradeFrom(metadata);</span>
+<span class="nc" id="L104">      newVersion -= 1;</span>
+<span class="nc" id="L105">    }</span>
+<span class="nc" id="L106">    return metadata;</span>
+  }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

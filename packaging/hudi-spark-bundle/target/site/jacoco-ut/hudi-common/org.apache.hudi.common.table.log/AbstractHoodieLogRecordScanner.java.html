@@ -1,0 +1,352 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>AbstractHoodieLogRecordScanner.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.table.log</a> &gt; <span class="el_source">AbstractHoodieLogRecordScanner.java</span></div><h1>AbstractHoodieLogRecordScanner.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.table.log;
+
+import org.apache.hudi.common.model.HoodieKey;
+import org.apache.hudi.common.model.HoodieLogFile;
+import org.apache.hudi.common.model.HoodieRecord;
+import org.apache.hudi.common.model.HoodieRecordPayload;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.common.table.HoodieTimeline;
+import org.apache.hudi.common.table.log.block.HoodieAvroDataBlock;
+import org.apache.hudi.common.table.log.block.HoodieCommandBlock;
+import org.apache.hudi.common.table.log.block.HoodieDeleteBlock;
+import org.apache.hudi.common.table.log.block.HoodieLogBlock;
+import org.apache.hudi.common.util.SpillableMapUtils;
+import org.apache.hudi.exception.HoodieIOException;
+
+import org.apache.avro.Schema;
+import org.apache.avro.generic.GenericRecord;
+import org.apache.avro.generic.IndexedRecord;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+import java.io.IOException;
+import java.util.ArrayDeque;
+import java.util.Arrays;
+import java.util.Deque;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
+
+import static org.apache.hudi.common.table.log.block.HoodieLogBlock.HeaderMetadataType.INSTANT_TIME;
+import static org.apache.hudi.common.table.log.block.HoodieLogBlock.HoodieLogBlockType.CORRUPT_BLOCK;
+
+/**
+ * Implements logic to scan log blocks and expose valid and deleted log records to subclass implementation. Subclass is
+ * free to either apply merging or expose raw data back to the caller.
+ *
+ * NOTE: If readBlockLazily is turned on, does not merge, instead keeps reading log blocks and merges everything at once
+ * This is an optimization to avoid seek() back and forth to read new block (forward seek()) and lazily read content of
+ * seen block (reverse and forward seek()) during merge | | Read Block 1 Metadata | | Read Block 1 Data | | | Read Block
+ * 2 Metadata | | Read Block 2 Data | | I/O Pass 1 | ..................... | I/O Pass 2 | ................. | | | Read
+ * Block N Metadata | | Read Block N Data |
+ * &lt;p&gt;
+ * This results in two I/O passes over the log file.
+ */
+public abstract class AbstractHoodieLogRecordScanner {
+
+<span class="nc" id="L69">  private static final Logger LOG = LogManager.getLogger(AbstractHoodieLogRecordScanner.class);</span>
+
+  // Reader schema for the records
+  protected final Schema readerSchema;
+  // Latest valid instant time
+  // Log-Blocks belonging to inflight delta-instants are filtered-out using this high-watermark.
+  private final String latestInstantTime;
+  private final HoodieTableMetaClient hoodieTableMetaClient;
+  // Merge strategy to use when combining records from log
+  private final String payloadClassFQN;
+  // Log File Paths
+  private final List&lt;String&gt; logFilePaths;
+  // Read Lazily flag
+  private final boolean readBlocksLazily;
+  // Reverse reader - Not implemented yet (NA -&gt; Why do we need ?)
+  // but present here for plumbing for future implementation
+  private final boolean reverseReader;
+  // Buffer Size for log file reader
+  private final int bufferSize;
+  // FileSystem
+  private final FileSystem fs;
+  // Total log files read - for metrics
+<span class="nc" id="L91">  private AtomicLong totalLogFiles = new AtomicLong(0);</span>
+  // Total log blocks read - for metrics
+<span class="nc" id="L93">  private AtomicLong totalLogBlocks = new AtomicLong(0);</span>
+  // Total log records read - for metrics
+<span class="nc" id="L95">  private AtomicLong totalLogRecords = new AtomicLong(0);</span>
+  // Total number of rollbacks written across all log files
+<span class="nc" id="L97">  private AtomicLong totalRollbacks = new AtomicLong(0);</span>
+  // Total number of corrupt blocks written across all log files
+<span class="nc" id="L99">  private AtomicLong totalCorruptBlocks = new AtomicLong(0);</span>
+  // Store the last instant log blocks (needed to implement rollback)
+<span class="nc" id="L101">  private Deque&lt;HoodieLogBlock&gt; currentInstantLogBlocks = new ArrayDeque&lt;&gt;();</span>
+  // Progress
+<span class="nc" id="L103">  private float progress = 0.0f;</span>
+
+  // TODO (NA) - Change this to a builder, this constructor is too long
+  public AbstractHoodieLogRecordScanner(FileSystem fs, String basePath, List&lt;String&gt; logFilePaths, Schema readerSchema,
+<span class="nc" id="L107">      String latestInstantTime, boolean readBlocksLazily, boolean reverseReader, int bufferSize) {</span>
+<span class="nc" id="L108">    this.readerSchema = readerSchema;</span>
+<span class="nc" id="L109">    this.latestInstantTime = latestInstantTime;</span>
+<span class="nc" id="L110">    this.hoodieTableMetaClient = new HoodieTableMetaClient(fs.getConf(), basePath);</span>
+    // load class from the payload fully qualified class name
+<span class="nc" id="L112">    this.payloadClassFQN = this.hoodieTableMetaClient.getTableConfig().getPayloadClass();</span>
+<span class="nc" id="L113">    this.totalLogFiles.addAndGet(logFilePaths.size());</span>
+<span class="nc" id="L114">    this.logFilePaths = logFilePaths;</span>
+<span class="nc" id="L115">    this.readBlocksLazily = readBlocksLazily;</span>
+<span class="nc" id="L116">    this.reverseReader = reverseReader;</span>
+<span class="nc" id="L117">    this.fs = fs;</span>
+<span class="nc" id="L118">    this.bufferSize = bufferSize;</span>
+<span class="nc" id="L119">  }</span>
+
+  /**
+   * Scan Log files.
+   */
+  public void scan() {
+<span class="nc" id="L125">    HoodieLogFormatReader logFormatReaderWrapper = null;</span>
+    try {
+      // iterate over the paths
+<span class="nc" id="L128">      logFormatReaderWrapper = new HoodieLogFormatReader(fs,</span>
+<span class="nc" id="L129">          logFilePaths.stream().map(logFile -&gt; new HoodieLogFile(new Path(logFile))).collect(Collectors.toList()),</span>
+          readerSchema, readBlocksLazily, reverseReader, bufferSize);
+<span class="nc" id="L131">      Set&lt;HoodieLogFile&gt; scannedLogFiles = new HashSet&lt;&gt;();</span>
+<span class="nc bnc" id="L132" title="All 2 branches missed.">      while (logFormatReaderWrapper.hasNext()) {</span>
+<span class="nc" id="L133">        HoodieLogFile logFile = logFormatReaderWrapper.getLogFile();</span>
+<span class="nc" id="L134">        LOG.info(&quot;Scanning log file &quot; + logFile);</span>
+<span class="nc" id="L135">        scannedLogFiles.add(logFile);</span>
+<span class="nc" id="L136">        totalLogFiles.set(scannedLogFiles.size());</span>
+        // Use the HoodieLogFileReader to iterate through the blocks in the log file
+<span class="nc" id="L138">        HoodieLogBlock r = logFormatReaderWrapper.next();</span>
+<span class="nc" id="L139">        totalLogBlocks.incrementAndGet();</span>
+<span class="nc bnc" id="L140" title="All 2 branches missed.">        if (r.getBlockType() != CORRUPT_BLOCK</span>
+<span class="nc bnc" id="L141" title="All 2 branches missed.">            &amp;&amp; !HoodieTimeline.compareTimestamps(r.getLogBlockHeader().get(INSTANT_TIME), this.latestInstantTime,</span>
+                HoodieTimeline.LESSER_OR_EQUAL)) {
+          // hit a block with instant time greater than should be processed, stop processing further
+<span class="nc" id="L144">          break;</span>
+        }
+<span class="nc bnc" id="L146" title="All 5 branches missed.">        switch (r.getBlockType()) {</span>
+          case AVRO_DATA_BLOCK:
+<span class="nc" id="L148">            LOG.info(&quot;Reading a data block from file &quot; + logFile.getPath());</span>
+<span class="nc bnc" id="L149" title="All 4 branches missed.">            if (isNewInstantBlock(r) &amp;&amp; !readBlocksLazily) {</span>
+              // If this is an avro data block belonging to a different commit/instant,
+              // then merge the last blocks and records into the main result
+<span class="nc" id="L152">              processQueuedBlocksForInstant(currentInstantLogBlocks, scannedLogFiles.size());</span>
+            }
+            // store the current block
+<span class="nc" id="L155">            currentInstantLogBlocks.push(r);</span>
+<span class="nc" id="L156">            break;</span>
+          case DELETE_BLOCK:
+<span class="nc" id="L158">            LOG.info(&quot;Reading a delete block from file &quot; + logFile.getPath());</span>
+<span class="nc bnc" id="L159" title="All 4 branches missed.">            if (isNewInstantBlock(r) &amp;&amp; !readBlocksLazily) {</span>
+              // If this is a delete data block belonging to a different commit/instant,
+              // then merge the last blocks and records into the main result
+<span class="nc" id="L162">              processQueuedBlocksForInstant(currentInstantLogBlocks, scannedLogFiles.size());</span>
+            }
+            // store deletes so can be rolled back
+<span class="nc" id="L165">            currentInstantLogBlocks.push(r);</span>
+<span class="nc" id="L166">            break;</span>
+          case COMMAND_BLOCK:
+            // Consider the following scenario
+            // (Time 0, C1, Task T1) -&gt; Running
+            // (Time 1, C1, Task T1) -&gt; Failed (Wrote either a corrupt block or a correct
+            // DataBlock (B1) with commitTime C1
+            // (Time 2, C1, Task T1.2) -&gt; Running (Task T1 was retried and the attempt number is 2)
+            // (Time 3, C1, Task T1.2) -&gt; Finished (Wrote a correct DataBlock B2)
+            // Now a logFile L1 can have 2 correct Datablocks (B1 and B2) which are the same.
+            // Say, commit C1 eventually failed and a rollback is triggered.
+            // Rollback will write only 1 rollback block (R1) since it assumes one block is
+            // written per ingestion batch for a file but in reality we need to rollback (B1 &amp; B2)
+            // The following code ensures the same rollback block (R1) is used to rollback
+            // both B1 &amp; B2
+<span class="nc" id="L180">            LOG.info(&quot;Reading a command block from file &quot; + logFile.getPath());</span>
+            // This is a command block - take appropriate action based on the command
+<span class="nc" id="L182">            HoodieCommandBlock commandBlock = (HoodieCommandBlock) r;</span>
+<span class="nc" id="L183">            String targetInstantForCommandBlock =</span>
+<span class="nc" id="L184">                r.getLogBlockHeader().get(HoodieLogBlock.HeaderMetadataType.TARGET_INSTANT_TIME);</span>
+<span class="nc bnc" id="L185" title="All 2 branches missed.">            switch (commandBlock.getType()) { // there can be different types of command blocks</span>
+              case ROLLBACK_PREVIOUS_BLOCK:
+                // Rollback the last read log block
+                // Get commit time from last record block, compare with targetCommitTime,
+                // rollback only if equal, this is required in scenarios of invalid/extra
+                // rollback blocks written due to failures during the rollback operation itself
+                // and ensures the same rollback block (R1) is used to rollback both B1 &amp; B2 with
+                // same instant_time
+<span class="nc" id="L193">                int numBlocksRolledBack = 0;</span>
+<span class="nc" id="L194">                totalRollbacks.incrementAndGet();</span>
+<span class="nc bnc" id="L195" title="All 2 branches missed.">                while (!currentInstantLogBlocks.isEmpty()) {</span>
+<span class="nc" id="L196">                  HoodieLogBlock lastBlock = currentInstantLogBlocks.peek();</span>
+                  // handle corrupt blocks separately since they may not have metadata
+<span class="nc bnc" id="L198" title="All 2 branches missed.">                  if (lastBlock.getBlockType() == CORRUPT_BLOCK) {</span>
+<span class="nc" id="L199">                    LOG.info(&quot;Rolling back the last corrupted log block read in &quot; + logFile.getPath());</span>
+<span class="nc" id="L200">                    currentInstantLogBlocks.pop();</span>
+<span class="nc" id="L201">                    numBlocksRolledBack++;</span>
+<span class="nc bnc" id="L202" title="All 2 branches missed.">                  } else if (lastBlock.getBlockType() != CORRUPT_BLOCK</span>
+<span class="nc bnc" id="L203" title="All 2 branches missed.">                      &amp;&amp; targetInstantForCommandBlock.contentEquals(lastBlock.getLogBlockHeader().get(INSTANT_TIME))) {</span>
+                    // rollback last data block or delete block
+<span class="nc" id="L205">                    LOG.info(&quot;Rolling back the last log block read in &quot; + logFile.getPath());</span>
+<span class="nc" id="L206">                    currentInstantLogBlocks.pop();</span>
+<span class="nc" id="L207">                    numBlocksRolledBack++;</span>
+<span class="nc" id="L208">                  } else if (!targetInstantForCommandBlock</span>
+<span class="nc bnc" id="L209" title="All 2 branches missed.">                      .contentEquals(currentInstantLogBlocks.peek().getLogBlockHeader().get(INSTANT_TIME))) {</span>
+                    // invalid or extra rollback block
+<span class="nc" id="L211">                    LOG.warn(&quot;TargetInstantTime &quot; + targetInstantForCommandBlock</span>
+<span class="nc" id="L212">                        + &quot; invalid or extra rollback command block in &quot; + logFile.getPath());</span>
+<span class="nc" id="L213">                    break;</span>
+                  } else {
+                    // this should not happen ideally
+<span class="nc" id="L216">                    LOG.warn(&quot;Unable to apply rollback command block in &quot; + logFile.getPath());</span>
+                  }
+<span class="nc" id="L218">                }</span>
+<span class="nc" id="L219">                LOG.info(&quot;Number of applied rollback blocks &quot; + numBlocksRolledBack);</span>
+<span class="nc" id="L220">                break;</span>
+              default:
+<span class="nc" id="L222">                throw new UnsupportedOperationException(&quot;Command type not yet supported.&quot;);</span>
+            }
+            break;
+          case CORRUPT_BLOCK:
+<span class="nc" id="L226">            LOG.info(&quot;Found a corrupt block in &quot; + logFile.getPath());</span>
+<span class="nc" id="L227">            totalCorruptBlocks.incrementAndGet();</span>
+            // If there is a corrupt block - we will assume that this was the next data block
+<span class="nc" id="L229">            currentInstantLogBlocks.push(r);</span>
+<span class="nc" id="L230">            break;</span>
+          default:
+<span class="nc" id="L232">            throw new UnsupportedOperationException(&quot;Block type not supported yet&quot;);</span>
+        }
+<span class="nc" id="L234">      }</span>
+      // merge the last read block when all the blocks are done reading
+<span class="nc bnc" id="L236" title="All 2 branches missed.">      if (!currentInstantLogBlocks.isEmpty()) {</span>
+<span class="nc" id="L237">        LOG.info(&quot;Merging the final data blocks&quot;);</span>
+<span class="nc" id="L238">        processQueuedBlocksForInstant(currentInstantLogBlocks, scannedLogFiles.size());</span>
+      }
+      // Done
+<span class="nc" id="L241">      progress = 1.0f;</span>
+<span class="nc" id="L242">    } catch (Exception e) {</span>
+<span class="nc" id="L243">      LOG.error(&quot;Got exception when reading log file&quot;, e);</span>
+<span class="nc" id="L244">      throw new HoodieIOException(&quot;IOException when reading log file &quot;);</span>
+    } finally {
+      try {
+<span class="nc bnc" id="L247" title="All 2 branches missed.">        if (null != logFormatReaderWrapper) {</span>
+<span class="nc" id="L248">          logFormatReaderWrapper.close();</span>
+        }
+<span class="nc" id="L250">      } catch (IOException ioe) {</span>
+        // Eat exception as we do not want to mask the original exception that can happen
+<span class="nc" id="L252">        LOG.error(&quot;Unable to close log format reader&quot;, ioe);</span>
+<span class="nc" id="L253">      }</span>
+    }
+<span class="nc" id="L255">  }</span>
+
+  /**
+   * Checks if the current logblock belongs to a later instant.
+   */
+  private boolean isNewInstantBlock(HoodieLogBlock logBlock) {
+<span class="nc bnc" id="L261" title="All 4 branches missed.">    return currentInstantLogBlocks.size() &gt; 0 &amp;&amp; currentInstantLogBlocks.peek().getBlockType() != CORRUPT_BLOCK</span>
+<span class="nc" id="L262">        &amp;&amp; !logBlock.getLogBlockHeader().get(INSTANT_TIME)</span>
+<span class="nc bnc" id="L263" title="All 2 branches missed.">            .contentEquals(currentInstantLogBlocks.peek().getLogBlockHeader().get(INSTANT_TIME));</span>
+  }
+
+  /**
+   * Iterate over the GenericRecord in the block, read the hoodie key and partition path and call subclass processors to
+   * handle it.
+   */
+  private void processAvroDataBlock(HoodieAvroDataBlock dataBlock) throws Exception {
+    // TODO (NA) - Implement getRecordItr() in HoodieAvroDataBlock and use that here
+<span class="nc" id="L272">    List&lt;IndexedRecord&gt; recs = dataBlock.getRecords();</span>
+<span class="nc" id="L273">    totalLogRecords.addAndGet(recs.size());</span>
+<span class="nc bnc" id="L274" title="All 2 branches missed.">    for (IndexedRecord rec : recs) {</span>
+<span class="nc" id="L275">      HoodieRecord&lt;? extends HoodieRecordPayload&gt; hoodieRecord =</span>
+<span class="nc" id="L276">          SpillableMapUtils.convertToHoodieRecordPayload((GenericRecord) rec, this.payloadClassFQN);</span>
+<span class="nc" id="L277">      processNextRecord(hoodieRecord);</span>
+<span class="nc" id="L278">    }</span>
+<span class="nc" id="L279">  }</span>
+
+  /**
+   * Process next record.
+   *
+   * @param hoodieRecord Hoodie Record to process
+   */
+  protected abstract void processNextRecord(HoodieRecord&lt;? extends HoodieRecordPayload&gt; hoodieRecord) throws Exception;
+
+  /**
+   * Process next deleted key.
+   *
+   * @param key Deleted record key
+   */
+  protected abstract void processNextDeletedKey(HoodieKey key);
+
+  /**
+   * Process the set of log blocks belonging to the last instant which is read fully.
+   */
+  private void processQueuedBlocksForInstant(Deque&lt;HoodieLogBlock&gt; lastBlocks, int numLogFilesSeen) throws Exception {
+<span class="nc bnc" id="L299" title="All 2 branches missed.">    while (!lastBlocks.isEmpty()) {</span>
+<span class="nc" id="L300">      LOG.info(&quot;Number of remaining logblocks to merge &quot; + lastBlocks.size());</span>
+      // poll the element at the bottom of the stack since that's the order it was inserted
+<span class="nc" id="L302">      HoodieLogBlock lastBlock = lastBlocks.pollLast();</span>
+<span class="nc bnc" id="L303" title="All 4 branches missed.">      switch (lastBlock.getBlockType()) {</span>
+        case AVRO_DATA_BLOCK:
+<span class="nc" id="L305">          processAvroDataBlock((HoodieAvroDataBlock) lastBlock);</span>
+<span class="nc" id="L306">          break;</span>
+        case DELETE_BLOCK:
+<span class="nc" id="L308">          Arrays.stream(((HoodieDeleteBlock) lastBlock).getKeysToDelete()).forEach(this::processNextDeletedKey);</span>
+<span class="nc" id="L309">          break;</span>
+        case CORRUPT_BLOCK:
+<span class="nc" id="L311">          LOG.warn(&quot;Found a corrupt block which was not rolled back&quot;);</span>
+<span class="nc" id="L312">          break;</span>
+        default:
+          break;
+      }
+<span class="nc" id="L316">    }</span>
+    // At this step the lastBlocks are consumed. We track approximate progress by number of log-files seen
+<span class="nc" id="L318">    progress = numLogFilesSeen - 1 / logFilePaths.size();</span>
+<span class="nc" id="L319">  }</span>
+
+  /**
+   * Return progress of scanning as a float between 0.0 to 1.0.
+   */
+  public float getProgress() {
+<span class="nc" id="L325">    return progress;</span>
+  }
+
+  public long getTotalLogFiles() {
+<span class="nc" id="L329">    return totalLogFiles.get();</span>
+  }
+
+  public long getTotalLogRecords() {
+<span class="nc" id="L333">    return totalLogRecords.get();</span>
+  }
+
+  public long getTotalLogBlocks() {
+<span class="nc" id="L337">    return totalLogBlocks.get();</span>
+  }
+
+  protected String getPayloadClassFQN() {
+<span class="nc" id="L341">    return payloadClassFQN;</span>
+  }
+
+  public long getTotalRollbacks() {
+<span class="nc" id="L345">    return totalRollbacks.get();</span>
+  }
+
+  public long getTotalCorruptBlocks() {
+<span class="nc" id="L349">    return totalCorruptBlocks.get();</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

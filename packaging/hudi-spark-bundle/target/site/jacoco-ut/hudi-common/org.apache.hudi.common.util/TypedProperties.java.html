@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>TypedProperties.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.util</a> &gt; <span class="el_source">TypedProperties.java</span></div><h1>TypedProperties.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.util;
+
+import java.io.Serializable;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Properties;
+import java.util.stream.Collectors;
+
+/**
+ * Type-aware extension of {@link java.util.Properties}.
+ */
+public class TypedProperties extends Properties implements Serializable {
+
+  public TypedProperties() {
+<span class="nc" id="L33">    super(null);</span>
+<span class="nc" id="L34">  }</span>
+
+  public TypedProperties(Properties defaults) {
+<span class="nc" id="L37">    super(defaults);</span>
+<span class="nc" id="L38">  }</span>
+
+  private void checkKey(String property) {
+<span class="nc bnc" id="L41" title="All 2 branches missed.">    if (!containsKey(property)) {</span>
+<span class="nc" id="L42">      throw new IllegalArgumentException(&quot;Property &quot; + property + &quot; not found&quot;);</span>
+    }
+<span class="nc" id="L44">  }</span>
+
+  public String getString(String property) {
+<span class="nc" id="L47">    checkKey(property);</span>
+<span class="nc" id="L48">    return getProperty(property);</span>
+  }
+
+  public String getString(String property, String defaultValue) {
+<span class="nc bnc" id="L52" title="All 2 branches missed.">    return containsKey(property) ? getProperty(property) : defaultValue;</span>
+  }
+
+  public List&lt;String&gt; getStringList(String property, String delimiter, List&lt;String&gt; defaultVal) {
+<span class="nc bnc" id="L56" title="All 2 branches missed.">    if (!containsKey(property)) {</span>
+<span class="nc" id="L57">      return defaultVal;</span>
+    }
+<span class="nc" id="L59">    return Arrays.stream(getProperty(property).split(delimiter)).map(String::trim).collect(Collectors.toList());</span>
+  }
+
+  public int getInteger(String property) {
+<span class="nc" id="L63">    checkKey(property);</span>
+<span class="nc" id="L64">    return Integer.parseInt(getProperty(property));</span>
+  }
+
+  public int getInteger(String property, int defaultValue) {
+<span class="nc bnc" id="L68" title="All 2 branches missed.">    return containsKey(property) ? Integer.parseInt(getProperty(property)) : defaultValue;</span>
+  }
+
+  public long getLong(String property) {
+<span class="nc" id="L72">    checkKey(property);</span>
+<span class="nc" id="L73">    return Long.parseLong(getProperty(property));</span>
+  }
+
+  public long getLong(String property, long defaultValue) {
+<span class="nc bnc" id="L77" title="All 2 branches missed.">    return containsKey(property) ? Long.parseLong(getProperty(property)) : defaultValue;</span>
+  }
+
+  public boolean getBoolean(String property) {
+<span class="nc" id="L81">    checkKey(property);</span>
+<span class="nc" id="L82">    return Boolean.parseBoolean(getProperty(property));</span>
+  }
+
+  public boolean getBoolean(String property, boolean defaultValue) {
+<span class="nc bnc" id="L86" title="All 2 branches missed.">    return containsKey(property) ? Boolean.parseBoolean(getProperty(property)) : defaultValue;</span>
+  }
+
+  public double getDouble(String property) {
+<span class="nc" id="L90">    checkKey(property);</span>
+<span class="nc" id="L91">    return Double.parseDouble(getProperty(property));</span>
+  }
+
+  public double getDouble(String property, double defaultValue) {
+<span class="nc bnc" id="L95" title="All 2 branches missed.">    return containsKey(property) ? Double.parseDouble(getProperty(property)) : defaultValue;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

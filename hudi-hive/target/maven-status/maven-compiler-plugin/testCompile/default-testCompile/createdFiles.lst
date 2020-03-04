@@ -1,0 +1,6 @@
+org/apache/hudi/hive/util/HiveTestService.class
+org/apache/hudi/hive/TestUtil.class
+org/apache/hudi/hive/util/HiveTestService$1.class
+org/apache/hudi/hive/TestHiveSyncTool.class
+org/apache/hudi/hive/util/HiveTestService$TServerSocketKeepAlive.class
+org/apache/hudi/hive/util/HiveTestService$ChainedTTransportFactory.class

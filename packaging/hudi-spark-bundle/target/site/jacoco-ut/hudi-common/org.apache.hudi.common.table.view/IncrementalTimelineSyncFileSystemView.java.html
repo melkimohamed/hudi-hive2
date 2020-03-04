@@ -1,0 +1,364 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>IncrementalTimelineSyncFileSystemView.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.table.view</a> &gt; <span class="el_source">IncrementalTimelineSyncFileSystemView.java</span></div><h1>IncrementalTimelineSyncFileSystemView.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.table.view;
+
+import org.apache.hudi.avro.model.HoodieCleanMetadata;
+import org.apache.hudi.avro.model.HoodieCompactionPlan;
+import org.apache.hudi.avro.model.HoodieRestoreMetadata;
+import org.apache.hudi.avro.model.HoodieRollbackMetadata;
+import org.apache.hudi.common.model.CompactionOperation;
+import org.apache.hudi.common.model.FileSlice;
+import org.apache.hudi.common.model.HoodieCommitMetadata;
+import org.apache.hudi.common.model.HoodieBaseFile;
+import org.apache.hudi.common.model.HoodieFileGroup;
+import org.apache.hudi.common.model.HoodieLogFile;
+import org.apache.hudi.common.table.HoodieTimeline;
+import org.apache.hudi.common.table.timeline.HoodieInstant;
+import org.apache.hudi.common.util.AvroUtils;
+import org.apache.hudi.common.util.CleanerUtils;
+import org.apache.hudi.common.util.CompactionUtils;
+import org.apache.hudi.common.util.FSUtils;
+import org.apache.hudi.common.util.Option;
+import org.apache.hudi.common.util.TimelineDiffHelper;
+import org.apache.hudi.common.util.TimelineDiffHelper.TimelineDiffResult;
+import org.apache.hudi.common.util.collection.Pair;
+import org.apache.hudi.exception.HoodieException;
+
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.Path;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+import java.io.IOException;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+/**
+ * Adds the capability to incrementally sync the changes to file-system view as and when new instants gets completed.
+ */
+public abstract class IncrementalTimelineSyncFileSystemView extends AbstractTableFileSystemView {
+
+<span class="nc" id="L58">  private static final Logger LOG = LogManager.getLogger(IncrementalTimelineSyncFileSystemView.class);</span>
+
+  // Allows incremental Timeline syncing
+  private final boolean incrementalTimelineSyncEnabled;
+
+  // This is the visible active timeline used only for incremental view syncing
+  private HoodieTimeline visibleActiveTimeline;
+
+<span class="nc" id="L66">  protected IncrementalTimelineSyncFileSystemView(boolean enableIncrementalTimelineSync) {</span>
+<span class="nc" id="L67">    this.incrementalTimelineSyncEnabled = enableIncrementalTimelineSync;</span>
+<span class="nc" id="L68">  }</span>
+
+  @Override
+  protected void refreshTimeline(HoodieTimeline visibleActiveTimeline) {
+<span class="nc" id="L72">    this.visibleActiveTimeline = visibleActiveTimeline;</span>
+<span class="nc" id="L73">    super.refreshTimeline(visibleActiveTimeline);</span>
+<span class="nc" id="L74">  }</span>
+
+  @Override
+  protected void runSync(HoodieTimeline oldTimeline, HoodieTimeline newTimeline) {
+    try {
+<span class="nc bnc" id="L79" title="All 2 branches missed.">      if (incrementalTimelineSyncEnabled) {</span>
+<span class="nc" id="L80">        TimelineDiffResult diffResult = TimelineDiffHelper.getNewInstantsForIncrementalSync(oldTimeline, newTimeline);</span>
+<span class="nc bnc" id="L81" title="All 2 branches missed.">        if (diffResult.canSyncIncrementally()) {</span>
+<span class="nc" id="L82">          LOG.info(&quot;Doing incremental sync&quot;);</span>
+<span class="nc" id="L83">          runIncrementalSync(newTimeline, diffResult);</span>
+<span class="nc" id="L84">          LOG.info(&quot;Finished incremental sync&quot;);</span>
+          // Reset timeline to latest
+<span class="nc" id="L86">          refreshTimeline(newTimeline);</span>
+<span class="nc" id="L87">          return;</span>
+        }
+      }
+<span class="nc" id="L90">    } catch (Exception ioe) {</span>
+<span class="nc" id="L91">      LOG.error(&quot;Got exception trying to perform incremental sync. Reverting to complete sync&quot;, ioe);</span>
+<span class="nc" id="L92">    }</span>
+
+<span class="nc" id="L94">    LOG.warn(&quot;Incremental Sync of timeline is turned off or deemed unsafe. Will revert to full syncing&quot;);</span>
+<span class="nc" id="L95">    super.runSync(oldTimeline, newTimeline);</span>
+<span class="nc" id="L96">  }</span>
+
+  /**
+   * Run incremental sync based on the diff result produced.
+   *
+   * @param timeline New Timeline
+   * @param diffResult Timeline Diff Result
+   */
+  private void runIncrementalSync(HoodieTimeline timeline, TimelineDiffResult diffResult) {
+
+<span class="nc" id="L106">    LOG.info(&quot;Timeline Diff Result is :&quot; + diffResult);</span>
+
+    // First remove pending compaction instants which were completed
+<span class="nc" id="L109">    diffResult.getFinishedCompactionInstants().stream().forEach(instant -&gt; {</span>
+      try {
+<span class="nc" id="L111">        removePendingCompactionInstant(timeline, instant);</span>
+<span class="nc" id="L112">      } catch (IOException e) {</span>
+<span class="nc" id="L113">        throw new HoodieException(e);</span>
+<span class="nc" id="L114">      }</span>
+<span class="nc" id="L115">    });</span>
+
+    // Add new completed instants found in the latest timeline
+<span class="nc" id="L118">    diffResult.getNewlySeenInstants().stream()</span>
+<span class="nc bnc" id="L119" title="All 4 branches missed.">        .filter(instant -&gt; instant.isCompleted() || instant.getAction().equals(HoodieTimeline.COMPACTION_ACTION))</span>
+<span class="nc" id="L120">        .forEach(instant -&gt; {</span>
+          try {
+<span class="nc bnc" id="L122" title="All 2 branches missed.">            if (instant.getAction().equals(HoodieTimeline.COMMIT_ACTION)</span>
+<span class="nc bnc" id="L123" title="All 2 branches missed.">                || instant.getAction().equals(HoodieTimeline.DELTA_COMMIT_ACTION)) {</span>
+<span class="nc" id="L124">              addCommitInstant(timeline, instant);</span>
+<span class="nc bnc" id="L125" title="All 2 branches missed.">            } else if (instant.getAction().equals(HoodieTimeline.RESTORE_ACTION)) {</span>
+<span class="nc" id="L126">              addRestoreInstant(timeline, instant);</span>
+<span class="nc bnc" id="L127" title="All 2 branches missed.">            } else if (instant.getAction().equals(HoodieTimeline.CLEAN_ACTION)) {</span>
+<span class="nc" id="L128">              addCleanInstant(timeline, instant);</span>
+<span class="nc bnc" id="L129" title="All 2 branches missed.">            } else if (instant.getAction().equals(HoodieTimeline.COMPACTION_ACTION)) {</span>
+<span class="nc" id="L130">              addPendingCompactionInstant(timeline, instant);</span>
+<span class="nc bnc" id="L131" title="All 2 branches missed.">            } else if (instant.getAction().equals(HoodieTimeline.ROLLBACK_ACTION)) {</span>
+<span class="nc" id="L132">              addRollbackInstant(timeline, instant);</span>
+            }
+<span class="nc" id="L134">          } catch (IOException ioe) {</span>
+<span class="nc" id="L135">            throw new HoodieException(ioe);</span>
+<span class="nc" id="L136">          }</span>
+<span class="nc" id="L137">        });</span>
+<span class="nc" id="L138">  }</span>
+
+  /**
+   * Remove Pending compaction instant.
+   *
+   * @param timeline New Hoodie Timeline
+   * @param instant Compaction Instant to be removed
+   */
+  private void removePendingCompactionInstant(HoodieTimeline timeline, HoodieInstant instant) throws IOException {
+<span class="nc" id="L147">    LOG.info(&quot;Removing completed compaction instant (&quot; + instant + &quot;)&quot;);</span>
+<span class="nc" id="L148">    HoodieCompactionPlan plan = CompactionUtils.getCompactionPlan(metaClient, instant.getTimestamp());</span>
+<span class="nc" id="L149">    removePendingCompactionOperations(CompactionUtils.getPendingCompactionOperations(instant, plan)</span>
+<span class="nc" id="L150">        .map(instantPair -&gt; Pair.of(instantPair.getValue().getKey(),</span>
+<span class="nc" id="L151">            CompactionOperation.convertFromAvroRecordInstance(instantPair.getValue().getValue()))));</span>
+<span class="nc" id="L152">  }</span>
+
+  /**
+   * Add newly found compaction instant.
+   *
+   * @param timeline Hoodie Timeline
+   * @param instant Compaction Instant
+   */
+  private void addPendingCompactionInstant(HoodieTimeline timeline, HoodieInstant instant) throws IOException {
+<span class="nc" id="L161">    LOG.info(&quot;Syncing pending compaction instant (&quot; + instant + &quot;)&quot;);</span>
+<span class="nc" id="L162">    HoodieCompactionPlan compactionPlan = CompactionUtils.getCompactionPlan(metaClient, instant.getTimestamp());</span>
+<span class="nc" id="L163">    List&lt;Pair&lt;String, CompactionOperation&gt;&gt; pendingOps =</span>
+<span class="nc" id="L164">        CompactionUtils.getPendingCompactionOperations(instant, compactionPlan)</span>
+<span class="nc" id="L165">            .map(p -&gt; Pair.of(p.getValue().getKey(),</span>
+<span class="nc" id="L166">                CompactionOperation.convertFromAvroRecordInstance(p.getValue().getValue())))</span>
+<span class="nc" id="L167">            .collect(Collectors.toList());</span>
+    // First, update Pending compaction instants
+<span class="nc" id="L169">    addPendingCompactionOperations(pendingOps.stream());</span>
+
+<span class="nc" id="L171">    Map&lt;String, List&lt;Pair&lt;String, HoodieFileGroup&gt;&gt;&gt; partitionToFileGroups = pendingOps.stream().map(opPair -&gt; {</span>
+<span class="nc" id="L172">      String compactionInstantTime = opPair.getKey();</span>
+<span class="nc" id="L173">      HoodieFileGroup fileGroup = new HoodieFileGroup(opPair.getValue().getFileGroupId(), timeline);</span>
+<span class="nc" id="L174">      fileGroup.addNewFileSliceAtInstant(compactionInstantTime);</span>
+<span class="nc" id="L175">      return Pair.of(compactionInstantTime, fileGroup);</span>
+<span class="nc" id="L176">    }).collect(Collectors.groupingBy(x -&gt; x.getValue().getPartitionPath()));</span>
+<span class="nc" id="L177">    partitionToFileGroups.entrySet().forEach(entry -&gt; {</span>
+<span class="nc bnc" id="L178" title="All 2 branches missed.">      if (isPartitionAvailableInStore(entry.getKey())) {</span>
+<span class="nc" id="L179">        applyDeltaFileSlicesToPartitionView(entry.getKey(),</span>
+<span class="nc" id="L180">            entry.getValue().stream().map(Pair::getValue).collect(Collectors.toList()), DeltaApplyMode.ADD);</span>
+      }
+<span class="nc" id="L182">    });</span>
+<span class="nc" id="L183">  }</span>
+
+  /**
+   * Add newly found commit/delta-commit instant.
+   *
+   * @param timeline Hoodie Timeline
+   * @param instant Instant
+   */
+  private void addCommitInstant(HoodieTimeline timeline, HoodieInstant instant) throws IOException {
+<span class="nc" id="L192">    LOG.info(&quot;Syncing committed instant (&quot; + instant + &quot;)&quot;);</span>
+<span class="nc" id="L193">    HoodieCommitMetadata commitMetadata =</span>
+<span class="nc" id="L194">        HoodieCommitMetadata.fromBytes(timeline.getInstantDetails(instant).get(), HoodieCommitMetadata.class);</span>
+<span class="nc" id="L195">    commitMetadata.getPartitionToWriteStats().entrySet().stream().forEach(entry -&gt; {</span>
+<span class="nc" id="L196">      String partition = entry.getKey();</span>
+<span class="nc bnc" id="L197" title="All 2 branches missed.">      if (isPartitionAvailableInStore(partition)) {</span>
+<span class="nc" id="L198">        LOG.info(&quot;Syncing partition (&quot; + partition + &quot;) of instant (&quot; + instant + &quot;)&quot;);</span>
+<span class="nc" id="L199">        FileStatus[] statuses = entry.getValue().stream().map(p -&gt; {</span>
+<span class="nc" id="L200">          FileStatus status = new FileStatus(p.getFileSizeInBytes(), false, 0, 0, 0, 0, null, null, null,</span>
+<span class="nc" id="L201">              new Path(String.format(&quot;%s/%s&quot;, metaClient.getBasePath(), p.getPath())));</span>
+<span class="nc" id="L202">          return status;</span>
+<span class="nc" id="L203">        }).toArray(FileStatus[]::new);</span>
+<span class="nc" id="L204">        List&lt;HoodieFileGroup&gt; fileGroups =</span>
+<span class="nc" id="L205">            buildFileGroups(statuses, timeline.filterCompletedAndCompactionInstants(), false);</span>
+<span class="nc" id="L206">        applyDeltaFileSlicesToPartitionView(partition, fileGroups, DeltaApplyMode.ADD);</span>
+<span class="nc" id="L207">      } else {</span>
+<span class="nc" id="L208">        LOG.warn(&quot;Skipping partition (&quot; + partition + &quot;) when syncing instant (&quot; + instant + &quot;) as it is not loaded&quot;);</span>
+      }
+<span class="nc" id="L210">    });</span>
+<span class="nc" id="L211">    LOG.info(&quot;Done Syncing committed instant (&quot; + instant + &quot;)&quot;);</span>
+<span class="nc" id="L212">  }</span>
+
+  /**
+   * Add newly found restore instant.
+   *
+   * @param timeline Hoodie Timeline
+   * @param instant Restore Instant
+   */
+  private void addRestoreInstant(HoodieTimeline timeline, HoodieInstant instant) throws IOException {
+<span class="nc" id="L221">    LOG.info(&quot;Syncing restore instant (&quot; + instant + &quot;)&quot;);</span>
+<span class="nc" id="L222">    HoodieRestoreMetadata metadata =</span>
+<span class="nc" id="L223">        AvroUtils.deserializeAvroMetadata(timeline.getInstantDetails(instant).get(), HoodieRestoreMetadata.class);</span>
+
+<span class="nc" id="L225">    Map&lt;String, List&lt;Pair&lt;String, String&gt;&gt;&gt; partitionFiles =</span>
+<span class="nc" id="L226">        metadata.getHoodieRestoreMetadata().entrySet().stream().flatMap(entry -&gt; {</span>
+<span class="nc" id="L227">          return entry.getValue().stream().flatMap(e -&gt; e.getPartitionMetadata().entrySet().stream().flatMap(e2 -&gt; {</span>
+<span class="nc" id="L228">            return e2.getValue().getSuccessDeleteFiles().stream().map(x -&gt; Pair.of(e2.getKey(), x));</span>
+          }));
+<span class="nc" id="L230">        }).collect(Collectors.groupingBy(Pair::getKey));</span>
+<span class="nc" id="L231">    partitionFiles.entrySet().stream().forEach(e -&gt; {</span>
+<span class="nc" id="L232">      removeFileSlicesForPartition(timeline, instant, e.getKey(),</span>
+<span class="nc" id="L233">          e.getValue().stream().map(x -&gt; x.getValue()).collect(Collectors.toList()));</span>
+<span class="nc" id="L234">    });</span>
+<span class="nc" id="L235">    LOG.info(&quot;Done Syncing restore instant (&quot; + instant + &quot;)&quot;);</span>
+<span class="nc" id="L236">  }</span>
+
+  /**
+   * Add newly found rollback instant.
+   *
+   * @param timeline Hoodie Timeline
+   * @param instant Rollback Instant
+   */
+  private void addRollbackInstant(HoodieTimeline timeline, HoodieInstant instant) throws IOException {
+<span class="nc" id="L245">    LOG.info(&quot;Syncing rollback instant (&quot; + instant + &quot;)&quot;);</span>
+<span class="nc" id="L246">    HoodieRollbackMetadata metadata =</span>
+<span class="nc" id="L247">        AvroUtils.deserializeAvroMetadata(timeline.getInstantDetails(instant).get(), HoodieRollbackMetadata.class);</span>
+
+<span class="nc" id="L249">    metadata.getPartitionMetadata().entrySet().stream().forEach(e -&gt; {</span>
+<span class="nc" id="L250">      removeFileSlicesForPartition(timeline, instant, e.getKey(), e.getValue().getSuccessDeleteFiles());</span>
+<span class="nc" id="L251">    });</span>
+<span class="nc" id="L252">    LOG.info(&quot;Done Syncing rollback instant (&quot; + instant + &quot;)&quot;);</span>
+<span class="nc" id="L253">  }</span>
+
+  /**
+   * Add newly found clean instant.
+   *
+   * @param timeline Timeline
+   * @param instant Clean instant
+   */
+  private void addCleanInstant(HoodieTimeline timeline, HoodieInstant instant) throws IOException {
+<span class="nc" id="L262">    LOG.info(&quot;Syncing cleaner instant (&quot; + instant + &quot;)&quot;);</span>
+<span class="nc" id="L263">    HoodieCleanMetadata cleanMetadata = CleanerUtils.getCleanerMetadata(metaClient, instant);</span>
+<span class="nc" id="L264">    cleanMetadata.getPartitionMetadata().entrySet().stream().forEach(entry -&gt; {</span>
+<span class="nc" id="L265">      final String basePath = metaClient.getBasePath();</span>
+<span class="nc" id="L266">      final String partitionPath = entry.getValue().getPartitionPath();</span>
+<span class="nc" id="L267">      List&lt;String&gt; fullPathList = entry.getValue().getSuccessDeleteFiles()</span>
+<span class="nc" id="L268">          .stream().map(fileName -&gt; new Path(FSUtils</span>
+<span class="nc" id="L269">              .getPartitionPath(basePath, partitionPath), fileName).toString())</span>
+<span class="nc" id="L270">          .collect(Collectors.toList());</span>
+<span class="nc" id="L271">      removeFileSlicesForPartition(timeline, instant, entry.getKey(), fullPathList);</span>
+<span class="nc" id="L272">    });</span>
+<span class="nc" id="L273">    LOG.info(&quot;Done Syncing cleaner instant (&quot; + instant + &quot;)&quot;);</span>
+<span class="nc" id="L274">  }</span>
+
+  private void removeFileSlicesForPartition(HoodieTimeline timeline, HoodieInstant instant, String partition,
+      List&lt;String&gt; paths) {
+<span class="nc bnc" id="L278" title="All 2 branches missed.">    if (isPartitionAvailableInStore(partition)) {</span>
+<span class="nc" id="L279">      LOG.info(&quot;Removing file slices for partition (&quot; + partition + &quot;) for instant (&quot; + instant + &quot;)&quot;);</span>
+<span class="nc" id="L280">      FileStatus[] statuses = paths.stream().map(p -&gt; {</span>
+<span class="nc" id="L281">        FileStatus status = new FileStatus();</span>
+<span class="nc" id="L282">        status.setPath(new Path(p));</span>
+<span class="nc" id="L283">        return status;</span>
+<span class="nc" id="L284">      }).toArray(FileStatus[]::new);</span>
+<span class="nc" id="L285">      List&lt;HoodieFileGroup&gt; fileGroups =</span>
+<span class="nc" id="L286">          buildFileGroups(statuses, timeline.filterCompletedAndCompactionInstants(), false);</span>
+<span class="nc" id="L287">      applyDeltaFileSlicesToPartitionView(partition, fileGroups, DeltaApplyMode.REMOVE);</span>
+<span class="nc" id="L288">    } else {</span>
+<span class="nc" id="L289">      LOG.warn(&quot;Skipping partition (&quot; + partition + &quot;) when syncing instant (&quot; + instant + &quot;) as it is not loaded&quot;);</span>
+    }
+<span class="nc" id="L291">  }</span>
+
+  /**
+   * Apply mode whether to add or remove the delta view.
+   */
+<span class="nc" id="L296">  enum DeltaApplyMode {</span>
+<span class="nc" id="L297">    ADD, REMOVE</span>
+  }
+
+  /**
+   * Apply changes to partition file-system view. Base Implementation overwrites the entire partitions view assuming
+   * some sort of map (in-mem/disk-based) is used. For View implementation which supports fine-granular updates (e:g
+   * RocksDB), override this method.
+   *
+   * @param partition PartitionPath
+   * @param deltaFileGroups Changed file-slices aggregated as file-groups
+   * @param mode Delta Apply mode
+   */
+  protected void applyDeltaFileSlicesToPartitionView(String partition, List&lt;HoodieFileGroup&gt; deltaFileGroups,
+      DeltaApplyMode mode) {
+<span class="nc bnc" id="L311" title="All 2 branches missed.">    if (deltaFileGroups.isEmpty()) {</span>
+<span class="nc" id="L312">      LOG.info(&quot;No delta file groups for partition :&quot; + partition);</span>
+<span class="nc" id="L313">      return;</span>
+    }
+
+<span class="nc" id="L316">    List&lt;HoodieFileGroup&gt; fileGroups = fetchAllStoredFileGroups(partition).collect(Collectors.toList());</span>
+    /**
+     * Note that while finding the new data/log files added/removed, the path stored in metadata will be missing the
+     * base-path,scheme and authority. Ensure the matching process takes care of this discrepancy.
+     */
+<span class="nc" id="L321">    Map&lt;String, HoodieBaseFile&gt; viewDataFiles = fileGroups.stream().flatMap(HoodieFileGroup::getAllRawFileSlices)</span>
+<span class="nc" id="L322">        .map(FileSlice::getBaseFile).filter(Option::isPresent).map(Option::get)</span>
+<span class="nc" id="L323">        .map(df -&gt; Pair.of(Path.getPathWithoutSchemeAndAuthority(new Path(df.getPath())).toString(), df))</span>
+<span class="nc" id="L324">        .collect(Collectors.toMap(Pair::getKey, Pair::getValue));</span>
+    // Note: Delta Log Files and Data FIles can be empty when adding/removing pending compactions
+<span class="nc" id="L326">    Map&lt;String, HoodieBaseFile&gt; deltaDataFiles = deltaFileGroups.stream().flatMap(HoodieFileGroup::getAllRawFileSlices)</span>
+<span class="nc" id="L327">        .map(FileSlice::getBaseFile).filter(Option::isPresent).map(Option::get)</span>
+<span class="nc" id="L328">        .map(df -&gt; Pair.of(Path.getPathWithoutSchemeAndAuthority(new Path(df.getPath())).toString(), df))</span>
+<span class="nc" id="L329">        .collect(Collectors.toMap(Pair::getKey, Pair::getValue));</span>
+
+<span class="nc" id="L331">    Map&lt;String, HoodieLogFile&gt; viewLogFiles =</span>
+<span class="nc" id="L332">        fileGroups.stream().flatMap(HoodieFileGroup::getAllRawFileSlices).flatMap(FileSlice::getLogFiles)</span>
+<span class="nc" id="L333">            .map(lf -&gt; Pair.of(Path.getPathWithoutSchemeAndAuthority(lf.getPath()).toString(), lf))</span>
+<span class="nc" id="L334">            .collect(Collectors.toMap(Pair::getKey, Pair::getValue));</span>
+<span class="nc" id="L335">    Map&lt;String, HoodieLogFile&gt; deltaLogFiles =</span>
+<span class="nc" id="L336">        deltaFileGroups.stream().flatMap(HoodieFileGroup::getAllRawFileSlices).flatMap(FileSlice::getLogFiles)</span>
+<span class="nc" id="L337">            .map(lf -&gt; Pair.of(Path.getPathWithoutSchemeAndAuthority(lf.getPath()).toString(), lf))</span>
+<span class="nc" id="L338">            .collect(Collectors.toMap(Pair::getKey, Pair::getValue));</span>
+
+<span class="nc bnc" id="L340" title="All 3 branches missed.">    switch (mode) {</span>
+      case ADD:
+<span class="nc" id="L342">        viewDataFiles.putAll(deltaDataFiles);</span>
+<span class="nc" id="L343">        viewLogFiles.putAll(deltaLogFiles);</span>
+<span class="nc" id="L344">        break;</span>
+      case REMOVE:
+<span class="nc" id="L346">        deltaDataFiles.keySet().stream().forEach(p -&gt; viewDataFiles.remove(p));</span>
+<span class="nc" id="L347">        deltaLogFiles.keySet().stream().forEach(p -&gt; viewLogFiles.remove(p));</span>
+<span class="nc" id="L348">        break;</span>
+      default:
+<span class="nc" id="L350">        throw new IllegalStateException(&quot;Unknown diff apply mode=&quot; + mode);</span>
+    }
+
+<span class="nc" id="L353">    HoodieTimeline timeline = deltaFileGroups.stream().map(df -&gt; df.getTimeline()).findAny().get();</span>
+<span class="nc" id="L354">    List&lt;HoodieFileGroup&gt; fgs =</span>
+<span class="nc" id="L355">        buildFileGroups(viewDataFiles.values().stream(), viewLogFiles.values().stream(), timeline, true);</span>
+<span class="nc" id="L356">    storePartitionView(partition, fgs);</span>
+<span class="nc" id="L357">  }</span>
+
+  @Override
+  public HoodieTimeline getTimeline() {
+<span class="nc" id="L361">    return visibleActiveTimeline;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

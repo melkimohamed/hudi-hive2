@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>DefaultSource.scala</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-spark_2.11</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi</a> &gt; <span class="el_source">DefaultSource.scala</span></div><h1>DefaultSource.scala</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi
+
+import org.apache.hudi.DataSourceReadOptions._
+import org.apache.hudi.exception.HoodieException
+import org.apache.hudi.hadoop.HoodieROTablePathFilter
+import org.apache.log4j.LogManager
+import org.apache.spark.sql.execution.datasources.DataSource
+import org.apache.spark.sql.execution.streaming.Sink
+import org.apache.spark.sql.sources._
+import org.apache.spark.sql.streaming.OutputMode
+import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.{DataFrame, SQLContext, SaveMode}
+
+/**
+  * Hoodie Spark Datasource, for reading and writing hoodie tables
+  *
+  */
+<span class="nc" id="L35">class DefaultSource extends RelationProvider</span>
+  with SchemaRelationProvider
+  with CreatableRelationProvider
+  with DataSourceRegister
+  with StreamSinkProvider
+  with Serializable {
+
+<span class="nc" id="L42">  private val log = LogManager.getLogger(classOf[DefaultSource])</span>
+
+  override def createRelation(sqlContext: SQLContext,
+                              parameters: Map[String, String]): BaseRelation = {
+<span class="nc" id="L46">    createRelation(sqlContext, parameters, null)</span>
+  }
+
+  override def createRelation(sqlContext: SQLContext,
+                              optParams: Map[String, String],
+<span class="nc" id="L51">                              schema: StructType): BaseRelation = {</span>
+    // Add default options for unspecified read options keys.
+<span class="nc" id="L53">    val parameters = Map(QUERY_TYPE_OPT_KEY -&gt; DEFAULT_QUERY_TYPE_OPT_VAL) ++ translateViewTypesToQueryTypes(optParams)</span>
+
+<span class="nc" id="L55">    val path = parameters.get(&quot;path&quot;)</span>
+<span class="nc bnc" id="L56" title="All 2 branches missed.">    if (path.isEmpty) {</span>
+<span class="nc" id="L57">      throw new HoodieException(&quot;'path' must be specified.&quot;)</span>
+    }
+
+<span class="nc bnc" id="L60" title="All 2 branches missed.">    if (parameters(QUERY_TYPE_OPT_KEY).equals(QUERY_TYPE_SNAPSHOT_OPT_VAL)) {</span>
+      // this is just effectively RO view only, where `path` can contain a mix of
+      // non-hoodie/hoodie path files. set the path filter up
+<span class="nc" id="L63">      sqlContext.sparkContext.hadoopConfiguration.setClass(</span>
+<span class="nc" id="L64">        &quot;mapreduce.input.pathFilter.class&quot;,</span>
+<span class="nc" id="L65">        classOf[HoodieROTablePathFilter],</span>
+<span class="nc" id="L66">        classOf[org.apache.hadoop.fs.PathFilter])</span>
+
+<span class="nc" id="L68">      log.info(&quot;Constructing hoodie (as parquet) data source with options :&quot; + parameters)</span>
+<span class="nc" id="L69">      log.warn(&quot;Snapshot view not supported yet via data source, for MERGE_ON_READ tables. &quot; +</span>
+        &quot;Please query the Hive table registered using Spark SQL.&quot;)
+      // simply return as a regular parquet relation
+<span class="nc" id="L72">      DataSource.apply(</span>
+<span class="nc" id="L73">        sparkSession = sqlContext.sparkSession,</span>
+<span class="nc" id="L74">        userSpecifiedSchema = Option(schema),</span>
+<span class="nc" id="L75">        className = &quot;parquet&quot;,</span>
+<span class="nc" id="L76">        options = parameters)</span>
+<span class="nc" id="L77">        .resolveRelation()</span>
+<span class="nc bnc" id="L78" title="All 2 branches missed.">    } else if (parameters(QUERY_TYPE_OPT_KEY).equals(QUERY_TYPE_INCREMENTAL_OPT_VAL)) {</span>
+<span class="nc" id="L79">      new IncrementalRelation(sqlContext, path.get, optParams, schema)</span>
+    } else {
+<span class="nc" id="L81">      throw new HoodieException(&quot;Invalid query type :&quot; + parameters(QUERY_TYPE_OPT_KEY))</span>
+    }
+  }
+
+  override def createRelation(sqlContext: SQLContext,
+                              mode: SaveMode,
+                              optParams: Map[String, String],
+                              df: DataFrame): BaseRelation = {
+
+<span class="nc" id="L90">    val parameters = HoodieSparkSqlWriter.parametersWithWriteDefaults(optParams)</span>
+<span class="nc" id="L91">    HoodieSparkSqlWriter.write(sqlContext, mode, parameters, df)</span>
+<span class="nc" id="L92">    createRelation(sqlContext, parameters, df.schema)</span>
+  }
+
+  override def createSink(sqlContext: SQLContext,
+                          optParams: Map[String, String],
+                          partitionColumns: Seq[String],
+                          outputMode: OutputMode): Sink = {
+<span class="nc" id="L99">    val parameters = HoodieSparkSqlWriter.parametersWithWriteDefaults(optParams)</span>
+<span class="nc" id="L100">    new HoodieStreamingSink(</span>
+<span class="nc" id="L101">      sqlContext,</span>
+<span class="nc" id="L102">      parameters,</span>
+<span class="nc" id="L103">      partitionColumns,</span>
+<span class="nc" id="L104">      outputMode)</span>
+  }
+
+<span class="nc" id="L107">  override def shortName(): String = &quot;hudi&quot;</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

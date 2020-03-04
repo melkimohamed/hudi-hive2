@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>KeyRangeNode.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-client</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.index.bloom</a> &gt; <span class="el_source">KeyRangeNode.java</span></div><h1>KeyRangeNode.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.index.bloom;
+
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Represents a node in the {@link KeyRangeLookupTree}. Holds information pertaining to a single index file, viz file
+ * name, min record key and max record key.
+ */
+class KeyRangeNode implements Comparable&lt;KeyRangeNode&gt;, Serializable {
+
+<span class="nc" id="L31">  private final List&lt;String&gt; fileNameList = new ArrayList&lt;&gt;();</span>
+  private final String minRecordKey;
+  private final String maxRecordKey;
+<span class="nc" id="L34">  private String rightSubTreeMax = null;</span>
+<span class="nc" id="L35">  private String leftSubTreeMax = null;</span>
+<span class="nc" id="L36">  private String rightSubTreeMin = null;</span>
+<span class="nc" id="L37">  private String leftSubTreeMin = null;</span>
+<span class="nc" id="L38">  private KeyRangeNode left = null;</span>
+<span class="nc" id="L39">  private KeyRangeNode right = null;</span>
+
+  /**
+   * Instantiates a new {@link KeyRangeNode}.
+   *
+   * @param minRecordKey min record key of the index file
+   * @param maxRecordKey max record key of the index file
+   * @param fileName file name of the index file
+   */
+<span class="nc" id="L48">  KeyRangeNode(String minRecordKey, String maxRecordKey, String fileName) {</span>
+<span class="nc" id="L49">    this.fileNameList.add(fileName);</span>
+<span class="nc" id="L50">    this.minRecordKey = minRecordKey;</span>
+<span class="nc" id="L51">    this.maxRecordKey = maxRecordKey;</span>
+<span class="nc" id="L52">  }</span>
+
+  /**
+   * Adds a new file name list to existing list of file names.
+   *
+   * @param newFiles {@link List} of file names to be added
+   */
+  void addFiles(List&lt;String&gt; newFiles) {
+<span class="nc" id="L60">    this.fileNameList.addAll(newFiles);</span>
+<span class="nc" id="L61">  }</span>
+
+  @Override
+  public String toString() {
+<span class="nc" id="L65">    return &quot;KeyRangeNode{minRecordKey='&quot; + minRecordKey + '\'' + &quot;, maxRecordKey='&quot; + maxRecordKey + '\''</span>
+        + &quot;, fileNameList=&quot; + fileNameList + &quot;, rightSubTreeMax='&quot; + rightSubTreeMax + '\'' + &quot;, leftSubTreeMax='&quot;
+        + leftSubTreeMax + '\'' + &quot;, rightSubTreeMin='&quot; + rightSubTreeMin + '\'' + &quot;, leftSubTreeMin='&quot; + leftSubTreeMin
+        + '\'' + '}';
+  }
+
+  /**
+   * Compares the min record key of two nodes, followed by max record key.
+   *
+   * @param that the {@link KeyRangeNode} to be compared with
+   * @return the result of comparison. 0 if both min and max are equal in both. 1 if this {@link KeyRangeNode} is
+   * greater than the {@code that} keyRangeNode. -1 if {@code that} keyRangeNode is greater than this {@link
+   * KeyRangeNode}
+   */
+  @Override
+  public int compareTo(KeyRangeNode that) {
+<span class="nc" id="L81">    int compareValue = minRecordKey.compareTo(that.minRecordKey);</span>
+<span class="nc bnc" id="L82" title="All 2 branches missed.">    if (compareValue == 0) {</span>
+<span class="nc" id="L83">      return maxRecordKey.compareTo(that.maxRecordKey);</span>
+    } else {
+<span class="nc" id="L85">      return compareValue;</span>
+    }
+  }
+
+  public List&lt;String&gt; getFileNameList() {
+<span class="nc" id="L90">    return fileNameList;</span>
+  }
+
+  public String getMinRecordKey() {
+<span class="nc" id="L94">    return minRecordKey;</span>
+  }
+
+  public String getMaxRecordKey() {
+<span class="nc" id="L98">    return maxRecordKey;</span>
+  }
+
+  public String getRightSubTreeMin() {
+<span class="nc" id="L102">    return rightSubTreeMin;</span>
+  }
+
+  public void setRightSubTreeMin(String rightSubTreeMin) {
+<span class="nc" id="L106">    this.rightSubTreeMin = rightSubTreeMin;</span>
+<span class="nc" id="L107">  }</span>
+
+  public String getLeftSubTreeMin() {
+<span class="nc" id="L110">    return leftSubTreeMin;</span>
+  }
+
+  public void setLeftSubTreeMin(String leftSubTreeMin) {
+<span class="nc" id="L114">    this.leftSubTreeMin = leftSubTreeMin;</span>
+<span class="nc" id="L115">  }</span>
+
+  public String getRightSubTreeMax() {
+<span class="nc" id="L118">    return rightSubTreeMax;</span>
+  }
+
+  public void setRightSubTreeMax(String rightSubTreeMax) {
+<span class="nc" id="L122">    this.rightSubTreeMax = rightSubTreeMax;</span>
+<span class="nc" id="L123">  }</span>
+
+  public String getLeftSubTreeMax() {
+<span class="nc" id="L126">    return leftSubTreeMax;</span>
+  }
+
+  public void setLeftSubTreeMax(String leftSubTreeMax) {
+<span class="nc" id="L130">    this.leftSubTreeMax = leftSubTreeMax;</span>
+<span class="nc" id="L131">  }</span>
+
+  public KeyRangeNode getLeft() {
+<span class="nc" id="L134">    return left;</span>
+  }
+
+  public void setLeft(KeyRangeNode left) {
+<span class="nc" id="L138">    this.left = left;</span>
+<span class="nc" id="L139">  }</span>
+
+  public KeyRangeNode getRight() {
+<span class="nc" id="L142">    return right;</span>
+  }
+
+  public void setRight(KeyRangeNode right) {
+<span class="nc" id="L146">    this.right = right;</span>
+<span class="nc" id="L147">  }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

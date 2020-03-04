@@ -1,0 +1,158 @@
+
+*****************************************************
+Summary
+-------
+Generated at: 2020-03-04T21:53:08+01:00
+
+Notes: 0
+Binaries: 0
+Archives: 0
+Standards: 132
+
+Apache Licensed: 0
+Generated Documents: 0
+
+JavaDocs are generated, thus a license header is optional.
+Generated files do not require license headers.
+
+0 Unknown Licenses
+
+*****************************************************
+  Files with Apache License headers will be marked AL
+  Binary files (which do not require any license headers) will be marked B
+  Compressed archives will be marked A
+  Notices, licenses etc. will be marked N
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/pom.xml
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/client/AbstractHoodieClient.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/client/AbstractHoodieWriteClient.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/client/CompactionAdminClient.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/client/HoodieCleanClient.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/client/HoodieReadClient.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/client/HoodieWriteClient.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/client/WriteStatus.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/client/embedded/EmbeddedTimelineService.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/client/utils/ClientUtils.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/client/utils/LazyIterableIterator.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/client/utils/ParquetReaderIterator.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/config/HoodieCompactionConfig.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/config/HoodieHBaseIndexConfig.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/config/HoodieIndexConfig.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/config/HoodieMemoryConfig.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/config/HoodieMetricsConfig.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/config/HoodieStorageConfig.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/config/HoodieWriteConfig.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/exception/HoodieAppendException.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/exception/HoodieCommitException.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/exception/HoodieCompactionException.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/exception/HoodieDependentSystemUnavailableException.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/exception/HoodieInsertException.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/exception/HoodieRollbackException.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/exception/HoodieSavepointException.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/exception/HoodieUpsertException.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/execution/BulkInsertMapFunction.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/execution/CopyOnWriteLazyInsertIterable.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/execution/MergeOnReadLazyInsertIterable.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/execution/SparkBoundedInMemoryExecutor.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/index/HoodieIndex.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/index/InMemoryHashIndex.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/index/bloom/BloomIndexFileInfo.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/index/bloom/BucketizedBloomCheckPartitioner.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/index/bloom/HoodieBloomIndex.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/index/bloom/HoodieBloomIndexCheckFunction.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/index/bloom/HoodieGlobalBloomIndex.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/index/bloom/IndexFileFilter.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/index/bloom/IntervalTreeBasedGlobalIndexFileFilter.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/index/bloom/IntervalTreeBasedIndexFileFilter.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/index/bloom/KeyLookupResult.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/index/bloom/KeyRangeLookupTree.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/index/bloom/KeyRangeNode.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/index/bloom/ListBasedGlobalIndexFileFilter.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/index/bloom/ListBasedIndexFileFilter.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/index/hbase/DefaultHBaseQPSResourceAllocator.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/index/hbase/HBaseIndex.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/index/hbase/HBaseIndexQPSResourceAllocator.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/io/HoodieAppendHandle.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/io/HoodieCreateHandle.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/io/HoodieIOHandle.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/io/HoodieKeyLookupHandle.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/io/HoodieMergeHandle.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/io/HoodieRangeInfoHandle.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/io/HoodieReadHandle.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/io/HoodieWriteHandle.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/io/storage/HoodieParquetConfig.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/io/storage/HoodieParquetWriter.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/io/storage/HoodieStorageWriter.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/io/storage/HoodieStorageWriterFactory.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/metrics/HoodieMetrics.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/metrics/InMemoryMetricsReporter.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/metrics/JmxMetricsReporter.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/metrics/Metrics.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/metrics/MetricsGraphiteReporter.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/metrics/MetricsReporter.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/metrics/MetricsReporterFactory.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/metrics/MetricsReporterType.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/table/CleanHelper.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/table/HoodieCommitArchiveLog.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/table/HoodieCopyOnWriteTable.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/table/HoodieMergeOnReadTable.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/table/HoodieTable.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/table/UserDefinedBulkInsertPartitioner.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/table/WorkloadProfile.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/table/WorkloadStat.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/table/compact/HoodieCompactor.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/table/compact/HoodieMergeOnReadTableCompactor.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/table/compact/OperationResult.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/table/compact/strategy/BoundedIOCompactionStrategy.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/table/compact/strategy/BoundedPartitionAwareCompactionStrategy.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/table/compact/strategy/CompactionStrategy.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/table/compact/strategy/DayBasedCompactionStrategy.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/table/compact/strategy/LogFileSizeBasedCompactionStrategy.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/table/compact/strategy/UnBoundedCompactionStrategy.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/table/compact/strategy/UnBoundedPartitionAwareCompactionStrategy.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/table/rollback/RollbackHelper.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/java/org/apache/hudi/table/rollback/RollbackRequest.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/main/resources/log4j.properties
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/HoodieClientExample.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/client/TestClientRollback.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/client/TestCompactionAdminClient.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/client/TestHoodieClientBase.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/client/TestHoodieClientOnCopyOnWriteStorage.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/client/TestHoodieReadClient.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/client/TestMultiFS.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/client/TestUpdateSchemaEvolution.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/client/TestWriteStatus.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/client/utils/TestParquetReaderIterator.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/common/HoodieClientTestHarness.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/common/HoodieClientTestUtils.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/common/HoodieMergeOnReadTestUtils.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/common/HoodieTestDataGenerator.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/common/TestRawTripPayload.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/config/TestHoodieWriteConfig.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/execution/TestBoundedInMemoryExecutor.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/execution/TestBoundedInMemoryQueue.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/index/TestHBaseQPSResourceAllocator.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/index/TestHbaseIndex.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/index/TestHoodieIndex.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/index/bloom/TestBucketizedBloomCheckPartitioner.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/index/bloom/TestHoodieBloomIndex.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/index/bloom/TestHoodieGlobalBloomIndex.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/index/bloom/TestKeyRangeLookupTree.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/io/TestHoodieCommitArchiveLog.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/io/TestHoodieMergeHandle.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/io/storage/TestHoodieStorageWriterFactory.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/metrics/TestHoodieJmxMetrics.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/metrics/TestHoodieMetrics.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/table/TestCleaner.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/table/TestConsistencyGuard.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/table/TestCopyOnWriteTable.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/table/TestHoodieRecordSizing.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/table/TestMergeOnReadTable.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/table/compact/TestAsyncCompaction.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/table/compact/TestHoodieCompactor.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/java/org/apache/hudi/table/compact/strategy/TestHoodieCompactionStrategy.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/resources/exampleEvolvedSchema.txt
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/resources/exampleSchema.txt
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/resources/log4j-surefire-quiet.properties
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-client/src/test/resources/log4j-surefire.properties
+ 
+*****************************************************

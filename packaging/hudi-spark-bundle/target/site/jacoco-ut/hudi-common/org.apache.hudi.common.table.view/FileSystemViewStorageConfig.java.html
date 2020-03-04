@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>FileSystemViewStorageConfig.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.table.view</a> &gt; <span class="el_source">FileSystemViewStorageConfig.java</span></div><h1>FileSystemViewStorageConfig.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.table.view;
+
+import org.apache.hudi.config.DefaultHoodieConfig;
+
+import com.google.common.base.Preconditions;
+
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.Properties;
+
+/**
+ * File System View Storage Configurations.
+ */
+public class FileSystemViewStorageConfig extends DefaultHoodieConfig {
+
+  // Property Names
+  public static final String FILESYSTEM_VIEW_STORAGE_TYPE = &quot;hoodie.filesystem.view.type&quot;;
+  public static final String FILESYSTEM_VIEW_INCREMENTAL_SYNC_MODE = &quot;hoodie.filesystem.view.incr.timeline.sync.enable&quot;;
+  public static final String FILESYSTEM_SECONDARY_VIEW_STORAGE_TYPE = &quot;hoodie.filesystem.view.secondary.type&quot;;
+  public static final String FILESYSTEM_VIEW_REMOTE_HOST = &quot;hoodie.filesystem.view.remote.host&quot;;
+  public static final String FILESYSTEM_VIEW_REMOTE_PORT = &quot;hoodie.filesystem.view.remote.port&quot;;
+  public static final String FILESYSTEM_VIEW_SPILLABLE_DIR = &quot;hoodie.filesystem.view.spillable.dir&quot;;
+  public static final String FILESYSTEM_VIEW_SPILLABLE_MEM = &quot;hoodie.filesystem.view.spillable.mem&quot;;
+  public static final String FILESYSTEM_VIEW_PENDING_COMPACTION_MEM_FRACTION =
+      &quot;hoodie.filesystem.view.spillable.compaction.mem.fraction&quot;;
+  private static final String ROCKSDB_BASE_PATH_PROP = &quot;hoodie.filesystem.view.rocksdb.base.path&quot;;
+
+<span class="nc" id="L47">  public static final FileSystemViewStorageType DEFAULT_VIEW_STORAGE_TYPE = FileSystemViewStorageType.MEMORY;</span>
+<span class="nc" id="L48">  public static final FileSystemViewStorageType DEFAULT_SECONDARY_VIEW_STORAGE_TYPE = FileSystemViewStorageType.MEMORY;</span>
+  public static final String DEFAULT_ROCKSDB_BASE_PATH = &quot;/tmp/hoodie_timeline_rocksdb&quot;;
+
+  public static final String DEFAULT_FILESYSTEM_VIEW_INCREMENTAL_SYNC_MODE = &quot;false&quot;;
+  public static final String DEFUALT_REMOTE_VIEW_SERVER_HOST = &quot;localhost&quot;;
+<span class="nc" id="L53">  public static final Integer DEFAULT_REMOTE_VIEW_SERVER_PORT = 26754;</span>
+
+  public static final String DEFAULT_VIEW_SPILLABLE_DIR = &quot;/tmp/view_map/&quot;;
+<span class="nc" id="L56">  private static final Double DEFAULT_MEM_FRACTION_FOR_PENDING_COMPACTION = 0.01;</span>
+<span class="nc" id="L57">  private static final Long DEFAULT_MAX_MEMORY_FOR_VIEW = 100 * 1024 * 1024L; // 100 MB</span>
+
+  public static FileSystemViewStorageConfig.Builder newBuilder() {
+<span class="nc" id="L60">    return new Builder();</span>
+  }
+
+  private FileSystemViewStorageConfig(Properties props) {
+<span class="nc" id="L64">    super(props);</span>
+<span class="nc" id="L65">  }</span>
+
+  public FileSystemViewStorageType getStorageType() {
+<span class="nc" id="L68">    return FileSystemViewStorageType.valueOf(props.getProperty(FILESYSTEM_VIEW_STORAGE_TYPE));</span>
+  }
+
+  public boolean isIncrementalTimelineSyncEnabled() {
+<span class="nc" id="L72">    return Boolean.parseBoolean(props.getProperty(FILESYSTEM_VIEW_INCREMENTAL_SYNC_MODE));</span>
+  }
+
+  public String getRemoteViewServerHost() {
+<span class="nc" id="L76">    return props.getProperty(FILESYSTEM_VIEW_REMOTE_HOST);</span>
+  }
+
+  public Integer getRemoteViewServerPort() {
+<span class="nc" id="L80">    return Integer.parseInt(props.getProperty(FILESYSTEM_VIEW_REMOTE_PORT));</span>
+  }
+
+  public long getMaxMemoryForFileGroupMap() {
+<span class="nc" id="L84">    long totalMemory = Long.parseLong(props.getProperty(FILESYSTEM_VIEW_SPILLABLE_MEM));</span>
+<span class="nc" id="L85">    return totalMemory - getMaxMemoryForPendingCompaction();</span>
+  }
+
+  public long getMaxMemoryForPendingCompaction() {
+<span class="nc" id="L89">    long totalMemory = Long.parseLong(props.getProperty(FILESYSTEM_VIEW_SPILLABLE_MEM));</span>
+<span class="nc" id="L90">    return new Double(totalMemory * Double.parseDouble(props.getProperty(FILESYSTEM_VIEW_PENDING_COMPACTION_MEM_FRACTION)))</span>
+<span class="nc" id="L91">        .longValue();</span>
+  }
+
+  public String getBaseStoreDir() {
+<span class="nc" id="L95">    return props.getProperty(FILESYSTEM_VIEW_SPILLABLE_DIR);</span>
+  }
+
+  public FileSystemViewStorageType getSecondaryStorageType() {
+<span class="nc" id="L99">    return FileSystemViewStorageType.valueOf(props.getProperty(FILESYSTEM_SECONDARY_VIEW_STORAGE_TYPE));</span>
+  }
+
+  public String getRocksdbBasePath() {
+<span class="nc" id="L103">    return props.getProperty(ROCKSDB_BASE_PATH_PROP);</span>
+  }
+
+  /**
+   * The builder used to build {@link FileSystemViewStorageConfig}.
+   */
+<span class="nc" id="L109">  public static class Builder {</span>
+
+<span class="nc" id="L111">    private final Properties props = new Properties();</span>
+
+    public Builder fromFile(File propertiesFile) throws IOException {
+<span class="nc" id="L114">      try (FileReader reader = new FileReader(propertiesFile)) {</span>
+<span class="nc" id="L115">        props.load(reader);</span>
+<span class="nc" id="L116">        return this;</span>
+      }
+    }
+
+    public Builder fromProperties(Properties props) {
+<span class="nc" id="L121">      this.props.putAll(props);</span>
+<span class="nc" id="L122">      return this;</span>
+    }
+
+    public Builder withStorageType(FileSystemViewStorageType storageType) {
+<span class="nc" id="L126">      props.setProperty(FILESYSTEM_VIEW_STORAGE_TYPE, storageType.name());</span>
+<span class="nc" id="L127">      return this;</span>
+    }
+
+    public Builder withSecondaryStorageType(FileSystemViewStorageType storageType) {
+<span class="nc" id="L131">      props.setProperty(FILESYSTEM_SECONDARY_VIEW_STORAGE_TYPE, storageType.name());</span>
+<span class="nc" id="L132">      return this;</span>
+    }
+
+    public Builder withIncrementalTimelineSync(boolean enableIncrTimelineSync) {
+<span class="nc" id="L136">      props.setProperty(FILESYSTEM_VIEW_INCREMENTAL_SYNC_MODE, Boolean.toString(enableIncrTimelineSync));</span>
+<span class="nc" id="L137">      return this;</span>
+    }
+
+    public Builder withRemoteServerHost(String remoteServerHost) {
+<span class="nc" id="L141">      props.setProperty(FILESYSTEM_VIEW_REMOTE_HOST, remoteServerHost);</span>
+<span class="nc" id="L142">      return this;</span>
+    }
+
+    public Builder withRemoteServerPort(Integer remoteServerPort) {
+<span class="nc" id="L146">      props.setProperty(FILESYSTEM_VIEW_REMOTE_PORT, remoteServerPort.toString());</span>
+<span class="nc" id="L147">      return this;</span>
+    }
+
+    public Builder withMaxMemoryForView(Long maxMemoryForView) {
+<span class="nc" id="L151">      props.setProperty(FILESYSTEM_VIEW_SPILLABLE_MEM, maxMemoryForView.toString());</span>
+<span class="nc" id="L152">      return this;</span>
+    }
+
+    public Builder withMemFractionForPendingCompaction(Double memFractionForPendingCompaction) {
+<span class="nc" id="L156">      props.setProperty(FILESYSTEM_VIEW_PENDING_COMPACTION_MEM_FRACTION, memFractionForPendingCompaction.toString());</span>
+<span class="nc" id="L157">      return this;</span>
+    }
+
+    public Builder withBaseStoreDir(String baseStorePath) {
+<span class="nc" id="L161">      props.setProperty(FILESYSTEM_VIEW_SPILLABLE_DIR, baseStorePath);</span>
+<span class="nc" id="L162">      return this;</span>
+    }
+
+    public Builder withRocksDBPath(String basePath) {
+<span class="nc" id="L166">      props.setProperty(ROCKSDB_BASE_PATH_PROP, basePath);</span>
+<span class="nc" id="L167">      return this;</span>
+    }
+
+    public FileSystemViewStorageConfig build() {
+<span class="nc bnc" id="L171" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(FILESYSTEM_VIEW_STORAGE_TYPE), FILESYSTEM_VIEW_STORAGE_TYPE,</span>
+<span class="nc" id="L172">          DEFAULT_VIEW_STORAGE_TYPE.name());</span>
+<span class="nc bnc" id="L173" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(FILESYSTEM_VIEW_INCREMENTAL_SYNC_MODE),</span>
+          FILESYSTEM_VIEW_INCREMENTAL_SYNC_MODE, DEFAULT_FILESYSTEM_VIEW_INCREMENTAL_SYNC_MODE);
+<span class="nc bnc" id="L175" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(FILESYSTEM_SECONDARY_VIEW_STORAGE_TYPE),</span>
+<span class="nc" id="L176">          FILESYSTEM_SECONDARY_VIEW_STORAGE_TYPE, DEFAULT_SECONDARY_VIEW_STORAGE_TYPE.name());</span>
+<span class="nc bnc" id="L177" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(FILESYSTEM_VIEW_REMOTE_HOST), FILESYSTEM_VIEW_REMOTE_HOST,</span>
+          DEFUALT_REMOTE_VIEW_SERVER_HOST);
+<span class="nc bnc" id="L179" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(FILESYSTEM_VIEW_REMOTE_PORT), FILESYSTEM_VIEW_REMOTE_PORT,</span>
+<span class="nc" id="L180">          DEFAULT_REMOTE_VIEW_SERVER_PORT.toString());</span>
+
+<span class="nc bnc" id="L182" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(FILESYSTEM_VIEW_SPILLABLE_DIR), FILESYSTEM_VIEW_SPILLABLE_DIR,</span>
+          DEFAULT_VIEW_SPILLABLE_DIR);
+<span class="nc bnc" id="L184" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(FILESYSTEM_VIEW_SPILLABLE_MEM), FILESYSTEM_VIEW_SPILLABLE_MEM,</span>
+<span class="nc" id="L185">          DEFAULT_MAX_MEMORY_FOR_VIEW.toString());</span>
+<span class="nc bnc" id="L186" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(FILESYSTEM_VIEW_PENDING_COMPACTION_MEM_FRACTION),</span>
+<span class="nc" id="L187">          FILESYSTEM_VIEW_PENDING_COMPACTION_MEM_FRACTION, DEFAULT_MEM_FRACTION_FOR_PENDING_COMPACTION.toString());</span>
+
+<span class="nc bnc" id="L189" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(ROCKSDB_BASE_PATH_PROP), ROCKSDB_BASE_PATH_PROP,</span>
+          DEFAULT_ROCKSDB_BASE_PATH);
+
+      // Validations
+<span class="nc" id="L193">      FileSystemViewStorageType.valueOf(props.getProperty(FILESYSTEM_VIEW_STORAGE_TYPE));</span>
+<span class="nc" id="L194">      FileSystemViewStorageType.valueOf(props.getProperty(FILESYSTEM_SECONDARY_VIEW_STORAGE_TYPE));</span>
+<span class="nc bnc" id="L195" title="All 2 branches missed.">      Preconditions.checkArgument(Integer.parseInt(props.getProperty(FILESYSTEM_VIEW_REMOTE_PORT)) &gt; 0);</span>
+<span class="nc" id="L196">      return new FileSystemViewStorageConfig(props);</span>
+    }
+  }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

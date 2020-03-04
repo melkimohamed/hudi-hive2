@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>InternalFilter.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.bloom.filter</a> &gt; <span class="el_source">InternalFilter.java</span></div><h1>InternalFilter.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.bloom.filter;
+
+import org.apache.hadoop.io.Writable;
+import org.apache.hadoop.util.bloom.HashFunction;
+import org.apache.hadoop.util.bloom.Key;
+import org.apache.hadoop.util.hash.Hash;
+
+import java.io.DataInput;
+import java.io.DataOutput;
+import java.io.IOException;
+import java.util.Collection;
+import java.util.List;
+
+/**
+ * Copied from {@link org.apache.hadoop.util.bloom.Filter}. {@link InternalDynamicBloomFilter} needs access to some of
+ * protected members of {@link org.apache.hadoop.util.bloom.Filter} and hence had to copy it locally.
+ */
+abstract class InternalFilter implements Writable {
+
+  private static final int VERSION = -1; // negative to accommodate for old format
+  protected int vectorSize;
+  protected HashFunction hash;
+  protected int nbHash;
+  protected int hashType;
+
+<span class="nc" id="L44">  protected InternalFilter() {</span>
+<span class="nc" id="L45">  }</span>
+
+  /**
+   * Constructor.
+   *
+   * @param vectorSize The vector size of &lt;i&gt;this&lt;/i&gt; filter.
+   * @param nbHash     The number of hash functions to consider.
+   * @param hashType   type of the hashing function (see {@link Hash}).
+   */
+<span class="nc" id="L54">  protected InternalFilter(int vectorSize, int nbHash, int hashType) {</span>
+<span class="nc" id="L55">    this.vectorSize = vectorSize;</span>
+<span class="nc" id="L56">    this.nbHash = nbHash;</span>
+<span class="nc" id="L57">    this.hashType = hashType;</span>
+<span class="nc" id="L58">    this.hash = new HashFunction(this.vectorSize, this.nbHash, this.hashType);</span>
+<span class="nc" id="L59">  }</span>
+
+  /**
+   * Adds a key to &lt;i&gt;this&lt;/i&gt; filter.
+   *
+   * @param key The key to add.
+   */
+  public abstract void add(Key key);
+
+  /**
+   * Determines wether a specified key belongs to &lt;i&gt;this&lt;/i&gt; filter.
+   *
+   * @param key The key to test.
+   * @return boolean True if the specified key belongs to &lt;i&gt;this&lt;/i&gt; filter. False otherwise.
+   */
+  public abstract boolean membershipTest(Key key);
+
+  /**
+   * Peforms a logical AND between &lt;i&gt;this&lt;/i&gt; filter and a specified filter.
+   * &lt;p&gt;
+   * &lt;b&gt;Invariant&lt;/b&gt;: The result is assigned to &lt;i&gt;this&lt;/i&gt; filter.
+   *
+   * @param filter The filter to AND with.
+   */
+  public abstract void and(InternalFilter filter);
+
+  /**
+   * Peforms a logical OR between &lt;i&gt;this&lt;/i&gt; filter and a specified filter.
+   * &lt;p&gt;
+   * &lt;b&gt;Invariant&lt;/b&gt;: The result is assigned to &lt;i&gt;this&lt;/i&gt; filter.
+   *
+   * @param filter The filter to OR with.
+   */
+  public abstract void or(InternalFilter filter);
+
+  /**
+   * Peforms a logical XOR between &lt;i&gt;this&lt;/i&gt; filter and a specified filter.
+   * &lt;p&gt;
+   * &lt;b&gt;Invariant&lt;/b&gt;: The result is assigned to &lt;i&gt;this&lt;/i&gt; filter.
+   *
+   * @param filter The filter to XOR with.
+   */
+  public abstract void xor(InternalFilter filter);
+
+  /**
+   * Performs a logical NOT on &lt;i&gt;this&lt;/i&gt; filter.
+   * &lt;p&gt;
+   * The result is assigned to &lt;i&gt;this&lt;/i&gt; filter.
+   */
+  public abstract void not();
+
+  /**
+   * Adds a list of keys to &lt;i&gt;this&lt;/i&gt; filter.
+   *
+   * @param keys The list of keys.
+   */
+  public void add(List&lt;Key&gt; keys) {
+<span class="nc bnc" id="L116" title="All 2 branches missed.">    if (keys == null) {</span>
+<span class="nc" id="L117">      throw new IllegalArgumentException(&quot;ArrayList&lt;Key&gt; may not be null&quot;);</span>
+    }
+
+<span class="nc bnc" id="L120" title="All 2 branches missed.">    for (Key key : keys) {</span>
+<span class="nc" id="L121">      add(key);</span>
+<span class="nc" id="L122">    }</span>
+<span class="nc" id="L123">  } //end add()</span>
+
+  /**
+   * Adds a collection of keys to &lt;i&gt;this&lt;/i&gt; filter.
+   *
+   * @param keys The collection of keys.
+   */
+  public void add(Collection&lt;Key&gt; keys) {
+<span class="nc bnc" id="L131" title="All 2 branches missed.">    if (keys == null) {</span>
+<span class="nc" id="L132">      throw new IllegalArgumentException(&quot;Collection&lt;Key&gt; may not be null&quot;);</span>
+    }
+<span class="nc bnc" id="L134" title="All 2 branches missed.">    for (Key key : keys) {</span>
+<span class="nc" id="L135">      add(key);</span>
+<span class="nc" id="L136">    }</span>
+<span class="nc" id="L137">  } //end add()</span>
+
+  /**
+   * Adds an array of keys to &lt;i&gt;this&lt;/i&gt; filter.
+   *
+   * @param keys The array of keys.
+   */
+  public void add(Key[] keys) {
+<span class="nc bnc" id="L145" title="All 2 branches missed.">    if (keys == null) {</span>
+<span class="nc" id="L146">      throw new IllegalArgumentException(&quot;Key[] may not be null&quot;);</span>
+    }
+<span class="nc bnc" id="L148" title="All 2 branches missed.">    for (Key key : keys) {</span>
+<span class="nc" id="L149">      add(key);</span>
+    }
+<span class="nc" id="L151">  } //end add()</span>
+
+  // Writable interface
+
+  @Override
+  public void write(DataOutput out) throws IOException {
+<span class="nc" id="L157">    out.writeInt(VERSION);</span>
+<span class="nc" id="L158">    out.writeInt(this.nbHash);</span>
+<span class="nc" id="L159">    out.writeByte(this.hashType);</span>
+<span class="nc" id="L160">    out.writeInt(this.vectorSize);</span>
+<span class="nc" id="L161">  }</span>
+
+  @Override
+  public void readFields(DataInput in) throws IOException {
+<span class="nc" id="L165">    int ver = in.readInt();</span>
+<span class="nc bnc" id="L166" title="All 2 branches missed.">    if (ver &gt; 0) { // old unversioned format</span>
+<span class="nc" id="L167">      this.nbHash = ver;</span>
+<span class="nc" id="L168">      this.hashType = Hash.JENKINS_HASH;</span>
+<span class="nc bnc" id="L169" title="All 2 branches missed.">    } else if (ver == VERSION) {</span>
+<span class="nc" id="L170">      this.nbHash = in.readInt();</span>
+<span class="nc" id="L171">      this.hashType = in.readByte();</span>
+    } else {
+<span class="nc" id="L173">      throw new IOException(&quot;Unsupported version: &quot; + ver);</span>
+    }
+<span class="nc" id="L175">    this.vectorSize = in.readInt();</span>
+<span class="nc" id="L176">    this.hash = new HashFunction(this.vectorSize, this.nbHash, this.hashType);</span>
+<span class="nc" id="L177">  }</span>
+} //end class
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

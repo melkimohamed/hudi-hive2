@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieRecord.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.model</a> &gt; <span class="el_source">HoodieRecord.java</span></div><h1>HoodieRecord.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.model;
+
+import org.apache.hudi.common.util.Option;
+
+import com.google.common.collect.ImmutableList;
+
+import java.io.Serializable;
+import java.util.List;
+import java.util.Objects;
+
+/**
+ * A Single Record managed by Hoodie.
+ */
+<span class="nc bnc" id="L32" title="All 2 branches missed.">public class HoodieRecord&lt;T extends HoodieRecordPayload&gt; implements Serializable {</span>
+
+<span class="nc" id="L34">  public static String COMMIT_TIME_METADATA_FIELD = &quot;_hoodie_commit_time&quot;;</span>
+<span class="nc" id="L35">  public static String COMMIT_SEQNO_METADATA_FIELD = &quot;_hoodie_commit_seqno&quot;;</span>
+<span class="nc" id="L36">  public static String RECORD_KEY_METADATA_FIELD = &quot;_hoodie_record_key&quot;;</span>
+<span class="nc" id="L37">  public static String PARTITION_PATH_METADATA_FIELD = &quot;_hoodie_partition_path&quot;;</span>
+<span class="nc" id="L38">  public static String FILENAME_METADATA_FIELD = &quot;_hoodie_file_name&quot;;</span>
+
+<span class="nc" id="L40">  public static final List&lt;String&gt; HOODIE_META_COLUMNS =</span>
+<span class="nc" id="L41">      new ImmutableList.Builder&lt;String&gt;().add(COMMIT_TIME_METADATA_FIELD).add(COMMIT_SEQNO_METADATA_FIELD)</span>
+<span class="nc" id="L42">          .add(RECORD_KEY_METADATA_FIELD).add(PARTITION_PATH_METADATA_FIELD).add(FILENAME_METADATA_FIELD).build();</span>
+
+  /**
+   * Identifies the record across the table.
+   */
+  private HoodieKey key;
+
+  /**
+   * Actual payload of the record.
+   */
+  private T data;
+
+  /**
+   * Current location of record on storage. Filled in by looking up index
+   */
+  private HoodieRecordLocation currentLocation;
+
+  /**
+   * New location of record on storage, after written.
+   */
+  private HoodieRecordLocation newLocation;
+
+  /**
+   * Indicates whether the object is sealed.
+   */
+  private boolean sealed;
+
+<span class="nc" id="L69">  public HoodieRecord(HoodieKey key, T data) {</span>
+<span class="nc" id="L70">    this.key = key;</span>
+<span class="nc" id="L71">    this.data = data;</span>
+<span class="nc" id="L72">    this.currentLocation = null;</span>
+<span class="nc" id="L73">    this.newLocation = null;</span>
+<span class="nc" id="L74">    this.sealed = false;</span>
+<span class="nc" id="L75">  }</span>
+
+  public HoodieRecord(HoodieRecord&lt;T&gt; record) {
+<span class="nc" id="L78">    this(record.key, record.data);</span>
+<span class="nc" id="L79">    this.currentLocation = record.currentLocation;</span>
+<span class="nc" id="L80">    this.newLocation = record.newLocation;</span>
+<span class="nc" id="L81">    this.sealed = record.sealed;</span>
+<span class="nc" id="L82">  }</span>
+
+  public HoodieKey getKey() {
+<span class="nc" id="L85">    return key;</span>
+  }
+
+  public T getData() {
+<span class="nc bnc" id="L89" title="All 2 branches missed.">    if (data == null) {</span>
+<span class="nc" id="L90">      throw new IllegalStateException(&quot;Payload already deflated for record.&quot;);</span>
+    }
+<span class="nc" id="L92">    return data;</span>
+  }
+
+  /**
+   * Release the actual payload, to ease memory pressure. To be called after the record has been written to storage.
+   * Once deflated, cannot be inflated.
+   */
+  public void deflate() {
+<span class="nc" id="L100">    this.data = null;</span>
+<span class="nc" id="L101">  }</span>
+
+  /**
+   * Sets the current currentLocation of the record. This should happen exactly-once
+   */
+  public HoodieRecord setCurrentLocation(HoodieRecordLocation location) {
+<span class="nc" id="L107">    checkState();</span>
+<span class="nc bnc" id="L108" title="All 4 branches missed.">    assert currentLocation == null;</span>
+<span class="nc" id="L109">    this.currentLocation = location;</span>
+<span class="nc" id="L110">    return this;</span>
+  }
+
+  public HoodieRecordLocation getCurrentLocation() {
+<span class="nc" id="L114">    return currentLocation;</span>
+  }
+
+  /**
+   * Sets the new currentLocation of the record, after being written. This again should happen exactly-once.
+   */
+  public HoodieRecord setNewLocation(HoodieRecordLocation location) {
+<span class="nc" id="L121">    checkState();</span>
+<span class="nc bnc" id="L122" title="All 4 branches missed.">    assert newLocation == null;</span>
+<span class="nc" id="L123">    this.newLocation = location;</span>
+<span class="nc" id="L124">    return this;</span>
+  }
+
+  public Option&lt;HoodieRecordLocation&gt; getNewLocation() {
+<span class="nc" id="L128">    return Option.ofNullable(this.newLocation);</span>
+  }
+
+  public boolean isCurrentLocationKnown() {
+<span class="nc bnc" id="L132" title="All 2 branches missed.">    return this.currentLocation != null;</span>
+  }
+
+  @Override
+  public boolean equals(Object o) {
+<span class="nc bnc" id="L137" title="All 2 branches missed.">    if (this == o) {</span>
+<span class="nc" id="L138">      return true;</span>
+    }
+<span class="nc bnc" id="L140" title="All 4 branches missed.">    if (o == null || getClass() != o.getClass()) {</span>
+<span class="nc" id="L141">      return false;</span>
+    }
+<span class="nc" id="L143">    HoodieRecord that = (HoodieRecord) o;</span>
+<span class="nc bnc" id="L144" title="All 4 branches missed.">    return Objects.equals(key, that.key) &amp;&amp; Objects.equals(data, that.data)</span>
+<span class="nc bnc" id="L145" title="All 4 branches missed.">        &amp;&amp; Objects.equals(currentLocation, that.currentLocation) &amp;&amp; Objects.equals(newLocation, that.newLocation);</span>
+  }
+
+  @Override
+  public int hashCode() {
+<span class="nc" id="L150">    return Objects.hash(key, data, currentLocation, newLocation);</span>
+  }
+
+  @Override
+  public String toString() {
+<span class="nc" id="L155">    final StringBuilder sb = new StringBuilder(&quot;HoodieRecord{&quot;);</span>
+<span class="nc" id="L156">    sb.append(&quot;key=&quot;).append(key);</span>
+<span class="nc" id="L157">    sb.append(&quot;, currentLocation='&quot;).append(currentLocation).append('\'');</span>
+<span class="nc" id="L158">    sb.append(&quot;, newLocation='&quot;).append(newLocation).append('\'');</span>
+<span class="nc" id="L159">    sb.append('}');</span>
+<span class="nc" id="L160">    return sb.toString();</span>
+  }
+
+  public static String generateSequenceId(String commitTime, int partitionId, long recordIndex) {
+<span class="nc" id="L164">    return commitTime + &quot;_&quot; + partitionId + &quot;_&quot; + recordIndex;</span>
+  }
+
+  public String getPartitionPath() {
+<span class="nc bnc" id="L168" title="All 4 branches missed.">    assert key != null;</span>
+<span class="nc" id="L169">    return key.getPartitionPath();</span>
+  }
+
+  public String getRecordKey() {
+<span class="nc bnc" id="L173" title="All 4 branches missed.">    assert key != null;</span>
+<span class="nc" id="L174">    return key.getRecordKey();</span>
+  }
+
+  public void seal() {
+<span class="nc" id="L178">    this.sealed = true;</span>
+<span class="nc" id="L179">  }</span>
+
+  public void unseal() {
+<span class="nc" id="L182">    this.sealed = false;</span>
+<span class="nc" id="L183">  }</span>
+
+  public void checkState() {
+<span class="nc bnc" id="L186" title="All 2 branches missed.">    if (sealed) {</span>
+<span class="nc" id="L187">      throw new UnsupportedOperationException(&quot;Not allowed to modify after sealed&quot;);</span>
+    }
+<span class="nc" id="L189">  }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

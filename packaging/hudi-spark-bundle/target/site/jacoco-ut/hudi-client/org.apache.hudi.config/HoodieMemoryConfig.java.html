@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieMemoryConfig.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-client</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.config</a> &gt; <span class="el_source">HoodieMemoryConfig.java</span></div><h1>HoodieMemoryConfig.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.config;
+
+import org.apache.spark.SparkEnv;
+import org.apache.spark.util.Utils;
+
+import javax.annotation.concurrent.Immutable;
+
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.Properties;
+
+/**
+ * Memory related config.
+ */
+@Immutable
+public class HoodieMemoryConfig extends DefaultHoodieConfig {
+
+  // This fraction is multiplied with the spark.memory.fraction to get a final fraction of heap space to use
+  // during merge. This makes it easier to scale this value as one increases the spark.executor.memory
+  public static final String MAX_MEMORY_FRACTION_FOR_MERGE_PROP = &quot;hoodie.memory.merge.fraction&quot;;
+  // Default max memory fraction during hash-merge, excess spills to disk
+<span class="nc" id="L41">  public static final String DEFAULT_MAX_MEMORY_FRACTION_FOR_MERGE = String.valueOf(0.6);</span>
+  public static final String MAX_MEMORY_FRACTION_FOR_COMPACTION_PROP = &quot;hoodie.memory.compaction.fraction&quot;;
+  // Default max memory fraction during compaction, excess spills to disk
+<span class="nc" id="L44">  public static final String DEFAULT_MAX_MEMORY_FRACTION_FOR_COMPACTION = String.valueOf(0.6);</span>
+  // Default memory size (1GB) per compaction (used if SparkEnv is absent), excess spills to disk
+  public static final long DEFAULT_MAX_MEMORY_FOR_SPILLABLE_MAP_IN_BYTES = 1024 * 1024 * 1024L;
+  // Minimum memory size (100MB) for the spillable map.
+  public static final long DEFAULT_MIN_MEMORY_FOR_SPILLABLE_MAP_IN_BYTES = 100 * 1024 * 1024L;
+  // Property to set the max memory for merge
+  public static final String MAX_MEMORY_FOR_MERGE_PROP = &quot;hoodie.memory.merge.max.size&quot;;
+  // Property to set the max memory for compaction
+  public static final String MAX_MEMORY_FOR_COMPACTION_PROP = &quot;hoodie.memory.compaction.max.size&quot;;
+  // Property to set the max memory for dfs inputstream buffer size
+  public static final String MAX_DFS_STREAM_BUFFER_SIZE_PROP = &quot;hoodie.memory.dfs.buffer.max.size&quot;;
+  public static final int DEFAULT_MAX_DFS_STREAM_BUFFER_SIZE = 16 * 1024 * 1024; // 16MB
+  public static final String SPILLABLE_MAP_BASE_PATH_PROP = &quot;hoodie.memory.spillable.map.path&quot;;
+  // Default file path prefix for spillable file
+  public static final String DEFAULT_SPILLABLE_MAP_BASE_PATH = &quot;/tmp/&quot;;
+
+  // Property to control how what fraction of the failed record, exceptions we report back to driver.
+  public static final String WRITESTATUS_FAILURE_FRACTION_PROP = &quot;hoodie.memory.writestatus.failure.fraction&quot;;
+  // Default is 10%. If set to 100%, with lot of failures, this can cause memory pressure, cause OOMs and
+  // mask actual data errors.
+  public static final double DEFAULT_WRITESTATUS_FAILURE_FRACTION = 0.1;
+
+  private HoodieMemoryConfig(Properties props) {
+<span class="nc" id="L67">    super(props);</span>
+<span class="nc" id="L68">  }</span>
+
+  public static HoodieMemoryConfig.Builder newBuilder() {
+<span class="nc" id="L71">    return new Builder();</span>
+  }
+
+<span class="nc" id="L74">  public static class Builder {</span>
+
+<span class="nc" id="L76">    private final Properties props = new Properties();</span>
+
+    public Builder fromFile(File propertiesFile) throws IOException {
+<span class="nc" id="L79">      try (FileReader reader = new FileReader(propertiesFile)) {</span>
+<span class="nc" id="L80">        this.props.load(reader);</span>
+<span class="nc" id="L81">        return this;</span>
+      }
+    }
+
+    public Builder fromProperties(Properties props) {
+<span class="nc" id="L86">      this.props.putAll(props);</span>
+<span class="nc" id="L87">      return this;</span>
+    }
+
+    public Builder withMaxMemoryFractionPerPartitionMerge(double maxMemoryFractionPerPartitionMerge) {
+<span class="nc" id="L91">      props.setProperty(MAX_MEMORY_FRACTION_FOR_MERGE_PROP, String.valueOf(maxMemoryFractionPerPartitionMerge));</span>
+<span class="nc" id="L92">      return this;</span>
+    }
+
+    public Builder withMaxMemoryMaxSize(long mergeMaxSize, long compactionMaxSize) {
+<span class="nc" id="L96">      props.setProperty(MAX_MEMORY_FOR_MERGE_PROP, String.valueOf(mergeMaxSize));</span>
+<span class="nc" id="L97">      props.setProperty(MAX_MEMORY_FOR_COMPACTION_PROP, String.valueOf(compactionMaxSize));</span>
+<span class="nc" id="L98">      return this;</span>
+    }
+
+    public Builder withMaxMemoryFractionPerCompaction(double maxMemoryFractionPerCompaction) {
+<span class="nc" id="L102">      props.setProperty(MAX_MEMORY_FRACTION_FOR_COMPACTION_PROP, String.valueOf(maxMemoryFractionPerCompaction));</span>
+<span class="nc" id="L103">      return this;</span>
+    }
+
+    public Builder withMaxDFSStreamBufferSize(int maxStreamBufferSize) {
+<span class="nc" id="L107">      props.setProperty(MAX_DFS_STREAM_BUFFER_SIZE_PROP, String.valueOf(maxStreamBufferSize));</span>
+<span class="nc" id="L108">      return this;</span>
+    }
+
+    public Builder withWriteStatusFailureFraction(double failureFraction) {
+<span class="nc" id="L112">      props.setProperty(WRITESTATUS_FAILURE_FRACTION_PROP, String.valueOf(failureFraction));</span>
+<span class="nc" id="L113">      return this;</span>
+    }
+
+    /**
+     * Dynamic calculation of max memory to use for for spillable map. user.available.memory = spark.executor.memory *
+     * (1 - spark.memory.fraction) spillable.available.memory = user.available.memory * hoodie.memory.fraction. Anytime
+     * the spark.executor.memory or the spark.memory.fraction is changed, the memory used for spillable map changes
+     * accordingly
+     */
+    private long getMaxMemoryAllowedForMerge(String maxMemoryFraction) {
+<span class="nc" id="L123">      final String SPARK_EXECUTOR_MEMORY_PROP = &quot;spark.executor.memory&quot;;</span>
+<span class="nc" id="L124">      final String SPARK_EXECUTOR_MEMORY_FRACTION_PROP = &quot;spark.memory.fraction&quot;;</span>
+      // This is hard-coded in spark code {@link
+      // https://github.com/apache/spark/blob/576c43fb4226e4efa12189b41c3bc862019862c6/core/src/main/scala/org/apache/
+      // spark/memory/UnifiedMemoryManager.scala#L231} so have to re-define this here
+<span class="nc" id="L128">      final String DEFAULT_SPARK_EXECUTOR_MEMORY_FRACTION = &quot;0.6&quot;;</span>
+      // This is hard-coded in spark code {@link
+      // https://github.com/apache/spark/blob/576c43fb4226e4efa12189b41c3bc862019862c6/core/src/main/scala/org/apache/
+      // spark/SparkContext.scala#L471} so have to re-define this here
+<span class="nc" id="L132">      final String DEFAULT_SPARK_EXECUTOR_MEMORY_MB = &quot;1024&quot;; // in MB</span>
+
+<span class="nc bnc" id="L134" title="All 2 branches missed.">      if (SparkEnv.get() != null) {</span>
+        // 1 GB is the default conf used by Spark, look at SparkContext.scala
+<span class="nc" id="L136">        long executorMemoryInBytes = Utils.memoryStringToMb(</span>
+<span class="nc" id="L137">            SparkEnv.get().conf().get(SPARK_EXECUTOR_MEMORY_PROP, DEFAULT_SPARK_EXECUTOR_MEMORY_MB)) * 1024 * 1024L;</span>
+        // 0.6 is the default value used by Spark,
+        // look at {@link
+        // https://github.com/apache/spark/blob/master/core/src/main/scala/org/apache/spark/SparkConf.scala#L507}
+<span class="nc" id="L141">        double memoryFraction = Double.parseDouble(</span>
+<span class="nc" id="L142">            SparkEnv.get().conf().get(SPARK_EXECUTOR_MEMORY_FRACTION_PROP, DEFAULT_SPARK_EXECUTOR_MEMORY_FRACTION));</span>
+<span class="nc" id="L143">        double maxMemoryFractionForMerge = Double.parseDouble(maxMemoryFraction);</span>
+<span class="nc" id="L144">        double userAvailableMemory = executorMemoryInBytes * (1 - memoryFraction);</span>
+<span class="nc" id="L145">        long maxMemoryForMerge = (long) Math.floor(userAvailableMemory * maxMemoryFractionForMerge);</span>
+<span class="nc" id="L146">        return Math.max(DEFAULT_MIN_MEMORY_FOR_SPILLABLE_MAP_IN_BYTES, maxMemoryForMerge);</span>
+      } else {
+<span class="nc" id="L148">        return DEFAULT_MAX_MEMORY_FOR_SPILLABLE_MAP_IN_BYTES;</span>
+      }
+    }
+
+    public HoodieMemoryConfig build() {
+<span class="nc" id="L153">      HoodieMemoryConfig config = new HoodieMemoryConfig(props);</span>
+<span class="nc bnc" id="L154" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(MAX_MEMORY_FRACTION_FOR_COMPACTION_PROP),</span>
+          MAX_MEMORY_FRACTION_FOR_COMPACTION_PROP, DEFAULT_MAX_MEMORY_FRACTION_FOR_COMPACTION);
+<span class="nc bnc" id="L156" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(MAX_MEMORY_FRACTION_FOR_MERGE_PROP),</span>
+          MAX_MEMORY_FRACTION_FOR_MERGE_PROP, DEFAULT_MAX_MEMORY_FRACTION_FOR_MERGE);
+<span class="nc bnc" id="L158" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(MAX_MEMORY_FOR_MERGE_PROP), MAX_MEMORY_FOR_MERGE_PROP,</span>
+<span class="nc" id="L159">          String.valueOf(getMaxMemoryAllowedForMerge(props.getProperty(MAX_MEMORY_FRACTION_FOR_MERGE_PROP))));</span>
+<span class="nc bnc" id="L160" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(MAX_MEMORY_FOR_COMPACTION_PROP), MAX_MEMORY_FOR_COMPACTION_PROP,</span>
+<span class="nc" id="L161">          String.valueOf(getMaxMemoryAllowedForMerge(props.getProperty(MAX_MEMORY_FRACTION_FOR_COMPACTION_PROP))));</span>
+<span class="nc bnc" id="L162" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(MAX_DFS_STREAM_BUFFER_SIZE_PROP), MAX_DFS_STREAM_BUFFER_SIZE_PROP,</span>
+<span class="nc" id="L163">          String.valueOf(DEFAULT_MAX_DFS_STREAM_BUFFER_SIZE));</span>
+<span class="nc bnc" id="L164" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(SPILLABLE_MAP_BASE_PATH_PROP), SPILLABLE_MAP_BASE_PATH_PROP,</span>
+          DEFAULT_SPILLABLE_MAP_BASE_PATH);
+<span class="nc bnc" id="L166" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(WRITESTATUS_FAILURE_FRACTION_PROP),</span>
+<span class="nc" id="L167">          WRITESTATUS_FAILURE_FRACTION_PROP, String.valueOf(DEFAULT_WRITESTATUS_FAILURE_FRACTION));</span>
+<span class="nc" id="L168">      return config;</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>CompactionUtils.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.util</a> &gt; <span class="el_source">CompactionUtils.java</span></div><h1>CompactionUtils.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.util;
+
+import org.apache.hudi.avro.model.HoodieCompactionOperation;
+import org.apache.hudi.avro.model.HoodieCompactionPlan;
+import org.apache.hudi.common.model.CompactionOperation;
+import org.apache.hudi.common.model.FileSlice;
+import org.apache.hudi.common.model.HoodieFileGroupId;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.common.table.HoodieTimeline;
+import org.apache.hudi.common.table.timeline.HoodieInstant;
+import org.apache.hudi.common.util.collection.Pair;
+import org.apache.hudi.common.versioning.compaction.CompactionPlanMigrator;
+import org.apache.hudi.common.versioning.compaction.CompactionV1MigrationHandler;
+import org.apache.hudi.common.versioning.compaction.CompactionV2MigrationHandler;
+import org.apache.hudi.exception.HoodieException;
+
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+/**
+ * Helper class to generate compaction plan from FileGroup/FileSlice abstraction.
+ */
+<span class="nc" id="L49">public class CompactionUtils {</span>
+
+<span class="nc" id="L51">  private static final Logger LOG = LogManager.getLogger(CompactionUtils.class);</span>
+
+<span class="nc" id="L53">  public static final Integer COMPACTION_METADATA_VERSION_1 = CompactionV1MigrationHandler.VERSION;</span>
+<span class="nc" id="L54">  public static final Integer COMPACTION_METADATA_VERSION_2 = CompactionV2MigrationHandler.VERSION;</span>
+<span class="nc" id="L55">  public static final Integer LATEST_COMPACTION_METADATA_VERSION = COMPACTION_METADATA_VERSION_2;</span>
+
+  /**
+   * Generate compaction operation from file-slice.
+   *
+   * @param partitionPath Partition path
+   * @param fileSlice File Slice
+   * @param metricsCaptureFunction Metrics Capture function
+   * @return Compaction Operation
+   */
+  public static HoodieCompactionOperation buildFromFileSlice(String partitionPath, FileSlice fileSlice,
+      Option&lt;Function&lt;Pair&lt;String, FileSlice&gt;, Map&lt;String, Double&gt;&gt;&gt; metricsCaptureFunction) {
+<span class="nc" id="L67">    HoodieCompactionOperation.Builder builder = HoodieCompactionOperation.newBuilder();</span>
+<span class="nc" id="L68">    builder.setPartitionPath(partitionPath);</span>
+<span class="nc" id="L69">    builder.setFileId(fileSlice.getFileId());</span>
+<span class="nc" id="L70">    builder.setBaseInstantTime(fileSlice.getBaseInstantTime());</span>
+<span class="nc" id="L71">    builder.setDeltaFilePaths(fileSlice.getLogFiles().map(lf -&gt; lf.getPath().getName()).collect(Collectors.toList()));</span>
+<span class="nc bnc" id="L72" title="All 2 branches missed.">    if (fileSlice.getBaseFile().isPresent()) {</span>
+<span class="nc" id="L73">      builder.setDataFilePath(fileSlice.getBaseFile().get().getFileName());</span>
+    }
+
+<span class="nc bnc" id="L76" title="All 2 branches missed.">    if (metricsCaptureFunction.isPresent()) {</span>
+<span class="nc" id="L77">      builder.setMetrics(metricsCaptureFunction.get().apply(Pair.of(partitionPath, fileSlice)));</span>
+    }
+<span class="nc" id="L79">    return builder.build();</span>
+  }
+
+  /**
+   * Generate compaction plan from file-slices.
+   *
+   * @param partitionFileSlicePairs list of partition file-slice pairs
+   * @param extraMetadata Extra Metadata
+   * @param metricsCaptureFunction Metrics Capture function
+   */
+  public static HoodieCompactionPlan buildFromFileSlices(List&lt;Pair&lt;String, FileSlice&gt;&gt; partitionFileSlicePairs,
+      Option&lt;Map&lt;String, String&gt;&gt; extraMetadata,
+      Option&lt;Function&lt;Pair&lt;String, FileSlice&gt;, Map&lt;String, Double&gt;&gt;&gt; metricsCaptureFunction) {
+<span class="nc" id="L92">    HoodieCompactionPlan.Builder builder = HoodieCompactionPlan.newBuilder();</span>
+<span class="nc" id="L93">    extraMetadata.ifPresent(builder::setExtraMetadata);</span>
+
+<span class="nc" id="L95">    builder.setOperations(partitionFileSlicePairs.stream()</span>
+<span class="nc" id="L96">        .map(pfPair -&gt; buildFromFileSlice(pfPair.getKey(), pfPair.getValue(), metricsCaptureFunction))</span>
+<span class="nc" id="L97">        .collect(Collectors.toList()));</span>
+<span class="nc" id="L98">    builder.setVersion(LATEST_COMPACTION_METADATA_VERSION);</span>
+<span class="nc" id="L99">    return builder.build();</span>
+  }
+
+  /**
+   * Build Avro generated Compaction operation payload from compaction operation POJO for serialization.
+   */
+  public static HoodieCompactionOperation buildHoodieCompactionOperation(CompactionOperation op) {
+<span class="nc" id="L106">    return HoodieCompactionOperation.newBuilder().setFileId(op.getFileId()).setBaseInstantTime(op.getBaseInstantTime())</span>
+<span class="nc" id="L107">        .setPartitionPath(op.getPartitionPath())</span>
+<span class="nc bnc" id="L108" title="All 2 branches missed.">        .setDataFilePath(op.getDataFileName().isPresent() ? op.getDataFileName().get() : null)</span>
+<span class="nc" id="L109">        .setDeltaFilePaths(op.getDeltaFileNames()).setMetrics(op.getMetrics()).build();</span>
+  }
+
+  /**
+   * Build Compaction operation payload from Avro version for using in Spark executors.
+   *
+   * @param hc HoodieCompactionOperation
+   */
+  public static CompactionOperation buildCompactionOperation(HoodieCompactionOperation hc) {
+<span class="nc" id="L118">    return CompactionOperation.convertFromAvroRecordInstance(hc);</span>
+  }
+
+  /**
+   * Get all pending compaction plans along with their instants.
+   *
+   * @param metaClient Hoodie Meta Client
+   */
+  public static List&lt;Pair&lt;HoodieInstant, HoodieCompactionPlan&gt;&gt; getAllPendingCompactionPlans(
+      HoodieTableMetaClient metaClient) {
+<span class="nc" id="L128">    List&lt;HoodieInstant&gt; pendingCompactionInstants =</span>
+<span class="nc" id="L129">        metaClient.getActiveTimeline().filterPendingCompactionTimeline().getInstants().collect(Collectors.toList());</span>
+<span class="nc" id="L130">    return pendingCompactionInstants.stream().map(instant -&gt; {</span>
+      try {
+<span class="nc" id="L132">        return Pair.of(instant, getCompactionPlan(metaClient, instant.getTimestamp()));</span>
+<span class="nc" id="L133">      } catch (IOException e) {</span>
+<span class="nc" id="L134">        throw new HoodieException(e);</span>
+      }
+<span class="nc" id="L136">    }).collect(Collectors.toList());</span>
+  }
+
+  public static HoodieCompactionPlan getCompactionPlan(HoodieTableMetaClient metaClient, String compactionInstant)
+      throws IOException {
+<span class="nc" id="L141">    CompactionPlanMigrator migrator = new CompactionPlanMigrator(metaClient);</span>
+<span class="nc" id="L142">    HoodieCompactionPlan compactionPlan = AvroUtils.deserializeCompactionPlan(</span>
+<span class="nc" id="L143">        metaClient.getActiveTimeline().readCompactionPlanAsBytes(</span>
+<span class="nc" id="L144">            HoodieTimeline.getCompactionRequestedInstant(compactionInstant)).get());</span>
+<span class="nc" id="L145">    return migrator.upgradeToLatest(compactionPlan, compactionPlan.getVersion());</span>
+  }
+
+  /**
+   * Get all PartitionPath + file-ids with pending Compaction operations and their target compaction instant time.
+   *
+   * @param metaClient Hoodie Table Meta Client
+   */
+  public static Map&lt;HoodieFileGroupId, Pair&lt;String, HoodieCompactionOperation&gt;&gt; getAllPendingCompactionOperations(
+      HoodieTableMetaClient metaClient) {
+<span class="nc" id="L155">    List&lt;Pair&lt;HoodieInstant, HoodieCompactionPlan&gt;&gt; pendingCompactionPlanWithInstants =</span>
+<span class="nc" id="L156">        getAllPendingCompactionPlans(metaClient);</span>
+
+<span class="nc" id="L158">    Map&lt;HoodieFileGroupId, Pair&lt;String, HoodieCompactionOperation&gt;&gt; fgIdToPendingCompactionWithInstantMap =</span>
+        new HashMap&lt;&gt;();
+<span class="nc" id="L160">    pendingCompactionPlanWithInstants.stream().flatMap(instantPlanPair -&gt;</span>
+<span class="nc" id="L161">        getPendingCompactionOperations(instantPlanPair.getKey(), instantPlanPair.getValue())).forEach(pair -&gt; {</span>
+          // Defensive check to ensure a single-fileId does not have more than one pending compaction with different
+          // file slices. If we find a full duplicate we assume it is caused by eventual nature of the move operation
+          // on some DFSs.
+<span class="nc bnc" id="L165" title="All 2 branches missed.">          if (fgIdToPendingCompactionWithInstantMap.containsKey(pair.getKey())) {</span>
+<span class="nc" id="L166">            HoodieCompactionOperation operation = pair.getValue().getValue();</span>
+<span class="nc" id="L167">            HoodieCompactionOperation anotherOperation = fgIdToPendingCompactionWithInstantMap.get(pair.getKey()).getValue();</span>
+
+<span class="nc bnc" id="L169" title="All 2 branches missed.">            if (!operation.equals(anotherOperation)) {</span>
+<span class="nc" id="L170">              String msg = &quot;Hudi File Id (&quot; + pair.getKey() + &quot;) has more than 1 pending compactions. Instants: &quot;</span>
+<span class="nc" id="L171">                  + pair.getValue() + &quot;, &quot; + fgIdToPendingCompactionWithInstantMap.get(pair.getKey());</span>
+<span class="nc" id="L172">              throw new IllegalStateException(msg);</span>
+            }
+          }
+<span class="nc" id="L175">          fgIdToPendingCompactionWithInstantMap.put(pair.getKey(), pair.getValue());</span>
+<span class="nc" id="L176">        });</span>
+<span class="nc" id="L177">    return fgIdToPendingCompactionWithInstantMap;</span>
+  }
+
+  public static Stream&lt;Pair&lt;HoodieFileGroupId, Pair&lt;String, HoodieCompactionOperation&gt;&gt;&gt; getPendingCompactionOperations(
+      HoodieInstant instant, HoodieCompactionPlan compactionPlan) {
+<span class="nc" id="L182">    List&lt;HoodieCompactionOperation&gt; ops = compactionPlan.getOperations();</span>
+<span class="nc bnc" id="L183" title="All 2 branches missed.">    if (null != ops) {</span>
+<span class="nc" id="L184">      return ops.stream().map(op -&gt; Pair.of(new HoodieFileGroupId(op.getPartitionPath(), op.getFileId()),</span>
+<span class="nc" id="L185">          Pair.of(instant.getTimestamp(), op)));</span>
+    } else {
+<span class="nc" id="L187">      return Stream.empty();</span>
+    }
+  }
+
+  /**
+   * Return all pending compaction instant times.
+   * 
+   * @return
+   */
+  public static List&lt;HoodieInstant&gt; getPendingCompactionInstantTimes(HoodieTableMetaClient metaClient) {
+<span class="nc" id="L197">    return metaClient.getActiveTimeline().filterPendingCompactionTimeline().getInstants().collect(Collectors.toList());</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

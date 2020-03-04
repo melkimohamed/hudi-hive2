@@ -1,0 +1,53 @@
+
+*****************************************************
+Summary
+-------
+Generated at: 2020-03-04T21:52:55+01:00
+
+Notes: 0
+Binaries: 0
+Archives: 0
+Standards: 27
+
+Apache Licensed: 0
+Generated Documents: 0
+
+JavaDocs are generated, thus a license header is optional.
+Generated files do not require license headers.
+
+0 Unknown Licenses
+
+*****************************************************
+  Files with Apache License headers will be marked AL
+  Binary files (which do not require any license headers) will be marked B
+  Compressed archives will be marked A
+  Notices, licenses etc. will be marked N
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/pom.xml
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/com/uber/hoodie/hadoop/HoodieInputFormat.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/com/uber/hoodie/hadoop/realtime/HoodieRealtimeInputFormat.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/HoodieHiveUtil.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/HoodieParquetInputFormat.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/HoodieROTablePathFilter.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/InputPathHandler.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/RecordReaderValueIterator.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/SafeParquetRecordReaderWrapper.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/UseFileSplitsFromInputFormat.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/AbstractRealtimeRecordReader.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/HoodieParquetRealtimeInputFormat.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/HoodieParquetSerde.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/HoodieRealtimeFileSplit.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/HoodieRealtimeRecordReader.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/RealtimeCompactedRecordReader.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/RealtimeUnmergedRecordReader.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/test/java/org/apache/hudi/hadoop/InputFormatTestUtil.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/test/java/org/apache/hudi/hadoop/InputPathHandlerTest.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/test/java/org/apache/hudi/hadoop/TestAnnotation.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/test/java/org/apache/hudi/hadoop/TestHoodieParquetInputFormat.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/test/java/org/apache/hudi/hadoop/TestHoodieROTablePathFilter.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/test/java/org/apache/hudi/hadoop/TestRecordReaderValueIterator.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/test/java/org/apache/hudi/hadoop/realtime/TestHoodieRealtimeRecordReader.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/test/resources/log4j-surefire-quiet.properties
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/test/resources/log4j-surefire.properties
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/test/resources/sample1.avsc
+ 
+*****************************************************

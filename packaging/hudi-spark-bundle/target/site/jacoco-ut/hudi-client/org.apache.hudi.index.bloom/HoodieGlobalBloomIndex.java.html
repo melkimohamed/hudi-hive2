@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieGlobalBloomIndex.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-client</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.index.bloom</a> &gt; <span class="el_source">HoodieGlobalBloomIndex.java</span></div><h1>HoodieGlobalBloomIndex.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.index.bloom;
+
+import org.apache.hudi.common.model.EmptyHoodieRecordPayload;
+import org.apache.hudi.common.model.HoodieKey;
+import org.apache.hudi.common.model.HoodieRecord;
+import org.apache.hudi.common.model.HoodieRecordLocation;
+import org.apache.hudi.common.model.HoodieRecordPayload;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.common.util.FSUtils;
+import org.apache.hudi.common.util.Option;
+import org.apache.hudi.config.HoodieWriteConfig;
+import org.apache.hudi.exception.HoodieIOException;
+import org.apache.hudi.table.HoodieTable;
+
+import org.apache.spark.api.java.JavaPairRDD;
+import org.apache.spark.api.java.JavaRDD;
+import org.apache.spark.api.java.JavaSparkContext;
+import org.apache.spark.api.java.Optional;
+
+import java.io.IOException;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+import scala.Tuple2;
+
+/**
+ * This filter will only work with hoodie table since it will only load partitions with .hoodie_partition_metadata
+ * file in it.
+ */
+public class HoodieGlobalBloomIndex&lt;T extends HoodieRecordPayload&gt; extends HoodieBloomIndex&lt;T&gt; {
+
+  public HoodieGlobalBloomIndex(HoodieWriteConfig config) {
+<span class="nc" id="L54">    super(config);</span>
+<span class="nc" id="L55">  }</span>
+
+  /**
+   * Load all involved files as &lt;Partition, filename&gt; pair RDD from all partitions in the table.
+   */
+  @Override
+  List&lt;Tuple2&lt;String, BloomIndexFileInfo&gt;&gt; loadInvolvedFiles(List&lt;String&gt; partitions, final JavaSparkContext jsc,
+                                                             final HoodieTable hoodieTable) {
+<span class="nc" id="L63">    HoodieTableMetaClient metaClient = hoodieTable.getMetaClient();</span>
+    try {
+<span class="nc" id="L65">      List&lt;String&gt; allPartitionPaths = FSUtils.getAllPartitionPaths(metaClient.getFs(), metaClient.getBasePath(),</span>
+<span class="nc" id="L66">          config.shouldAssumeDatePartitioning());</span>
+<span class="nc" id="L67">      return super.loadInvolvedFiles(allPartitionPaths, jsc, hoodieTable);</span>
+<span class="nc" id="L68">    } catch (IOException e) {</span>
+<span class="nc" id="L69">      throw new HoodieIOException(&quot;Failed to load all partitions&quot;, e);</span>
+    }
+  }
+
+  /**
+   * For each incoming record, produce N output records, 1 each for each file against which the record's key needs to be
+   * checked. For tables, where the keys have a definite insert order (e.g: timestamp as prefix), the number of files
+   * to be compared gets cut down a lot from range pruning.
+   * &lt;p&gt;
+   * Sub-partition to ensure the records can be looked up against files &amp; also prune file&lt;=&gt;record comparisons based on
+   * recordKey ranges in the index info. the partition path of the incoming record (partitionRecordKeyPairRDD._2()) will
+   * be ignored since the search scope should be bigger than that
+   */
+
+  @Override
+  JavaRDD&lt;Tuple2&lt;String, HoodieKey&gt;&gt; explodeRecordRDDWithFileComparisons(
+      final Map&lt;String, List&lt;BloomIndexFileInfo&gt;&gt; partitionToFileIndexInfo,
+      JavaPairRDD&lt;String, String&gt; partitionRecordKeyPairRDD) {
+
+<span class="nc" id="L88">    IndexFileFilter indexFileFilter =</span>
+<span class="nc bnc" id="L89" title="All 2 branches missed.">        config.getBloomIndexPruneByRanges() ? new IntervalTreeBasedGlobalIndexFileFilter(partitionToFileIndexInfo)</span>
+            : new ListBasedGlobalIndexFileFilter(partitionToFileIndexInfo);
+
+<span class="nc" id="L92">    return partitionRecordKeyPairRDD.map(partitionRecordKeyPair -&gt; {</span>
+<span class="nc" id="L93">      String recordKey = partitionRecordKeyPair._2();</span>
+<span class="nc" id="L94">      String partitionPath = partitionRecordKeyPair._1();</span>
+
+<span class="nc" id="L96">      return indexFileFilter.getMatchingFilesAndPartition(partitionPath, recordKey).stream()</span>
+<span class="nc" id="L97">          .map(partitionFileIdPair -&gt; new Tuple2&lt;&gt;(partitionFileIdPair.getRight(),</span>
+<span class="nc" id="L98">              new HoodieKey(recordKey, partitionFileIdPair.getLeft())))</span>
+<span class="nc" id="L99">          .collect(Collectors.toList());</span>
+<span class="nc" id="L100">    }).flatMap(List::iterator);</span>
+  }
+
+  /**
+   * Tagging for global index should only consider the record key.
+   */
+  @Override
+  protected JavaRDD&lt;HoodieRecord&lt;T&gt;&gt; tagLocationBacktoRecords(
+      JavaPairRDD&lt;HoodieKey, HoodieRecordLocation&gt; keyLocationPairRDD, JavaRDD&lt;HoodieRecord&lt;T&gt;&gt; recordRDD) {
+
+<span class="nc" id="L110">    JavaPairRDD&lt;String, HoodieRecord&lt;T&gt;&gt; incomingRowKeyRecordPairRDD =</span>
+<span class="nc" id="L111">        recordRDD.mapToPair(record -&gt; new Tuple2&lt;&gt;(record.getRecordKey(), record));</span>
+
+<span class="nc" id="L113">    JavaPairRDD&lt;String, Tuple2&lt;HoodieRecordLocation, HoodieKey&gt;&gt; existingRecordKeyToRecordLocationHoodieKeyMap =</span>
+<span class="nc" id="L114">        keyLocationPairRDD.mapToPair(p -&gt; new Tuple2&lt;&gt;(p._1.getRecordKey(), new Tuple2&lt;&gt;(p._2, p._1)));</span>
+
+    // Here as the recordRDD might have more data than rowKeyRDD (some rowKeys' fileId is null), so we do left outer join.
+<span class="nc" id="L117">    return incomingRowKeyRecordPairRDD.leftOuterJoin(existingRecordKeyToRecordLocationHoodieKeyMap).values().flatMap(record -&gt; {</span>
+<span class="nc" id="L118">      final HoodieRecord&lt;T&gt; hoodieRecord = record._1;</span>
+<span class="nc" id="L119">      final Optional&lt;Tuple2&lt;HoodieRecordLocation, HoodieKey&gt;&gt; recordLocationHoodieKeyPair = record._2;</span>
+<span class="nc bnc" id="L120" title="All 2 branches missed.">      if (recordLocationHoodieKeyPair.isPresent()) {</span>
+        // Record key matched to file
+<span class="nc bnc" id="L122" title="All 2 branches missed.">        if (config.getBloomIndexUpdatePartitionPath()</span>
+<span class="nc bnc" id="L123" title="All 2 branches missed.">            &amp;&amp; !recordLocationHoodieKeyPair.get()._2.getPartitionPath().equals(hoodieRecord.getPartitionPath())) {</span>
+          // Create an empty record to delete the record in the old partition
+<span class="nc" id="L125">          HoodieRecord&lt;T&gt; emptyRecord = new HoodieRecord(recordLocationHoodieKeyPair.get()._2,</span>
+              new EmptyHoodieRecordPayload());
+          // Tag the incoming record for inserting to the new partition
+<span class="nc" id="L128">          HoodieRecord&lt;T&gt; taggedRecord = getTaggedRecord(hoodieRecord, Option.empty());</span>
+<span class="nc" id="L129">          return Arrays.asList(emptyRecord, taggedRecord).iterator();</span>
+        } else {
+          // Ignore the incoming record's partition, regardless of whether it differs from its old partition or not.
+          // When it differs, the record will still be updated at its old partition.
+<span class="nc" id="L133">          return Collections.singletonList(</span>
+<span class="nc" id="L134">              getTaggedRecord(new HoodieRecord&lt;&gt;(recordLocationHoodieKeyPair.get()._2, hoodieRecord.getData()),</span>
+<span class="nc" id="L135">                  Option.ofNullable(recordLocationHoodieKeyPair.get()._1))).iterator();</span>
+        }
+      } else {
+<span class="nc" id="L138">        return Collections.singletonList(getTaggedRecord(hoodieRecord, Option.empty())).iterator();</span>
+      }
+    });
+  }
+
+  @Override
+  public boolean isGlobal() {
+<span class="nc" id="L145">    return true;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

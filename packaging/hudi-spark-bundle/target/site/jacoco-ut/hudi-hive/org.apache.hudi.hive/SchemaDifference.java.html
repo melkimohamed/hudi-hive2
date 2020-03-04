@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>SchemaDifference.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-hive</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.hive</a> &gt; <span class="el_source">SchemaDifference.java</span></div><h1>SchemaDifference.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.hive;
+
+import org.apache.parquet.schema.MessageType;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.StringJoiner;
+
+/**
+ * Represents the schema difference between the storage schema and hive table schema.
+ */
+public class SchemaDifference {
+
+  private final MessageType storageSchema;
+  private final Map&lt;String, String&gt; tableSchema;
+  private final List&lt;String&gt; deleteColumns;
+  private final Map&lt;String, String&gt; updateColumnTypes;
+  private final Map&lt;String, String&gt; addColumnTypes;
+
+  private SchemaDifference(MessageType storageSchema, Map&lt;String, String&gt; tableSchema, List&lt;String&gt; deleteColumns,
+<span class="nc" id="L42">      Map&lt;String, String&gt; updateColumnTypes, Map&lt;String, String&gt; addColumnTypes) {</span>
+<span class="nc" id="L43">    this.storageSchema = storageSchema;</span>
+<span class="nc" id="L44">    this.tableSchema = tableSchema;</span>
+<span class="nc" id="L45">    this.deleteColumns = Collections.unmodifiableList(deleteColumns);</span>
+<span class="nc" id="L46">    this.updateColumnTypes = Collections.unmodifiableMap(updateColumnTypes);</span>
+<span class="nc" id="L47">    this.addColumnTypes =  Collections.unmodifiableMap(addColumnTypes);</span>
+<span class="nc" id="L48">  }</span>
+
+  public List&lt;String&gt; getDeleteColumns() {
+<span class="nc" id="L51">    return deleteColumns;</span>
+  }
+
+  public Map&lt;String, String&gt; getUpdateColumnTypes() {
+<span class="nc" id="L55">    return updateColumnTypes;</span>
+  }
+
+  public Map&lt;String, String&gt; getAddColumnTypes() {
+<span class="nc" id="L59">    return addColumnTypes;</span>
+  }
+
+  public static Builder newBuilder(MessageType storageSchema, Map&lt;String, String&gt; tableSchema) {
+<span class="nc" id="L63">    return new Builder(storageSchema, tableSchema);</span>
+  }
+
+  public boolean isEmpty() {
+<span class="nc bnc" id="L67" title="All 6 branches missed.">    return deleteColumns.isEmpty() &amp;&amp; updateColumnTypes.isEmpty() &amp;&amp; addColumnTypes.isEmpty();</span>
+  }
+
+  @Override
+  public String toString() {
+<span class="nc" id="L72">    return new StringJoiner(&quot;, &quot;, SchemaDifference.class.getSimpleName() + &quot;[&quot;, &quot;]&quot;)</span>
+<span class="nc" id="L73">           .add(&quot;storageSchema=&quot; + storageSchema)</span>
+<span class="nc" id="L74">           .add(&quot;tableSchema=&quot; + tableSchema)</span>
+<span class="nc" id="L75">           .add(&quot;deleteColumns=&quot; + deleteColumns)</span>
+<span class="nc" id="L76">           .add(&quot;updateColumnTypes=&quot; + updateColumnTypes)</span>
+<span class="nc" id="L77">           .add(&quot;addColumnTypes=&quot; + addColumnTypes)</span>
+<span class="nc" id="L78">           .toString();</span>
+  }
+
+  public static class Builder {
+
+    private final MessageType storageSchema;
+    private final Map&lt;String, String&gt; tableSchema;
+    private List&lt;String&gt; deleteColumns;
+    private Map&lt;String, String&gt; updateColumnTypes;
+    private Map&lt;String, String&gt; addColumnTypes;
+
+<span class="nc" id="L89">    public Builder(MessageType storageSchema, Map&lt;String, String&gt; tableSchema) {</span>
+<span class="nc" id="L90">      this.storageSchema = storageSchema;</span>
+<span class="nc" id="L91">      this.tableSchema = tableSchema;</span>
+<span class="nc" id="L92">      deleteColumns = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L93">      updateColumnTypes = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L94">      addColumnTypes = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L95">    }</span>
+
+    public Builder deleteTableColumn(String column) {
+<span class="nc" id="L98">      deleteColumns.add(column);</span>
+<span class="nc" id="L99">      return this;</span>
+    }
+
+    public Builder updateTableColumn(String column, String storageColumnType) {
+<span class="nc" id="L103">      updateColumnTypes.put(column, storageColumnType);</span>
+<span class="nc" id="L104">      return this;</span>
+    }
+
+    public Builder addTableColumn(String name, String type) {
+<span class="nc" id="L108">      addColumnTypes.put(name, type);</span>
+<span class="nc" id="L109">      return this;</span>
+    }
+
+    public SchemaDifference build() {
+<span class="nc" id="L113">      return new SchemaDifference(storageSchema, tableSchema, deleteColumns, updateColumnTypes, addColumnTypes);</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

@@ -1,0 +1,17 @@
+org/apache/hudi/hadoop/SafeParquetRecordReaderWrapper.class
+org/apache/hudi/hadoop/realtime/HoodieParquetRealtimeInputFormat.class
+org/apache/hudi/hadoop/realtime/HoodieRealtimeRecordReader.class
+org/apache/hudi/hadoop/UseFileSplitsFromInputFormat.class
+org/apache/hudi/hadoop/realtime/AbstractRealtimeRecordReader$1.class
+com/uber/hoodie/hadoop/HoodieInputFormat.class
+org/apache/hudi/hadoop/HoodieParquetInputFormat.class
+org/apache/hudi/hadoop/InputPathHandler.class
+org/apache/hudi/hadoop/HoodieHiveUtil.class
+org/apache/hudi/hadoop/HoodieROTablePathFilter.class
+com/uber/hoodie/hadoop/realtime/HoodieRealtimeInputFormat.class
+org/apache/hudi/hadoop/realtime/HoodieParquetSerde.class
+org/apache/hudi/hadoop/realtime/RealtimeCompactedRecordReader.class
+org/apache/hudi/hadoop/realtime/HoodieRealtimeFileSplit.class
+org/apache/hudi/hadoop/realtime/AbstractRealtimeRecordReader.class
+org/apache/hudi/hadoop/realtime/RealtimeUnmergedRecordReader.class
+org/apache/hudi/hadoop/RecordReaderValueIterator.class

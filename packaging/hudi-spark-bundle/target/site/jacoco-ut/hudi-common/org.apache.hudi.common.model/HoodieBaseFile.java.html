@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieBaseFile.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.model</a> &gt; <span class="el_source">HoodieBaseFile.java</span></div><h1>HoodieBaseFile.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.model;
+
+import org.apache.hudi.common.util.FSUtils;
+
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.Path;
+
+import java.io.Serializable;
+import java.util.Objects;
+
+/**
+ * Hoodie base file.
+ */
+public class HoodieBaseFile implements Serializable {
+
+  private transient FileStatus fileStatus;
+  private final String fullPath;
+  private long fileLen;
+
+<span class="nc" id="L38">  public HoodieBaseFile(FileStatus fileStatus) {</span>
+<span class="nc" id="L39">    this.fileStatus = fileStatus;</span>
+<span class="nc" id="L40">    this.fullPath = fileStatus.getPath().toString();</span>
+<span class="nc" id="L41">    this.fileLen = fileStatus.getLen();</span>
+<span class="nc" id="L42">  }</span>
+
+<span class="nc" id="L44">  public HoodieBaseFile(String filePath) {</span>
+<span class="nc" id="L45">    this.fileStatus = null;</span>
+<span class="nc" id="L46">    this.fullPath = filePath;</span>
+<span class="nc" id="L47">    this.fileLen = -1;</span>
+<span class="nc" id="L48">  }</span>
+
+  public String getFileId() {
+<span class="nc" id="L51">    return FSUtils.getFileId(getFileName());</span>
+  }
+
+  public String getCommitTime() {
+<span class="nc" id="L55">    return FSUtils.getCommitTime(getFileName());</span>
+  }
+
+  public String getPath() {
+<span class="nc" id="L59">    return fullPath;</span>
+  }
+
+  public String getFileName() {
+<span class="nc" id="L63">    return new Path(fullPath).getName();</span>
+  }
+
+  public FileStatus getFileStatus() {
+<span class="nc" id="L67">    return fileStatus;</span>
+  }
+
+  public long getFileSize() {
+<span class="nc" id="L71">    return fileLen;</span>
+  }
+
+  public void setFileLen(long fileLen) {
+<span class="nc" id="L75">    this.fileLen = fileLen;</span>
+<span class="nc" id="L76">  }</span>
+
+  public long getFileLen() {
+<span class="nc" id="L79">    return fileLen;</span>
+  }
+
+  @Override
+  public boolean equals(Object o) {
+<span class="nc bnc" id="L84" title="All 2 branches missed.">    if (this == o) {</span>
+<span class="nc" id="L85">      return true;</span>
+    }
+<span class="nc bnc" id="L87" title="All 4 branches missed.">    if (o == null || getClass() != o.getClass()) {</span>
+<span class="nc" id="L88">      return false;</span>
+    }
+<span class="nc" id="L90">    HoodieBaseFile dataFile = (HoodieBaseFile) o;</span>
+<span class="nc" id="L91">    return Objects.equals(fullPath, dataFile.fullPath);</span>
+  }
+
+  @Override
+  public int hashCode() {
+<span class="nc" id="L96">    return Objects.hash(fullPath);</span>
+  }
+
+  @Override
+  public String toString() {
+<span class="nc" id="L101">    return &quot;HoodieDataFile{fullPath=&quot; + fullPath + &quot;, fileLen=&quot; + fileLen + '}';</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

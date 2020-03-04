@@ -1,0 +1,18 @@
+#Wed Mar 04 21:52:54 CET 2020
+module-resource*?\:/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/target/checkstyle-suppressions.xml=8D8F5336F98054DC2B1EAC538CCEE719E7161D3C
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/test/java/org/apache/hudi/hadoop/TestHoodieROTablePathFilter.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/RealtimeCompactedRecordReader.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/com/uber/hoodie/hadoop/realtime/HoodieRealtimeInputFormat.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/com/uber/hoodie/hadoop/HoodieInputFormat.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/HoodieParquetRealtimeInputFormat.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/SafeParquetRecordReaderWrapper.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/HoodieRealtimeRecordReader.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/test/resources/log4j-surefire-quiet.properties=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/HoodieRealtimeFileSplit.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/AbstractRealtimeRecordReader.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/UseFileSplitsFromInputFormat.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/RecordReaderValueIterator.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/RealtimeUnmergedRecordReader.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/test/resources/log4j-surefire.properties=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/HoodieParquetSerde.java=1583354730000
+configuration*?=581EB9242A5B07B54F140DB4F0D4694A403EEFFF

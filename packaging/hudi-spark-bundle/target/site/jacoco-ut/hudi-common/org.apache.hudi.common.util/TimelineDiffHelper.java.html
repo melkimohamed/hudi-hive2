@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>TimelineDiffHelper.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.util</a> &gt; <span class="el_source">TimelineDiffHelper.java</span></div><h1>TimelineDiffHelper.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.util;
+
+import org.apache.hudi.common.table.HoodieTimeline;
+import org.apache.hudi.common.table.timeline.HoodieInstant;
+import org.apache.hudi.common.table.timeline.HoodieInstant.State;
+import org.apache.hudi.common.util.collection.Pair;
+
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+/**
+ * A helper class used to diff timeline.
+ */
+<span class="nc" id="L37">public class TimelineDiffHelper {</span>
+
+<span class="nc" id="L39">  private static final Logger LOG = LogManager.getLogger(TimelineDiffHelper.class);</span>
+
+  public static TimelineDiffResult getNewInstantsForIncrementalSync(HoodieTimeline oldTimeline,
+      HoodieTimeline newTimeline) {
+
+<span class="nc" id="L44">    HoodieTimeline oldT = oldTimeline.filterCompletedAndCompactionInstants();</span>
+<span class="nc" id="L45">    HoodieTimeline newT = newTimeline.filterCompletedAndCompactionInstants();</span>
+
+<span class="nc" id="L47">    Option&lt;HoodieInstant&gt; lastSeenInstant = oldT.lastInstant();</span>
+<span class="nc" id="L48">    Option&lt;HoodieInstant&gt; firstInstantInNewTimeline = newT.firstInstant();</span>
+
+<span class="nc bnc" id="L50" title="All 4 branches missed.">    if (lastSeenInstant.isPresent() &amp;&amp; firstInstantInNewTimeline.isPresent()) {</span>
+<span class="nc bnc" id="L51" title="All 2 branches missed.">      if (HoodieTimeline.compareTimestamps(lastSeenInstant.get().getTimestamp(),</span>
+<span class="nc" id="L52">          firstInstantInNewTimeline.get().getTimestamp(), HoodieTimeline.LESSER)) {</span>
+        // The last seen instant is no longer in the timeline. Do not incrementally Sync.
+<span class="nc" id="L54">        return TimelineDiffResult.UNSAFE_SYNC_RESULT;</span>
+      }
+<span class="nc" id="L56">      Set&lt;HoodieInstant&gt; oldTimelineInstants = oldT.getInstants().collect(Collectors.toSet());</span>
+
+<span class="nc" id="L58">      List&lt;HoodieInstant&gt; newInstants = new ArrayList&lt;&gt;();</span>
+
+      // Check If any pending compaction is lost. If so, do not allow incremental timeline sync
+<span class="nc" id="L61">      List&lt;Pair&lt;HoodieInstant, HoodieInstant&gt;&gt; compactionInstants = getPendingCompactionTransitions(oldT, newT);</span>
+<span class="nc" id="L62">      List&lt;HoodieInstant&gt; lostPendingCompactions = compactionInstants.stream()</span>
+<span class="nc bnc" id="L63" title="All 2 branches missed.">          .filter(instantPair -&gt; instantPair.getValue() == null).map(Pair::getKey).collect(Collectors.toList());</span>
+<span class="nc bnc" id="L64" title="All 2 branches missed.">      if (!lostPendingCompactions.isEmpty()) {</span>
+        // If a compaction is unscheduled, fall back to complete refresh of fs view since some log files could have been
+        // moved. Its unsafe to incrementally sync in that case.
+<span class="nc" id="L67">        LOG.warn(&quot;Some pending compactions are no longer in new timeline (unscheduled ?). They are :&quot;</span>
+            + lostPendingCompactions);
+<span class="nc" id="L69">        return TimelineDiffResult.UNSAFE_SYNC_RESULT;</span>
+      }
+<span class="nc" id="L71">      List&lt;HoodieInstant&gt; finishedCompactionInstants = compactionInstants.stream()</span>
+<span class="nc bnc" id="L72" title="All 2 branches missed.">          .filter(instantPair -&gt; instantPair.getValue().getAction().equals(HoodieTimeline.COMMIT_ACTION)</span>
+<span class="nc bnc" id="L73" title="All 2 branches missed.">              &amp;&amp; instantPair.getValue().isCompleted())</span>
+<span class="nc" id="L74">          .map(Pair::getKey).collect(Collectors.toList());</span>
+
+<span class="nc bnc" id="L76" title="All 2 branches missed.">      newT.getInstants().filter(instant -&gt; !oldTimelineInstants.contains(instant)).forEach(newInstants::add);</span>
+<span class="nc" id="L77">      return new TimelineDiffResult(newInstants, finishedCompactionInstants, true);</span>
+    } else {
+      // One or more timelines is empty
+<span class="nc" id="L80">      LOG.warn(&quot;One or more timelines is empty&quot;);</span>
+<span class="nc" id="L81">      return TimelineDiffResult.UNSAFE_SYNC_RESULT;</span>
+    }
+  }
+
+  private static List&lt;Pair&lt;HoodieInstant, HoodieInstant&gt;&gt; getPendingCompactionTransitions(HoodieTimeline oldTimeline,
+      HoodieTimeline newTimeline) {
+<span class="nc" id="L87">    Set&lt;HoodieInstant&gt; newTimelineInstants = newTimeline.getInstants().collect(Collectors.toSet());</span>
+
+<span class="nc" id="L89">    return oldTimeline.filterPendingCompactionTimeline().getInstants().map(instant -&gt; {</span>
+<span class="nc bnc" id="L90" title="All 2 branches missed.">      if (newTimelineInstants.contains(instant)) {</span>
+<span class="nc" id="L91">        return Pair.of(instant, instant);</span>
+      } else {
+<span class="nc" id="L93">        HoodieInstant compacted =</span>
+<span class="nc" id="L94">            new HoodieInstant(State.COMPLETED, HoodieTimeline.COMMIT_ACTION, instant.getTimestamp());</span>
+<span class="nc bnc" id="L95" title="All 2 branches missed.">        if (newTimelineInstants.contains(compacted)) {</span>
+<span class="nc" id="L96">          return Pair.of(instant, compacted);</span>
+        }
+<span class="nc" id="L98">        return Pair.&lt;HoodieInstant, HoodieInstant&gt;of(instant, null);</span>
+      }
+<span class="nc" id="L100">    }).collect(Collectors.toList());</span>
+  }
+
+  /**
+   * A diff result of timeline.
+   */
+  public static class TimelineDiffResult {
+
+    private final List&lt;HoodieInstant&gt; newlySeenInstants;
+    private final List&lt;HoodieInstant&gt; finishedCompactionInstants;
+    private final boolean canSyncIncrementally;
+
+<span class="nc" id="L112">    public static final TimelineDiffResult UNSAFE_SYNC_RESULT = new TimelineDiffResult(null, null, false);</span>
+
+    public TimelineDiffResult(List&lt;HoodieInstant&gt; newlySeenInstants, List&lt;HoodieInstant&gt; finishedCompactionInstants,
+<span class="nc" id="L115">        boolean canSyncIncrementally) {</span>
+<span class="nc" id="L116">      this.newlySeenInstants = newlySeenInstants;</span>
+<span class="nc" id="L117">      this.finishedCompactionInstants = finishedCompactionInstants;</span>
+<span class="nc" id="L118">      this.canSyncIncrementally = canSyncIncrementally;</span>
+<span class="nc" id="L119">    }</span>
+
+    public List&lt;HoodieInstant&gt; getNewlySeenInstants() {
+<span class="nc" id="L122">      return newlySeenInstants;</span>
+    }
+
+    public List&lt;HoodieInstant&gt; getFinishedCompactionInstants() {
+<span class="nc" id="L126">      return finishedCompactionInstants;</span>
+    }
+
+    public boolean canSyncIncrementally() {
+<span class="nc" id="L130">      return canSyncIncrementally;</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="nc" id="L135">      return &quot;TimelineDiffResult{newlySeenInstants=&quot; + newlySeenInstants + &quot;, finishedCompactionInstants=&quot;</span>
+          + finishedCompactionInstants + &quot;, canSyncIncrementally=&quot; + canSyncIncrementally + '}';
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

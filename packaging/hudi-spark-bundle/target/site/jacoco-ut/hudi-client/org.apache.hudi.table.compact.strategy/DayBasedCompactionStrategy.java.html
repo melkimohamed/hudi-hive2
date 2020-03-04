@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>DayBasedCompactionStrategy.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-client</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.table.compact.strategy</a> &gt; <span class="el_source">DayBasedCompactionStrategy.java</span></div><h1>DayBasedCompactionStrategy.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.table.compact.strategy;
+
+import org.apache.hudi.avro.model.HoodieCompactionOperation;
+import org.apache.hudi.avro.model.HoodieCompactionPlan;
+import org.apache.hudi.config.HoodieWriteConfig;
+import org.apache.hudi.exception.HoodieException;
+
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+/**
+ * This strategy orders compactions in reverse order of creation of Hive Partitions. It helps to compact data in latest
+ * partitions first and then older capped at the Total_IO allowed.
+ */
+<span class="nc" id="L39">public class DayBasedCompactionStrategy extends CompactionStrategy {</span>
+
+  // For now, use SimpleDateFormat as default partition format
+<span class="nc" id="L42">  protected static String datePartitionFormat = &quot;yyyy/MM/dd&quot;;</span>
+  // Sorts compaction in LastInFirstCompacted order
+<span class="nc" id="L44">  protected static Comparator&lt;String&gt; comparator = (String leftPartition, String rightPartition) -&gt; {</span>
+    try {
+<span class="nc" id="L46">      leftPartition = getPartitionPathWithoutPartitionKeys(leftPartition);</span>
+<span class="nc" id="L47">      rightPartition = getPartitionPathWithoutPartitionKeys(rightPartition);</span>
+<span class="nc" id="L48">      Date left = new SimpleDateFormat(datePartitionFormat, Locale.ENGLISH).parse(leftPartition);</span>
+<span class="nc" id="L49">      Date right = new SimpleDateFormat(datePartitionFormat, Locale.ENGLISH).parse(rightPartition);</span>
+<span class="nc bnc" id="L50" title="All 4 branches missed.">      return left.after(right) ? -1 : right.after(left) ? 1 : 0;</span>
+<span class="nc" id="L51">    } catch (ParseException e) {</span>
+<span class="nc" id="L52">      throw new HoodieException(&quot;Invalid Partition Date Format&quot;, e);</span>
+    }
+  };
+
+  public Comparator&lt;String&gt; getComparator() {
+<span class="nc" id="L57">    return comparator;</span>
+  }
+
+  @Override
+  public List&lt;HoodieCompactionOperation&gt; orderAndFilter(HoodieWriteConfig writeConfig,
+      List&lt;HoodieCompactionOperation&gt; operations, List&lt;HoodieCompactionPlan&gt; pendingCompactionPlans) {
+    // Iterate through the operations and accept operations as long as we are within the configured target partitions
+    // limit
+<span class="nc" id="L65">    return operations.stream()</span>
+<span class="nc" id="L66">        .collect(Collectors.groupingBy(HoodieCompactionOperation::getPartitionPath)).entrySet().stream()</span>
+<span class="nc" id="L67">        .sorted(Map.Entry.comparingByKey(comparator)).limit(writeConfig.getTargetPartitionsPerDayBasedCompaction())</span>
+<span class="nc" id="L68">        .flatMap(e -&gt; e.getValue().stream()).collect(Collectors.toList());</span>
+  }
+
+  @Override
+  public List&lt;String&gt; filterPartitionPaths(HoodieWriteConfig writeConfig, List&lt;String&gt; allPartitionPaths) {
+<span class="nc" id="L73">    return allPartitionPaths.stream().map(partition -&gt; partition.replace(&quot;/&quot;, &quot;-&quot;))</span>
+<span class="nc" id="L74">        .sorted(Comparator.reverseOrder()).map(partitionPath -&gt; partitionPath.replace(&quot;-&quot;, &quot;/&quot;))</span>
+<span class="nc" id="L75">        .collect(Collectors.toList()).subList(0, writeConfig.getTargetPartitionsPerDayBasedCompaction());</span>
+  }
+
+  /**
+   * If is Hive style partition path, convert it to regular partition path. e.g. year=2019/month=11/day=24 =&gt; 2019/11/24
+   */
+  protected static String getPartitionPathWithoutPartitionKeys(String partitionPath) {
+<span class="nc bnc" id="L82" title="All 2 branches missed.">    if (partitionPath.contains(&quot;=&quot;)) {</span>
+<span class="nc" id="L83">      return partitionPath.replaceFirst(&quot;.*?=&quot;, &quot;&quot;).replaceAll(&quot;/.*?=&quot;, &quot;/&quot;);</span>
+    }
+<span class="nc" id="L85">    return partitionPath;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

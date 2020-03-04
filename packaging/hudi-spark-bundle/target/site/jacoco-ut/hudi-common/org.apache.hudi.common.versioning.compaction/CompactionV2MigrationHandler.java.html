@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>CompactionV2MigrationHandler.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.versioning.compaction</a> &gt; <span class="el_source">CompactionV2MigrationHandler.java</span></div><h1>CompactionV2MigrationHandler.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.versioning.compaction;
+
+import org.apache.hudi.avro.model.HoodieCompactionOperation;
+import org.apache.hudi.avro.model.HoodieCompactionPlan;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.common.versioning.AbstractMigratorBase;
+
+import com.google.common.base.Preconditions;
+import org.apache.hadoop.fs.Path;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
+
+/**
+ * With version 2 of compaction plan, paths are no longer absolute.
+ */
+public class CompactionV2MigrationHandler extends AbstractMigratorBase&lt;HoodieCompactionPlan&gt; {
+
+<span class="nc" id="L38">  public static final Integer VERSION = 2;</span>
+
+  public CompactionV2MigrationHandler(HoodieTableMetaClient metaClient) {
+<span class="nc" id="L41">    super(metaClient);</span>
+<span class="nc" id="L42">  }</span>
+
+  @Override
+  public Integer getManagedVersion() {
+<span class="nc" id="L46">    return VERSION;</span>
+  }
+
+  @Override
+  public HoodieCompactionPlan upgradeFrom(HoodieCompactionPlan input) {
+<span class="nc bnc" id="L51" title="All 2 branches missed.">    Preconditions.checkArgument(input.getVersion() == 1, &quot;Input version is &quot; + input.getVersion() + &quot;. Must be 1&quot;);</span>
+<span class="nc" id="L52">    HoodieCompactionPlan compactionPlan = new HoodieCompactionPlan();</span>
+<span class="nc" id="L53">    List&lt;HoodieCompactionOperation&gt; v2CompactionOperationList = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L54" title="All 2 branches missed.">    if (null != input.getOperations()) {</span>
+<span class="nc" id="L55">      v2CompactionOperationList = input.getOperations().stream().map(inp -&gt; {</span>
+<span class="nc" id="L56">        return HoodieCompactionOperation.newBuilder().setBaseInstantTime(inp.getBaseInstantTime())</span>
+<span class="nc" id="L57">            .setFileId(inp.getFileId()).setPartitionPath(inp.getPartitionPath()).setMetrics(inp.getMetrics())</span>
+<span class="nc" id="L58">            .setDataFilePath(new Path(inp.getDataFilePath()).getName()).setDeltaFilePaths(</span>
+<span class="nc" id="L59">                inp.getDeltaFilePaths().stream().map(s -&gt; new Path(s).getName()).collect(Collectors.toList()))</span>
+<span class="nc" id="L60">            .build();</span>
+<span class="nc" id="L61">      }).collect(Collectors.toList());</span>
+    }
+<span class="nc" id="L63">    compactionPlan.setOperations(v2CompactionOperationList);</span>
+<span class="nc" id="L64">    compactionPlan.setExtraMetadata(input.getExtraMetadata());</span>
+<span class="nc" id="L65">    compactionPlan.setVersion(getManagedVersion());</span>
+<span class="nc" id="L66">    return compactionPlan;</span>
+  }
+
+  @Override
+  public HoodieCompactionPlan downgradeFrom(HoodieCompactionPlan input) {
+<span class="nc" id="L71">    throw new IllegalArgumentException(&quot;This is the current highest version. Input cannot be any higher version&quot;);</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

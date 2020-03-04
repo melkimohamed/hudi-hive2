@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>RollbackHelper.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-client</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.table.rollback</a> &gt; <span class="el_source">RollbackHelper.java</span></div><h1>RollbackHelper.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.table.rollback;
+
+import org.apache.hudi.common.HoodieRollbackStat;
+import org.apache.hudi.common.model.HoodieLogFile;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.common.table.log.HoodieLogFormat;
+import org.apache.hudi.common.table.log.HoodieLogFormat.Writer;
+import org.apache.hudi.common.table.log.block.HoodieCommandBlock;
+import org.apache.hudi.common.table.log.block.HoodieCommandBlock.HoodieCommandBlockTypeEnum;
+import org.apache.hudi.common.table.log.block.HoodieLogBlock.HeaderMetadataType;
+import org.apache.hudi.common.table.timeline.HoodieInstant;
+import org.apache.hudi.common.util.FSUtils;
+import org.apache.hudi.config.HoodieWriteConfig;
+import org.apache.hudi.exception.HoodieRollbackException;
+
+import com.google.common.base.Preconditions;
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.PathFilter;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+import org.apache.spark.api.java.JavaSparkContext;
+
+import java.io.IOException;
+import java.io.Serializable;
+import java.io.UncheckedIOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+
+import scala.Tuple2;
+
+/**
+ * Performs Rollback of Hoodie Tables.
+ */
+public class RollbackHelper implements Serializable {
+
+<span class="nc" id="L58">  private static final Logger LOG = LogManager.getLogger(RollbackHelper.class);</span>
+
+  private final HoodieTableMetaClient metaClient;
+  private final HoodieWriteConfig config;
+
+<span class="nc" id="L63">  public RollbackHelper(HoodieTableMetaClient metaClient, HoodieWriteConfig config) {</span>
+<span class="nc" id="L64">    this.metaClient = metaClient;</span>
+<span class="nc" id="L65">    this.config = config;</span>
+<span class="nc" id="L66">  }</span>
+
+  /**
+   * Performs all rollback actions that we have collected in parallel.
+   */
+  public List&lt;HoodieRollbackStat&gt; performRollback(JavaSparkContext jsc, HoodieInstant instantToRollback, List&lt;RollbackRequest&gt; rollbackRequests) {
+
+<span class="nc" id="L73">    SerializablePathFilter filter = (path) -&gt; {</span>
+<span class="nc bnc" id="L74" title="All 2 branches missed.">      if (path.toString().contains(&quot;.parquet&quot;)) {</span>
+<span class="nc" id="L75">        String fileCommitTime = FSUtils.getCommitTime(path.getName());</span>
+<span class="nc" id="L76">        return instantToRollback.getTimestamp().equals(fileCommitTime);</span>
+<span class="nc bnc" id="L77" title="All 2 branches missed.">      } else if (path.toString().contains(&quot;.log&quot;)) {</span>
+        // Since the baseCommitTime is the only commit for new log files, it's okay here
+<span class="nc" id="L79">        String fileCommitTime = FSUtils.getBaseCommitTimeFromLogPath(path);</span>
+<span class="nc" id="L80">        return instantToRollback.getTimestamp().equals(fileCommitTime);</span>
+      }
+<span class="nc" id="L82">      return false;</span>
+    };
+
+<span class="nc" id="L85">    int sparkPartitions = Math.max(Math.min(rollbackRequests.size(), config.getRollbackParallelism()), 1);</span>
+<span class="nc" id="L86">    return jsc.parallelize(rollbackRequests, sparkPartitions).mapToPair(rollbackRequest -&gt; {</span>
+<span class="nc" id="L87">      final Map&lt;FileStatus, Boolean&gt; filesToDeletedStatus = new HashMap&lt;&gt;();</span>
+<span class="nc bnc" id="L88" title="All 4 branches missed.">      switch (rollbackRequest.getRollbackAction()) {</span>
+        case DELETE_DATA_FILES_ONLY: {
+<span class="nc" id="L90">          deleteCleanedFiles(metaClient, config, filesToDeletedStatus, instantToRollback.getTimestamp(),</span>
+<span class="nc" id="L91">              rollbackRequest.getPartitionPath());</span>
+<span class="nc" id="L92">          return new Tuple2&lt;&gt;(rollbackRequest.getPartitionPath(),</span>
+<span class="nc" id="L93">                  HoodieRollbackStat.newBuilder().withPartitionPath(rollbackRequest.getPartitionPath())</span>
+<span class="nc" id="L94">                          .withDeletedFileResults(filesToDeletedStatus).build());</span>
+        }
+        case DELETE_DATA_AND_LOG_FILES: {
+<span class="nc" id="L97">          deleteCleanedFiles(metaClient, config, filesToDeletedStatus, rollbackRequest.getPartitionPath(), filter);</span>
+<span class="nc" id="L98">          return new Tuple2&lt;&gt;(rollbackRequest.getPartitionPath(),</span>
+<span class="nc" id="L99">                  HoodieRollbackStat.newBuilder().withPartitionPath(rollbackRequest.getPartitionPath())</span>
+<span class="nc" id="L100">                          .withDeletedFileResults(filesToDeletedStatus).build());</span>
+        }
+        case APPEND_ROLLBACK_BLOCK: {
+<span class="nc" id="L103">          Writer writer = null;</span>
+          try {
+<span class="nc" id="L105">            writer = HoodieLogFormat.newWriterBuilder()</span>
+<span class="nc" id="L106">                .onParentPath(FSUtils.getPartitionPath(metaClient.getBasePath(), rollbackRequest.getPartitionPath()))</span>
+<span class="nc" id="L107">                .withFileId(rollbackRequest.getFileId().get())</span>
+<span class="nc" id="L108">                .overBaseCommit(rollbackRequest.getLatestBaseInstant().get()).withFs(metaClient.getFs())</span>
+<span class="nc" id="L109">                .withFileExtension(HoodieLogFile.DELTA_EXTENSION).build();</span>
+
+            // generate metadata
+<span class="nc" id="L112">            Map&lt;HeaderMetadataType, String&gt; header = generateHeader(instantToRollback.getTimestamp());</span>
+            // if update belongs to an existing log file
+<span class="nc" id="L114">            writer = writer.appendBlock(new HoodieCommandBlock(header));</span>
+<span class="nc" id="L115">          } catch (IOException | InterruptedException io) {</span>
+<span class="nc" id="L116">            throw new HoodieRollbackException(&quot;Failed to rollback for instant &quot; + instantToRollback, io);</span>
+          } finally {
+            try {
+<span class="nc bnc" id="L119" title="All 2 branches missed.">              if (writer != null) {</span>
+<span class="nc" id="L120">                writer.close();</span>
+              }
+<span class="nc" id="L122">            } catch (IOException io) {</span>
+<span class="nc" id="L123">              throw new UncheckedIOException(io);</span>
+<span class="nc" id="L124">            }</span>
+          }
+
+          // This step is intentionally done after writer is closed. Guarantees that
+          // getFileStatus would reflect correct stats and FileNotFoundException is not thrown in
+          // cloud-storage : HUDI-168
+<span class="nc" id="L130">          Map&lt;FileStatus, Long&gt; filesToNumBlocksRollback = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L131">          filesToNumBlocksRollback.put(metaClient.getFs().getFileStatus(Objects.requireNonNull(writer).getLogFile().getPath()), 1L);</span>
+<span class="nc" id="L132">          return new Tuple2&lt;&gt;(rollbackRequest.getPartitionPath(),</span>
+<span class="nc" id="L133">                  HoodieRollbackStat.newBuilder().withPartitionPath(rollbackRequest.getPartitionPath())</span>
+<span class="nc" id="L134">                          .withRollbackBlockAppendResults(filesToNumBlocksRollback).build());</span>
+        }
+        default:
+<span class="nc" id="L137">          throw new IllegalStateException(&quot;Unknown Rollback action &quot; + rollbackRequest);</span>
+      }
+<span class="nc" id="L139">    }).reduceByKey(this::mergeRollbackStat).map(Tuple2::_2).collect();</span>
+  }
+
+  /**
+   * Helper to merge 2 rollback-stats for a given partition.
+   *
+   * @param stat1 HoodieRollbackStat
+   * @param stat2 HoodieRollbackStat
+   * @return Merged HoodieRollbackStat
+   */
+  private HoodieRollbackStat mergeRollbackStat(HoodieRollbackStat stat1, HoodieRollbackStat stat2) {
+<span class="nc" id="L150">    Preconditions.checkArgument(stat1.getPartitionPath().equals(stat2.getPartitionPath()));</span>
+<span class="nc" id="L151">    final List&lt;String&gt; successDeleteFiles = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L152">    final List&lt;String&gt; failedDeleteFiles = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L153">    final Map&lt;FileStatus, Long&gt; commandBlocksCount = new HashMap&lt;&gt;();</span>
+
+<span class="nc bnc" id="L155" title="All 2 branches missed.">    if (stat1.getSuccessDeleteFiles() != null) {</span>
+<span class="nc" id="L156">      successDeleteFiles.addAll(stat1.getSuccessDeleteFiles());</span>
+    }
+<span class="nc bnc" id="L158" title="All 2 branches missed.">    if (stat2.getSuccessDeleteFiles() != null) {</span>
+<span class="nc" id="L159">      successDeleteFiles.addAll(stat2.getSuccessDeleteFiles());</span>
+    }
+<span class="nc bnc" id="L161" title="All 2 branches missed.">    if (stat1.getFailedDeleteFiles() != null) {</span>
+<span class="nc" id="L162">      failedDeleteFiles.addAll(stat1.getFailedDeleteFiles());</span>
+    }
+<span class="nc bnc" id="L164" title="All 2 branches missed.">    if (stat2.getFailedDeleteFiles() != null) {</span>
+<span class="nc" id="L165">      failedDeleteFiles.addAll(stat2.getFailedDeleteFiles());</span>
+    }
+<span class="nc bnc" id="L167" title="All 2 branches missed.">    if (stat1.getCommandBlocksCount() != null) {</span>
+<span class="nc" id="L168">      commandBlocksCount.putAll(stat1.getCommandBlocksCount());</span>
+    }
+<span class="nc bnc" id="L170" title="All 2 branches missed.">    if (stat2.getCommandBlocksCount() != null) {</span>
+<span class="nc" id="L171">      commandBlocksCount.putAll(stat2.getCommandBlocksCount());</span>
+    }
+<span class="nc" id="L173">    return new HoodieRollbackStat(stat1.getPartitionPath(), successDeleteFiles, failedDeleteFiles, commandBlocksCount);</span>
+  }
+
+  /**
+   * Common method used for cleaning out parquet files under a partition path during rollback of a set of commits.
+   */
+  private Map&lt;FileStatus, Boolean&gt; deleteCleanedFiles(HoodieTableMetaClient metaClient, HoodieWriteConfig config,
+      Map&lt;FileStatus, Boolean&gt; results, String partitionPath, PathFilter filter) throws IOException {
+<span class="nc" id="L181">    LOG.info(&quot;Cleaning path &quot; + partitionPath);</span>
+<span class="nc" id="L182">    FileSystem fs = metaClient.getFs();</span>
+<span class="nc" id="L183">    FileStatus[] toBeDeleted = fs.listStatus(FSUtils.getPartitionPath(config.getBasePath(), partitionPath), filter);</span>
+<span class="nc bnc" id="L184" title="All 2 branches missed.">    for (FileStatus file : toBeDeleted) {</span>
+<span class="nc" id="L185">      boolean success = fs.delete(file.getPath(), false);</span>
+<span class="nc" id="L186">      results.put(file, success);</span>
+<span class="nc" id="L187">      LOG.info(&quot;Delete file &quot; + file.getPath() + &quot;\t&quot; + success);</span>
+    }
+<span class="nc" id="L189">    return results;</span>
+  }
+
+  /**
+   * Common method used for cleaning out parquet files under a partition path during rollback of a set of commits.
+   */
+  private Map&lt;FileStatus, Boolean&gt; deleteCleanedFiles(HoodieTableMetaClient metaClient, HoodieWriteConfig config,
+      Map&lt;FileStatus, Boolean&gt; results, String commit, String partitionPath) throws IOException {
+<span class="nc" id="L197">    LOG.info(&quot;Cleaning path &quot; + partitionPath);</span>
+<span class="nc" id="L198">    FileSystem fs = metaClient.getFs();</span>
+<span class="nc" id="L199">    PathFilter filter = (path) -&gt; {</span>
+<span class="nc bnc" id="L200" title="All 2 branches missed.">      if (path.toString().contains(&quot;.parquet&quot;)) {</span>
+<span class="nc" id="L201">        String fileCommitTime = FSUtils.getCommitTime(path.getName());</span>
+<span class="nc" id="L202">        return commit.equals(fileCommitTime);</span>
+      }
+<span class="nc" id="L204">      return false;</span>
+    };
+<span class="nc" id="L206">    FileStatus[] toBeDeleted = fs.listStatus(FSUtils.getPartitionPath(config.getBasePath(), partitionPath), filter);</span>
+<span class="nc bnc" id="L207" title="All 2 branches missed.">    for (FileStatus file : toBeDeleted) {</span>
+<span class="nc" id="L208">      boolean success = fs.delete(file.getPath(), false);</span>
+<span class="nc" id="L209">      results.put(file, success);</span>
+<span class="nc" id="L210">      LOG.info(&quot;Delete file &quot; + file.getPath() + &quot;\t&quot; + success);</span>
+    }
+<span class="nc" id="L212">    return results;</span>
+  }
+
+  private Map&lt;HeaderMetadataType, String&gt; generateHeader(String commit) {
+    // generate metadata
+<span class="nc" id="L217">    Map&lt;HeaderMetadataType, String&gt; header = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L218">    header.put(HeaderMetadataType.INSTANT_TIME, metaClient.getActiveTimeline().lastInstant().get().getTimestamp());</span>
+<span class="nc" id="L219">    header.put(HeaderMetadataType.TARGET_INSTANT_TIME, commit);</span>
+<span class="nc" id="L220">    header.put(HeaderMetadataType.COMMAND_BLOCK_TYPE,</span>
+<span class="nc" id="L221">        String.valueOf(HoodieCommandBlockTypeEnum.ROLLBACK_PREVIOUS_BLOCK.ordinal()));</span>
+<span class="nc" id="L222">    return header;</span>
+  }
+
+  public interface SerializablePathFilter extends PathFilter, Serializable {
+
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

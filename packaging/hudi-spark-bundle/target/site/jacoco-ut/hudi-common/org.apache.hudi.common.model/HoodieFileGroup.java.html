@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieFileGroup.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.model</a> &gt; <span class="el_source">HoodieFileGroup.java</span></div><h1>HoodieFileGroup.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.model;
+
+import org.apache.hudi.common.table.HoodieTimeline;
+import org.apache.hudi.common.table.timeline.HoodieInstant;
+import org.apache.hudi.common.util.Option;
+
+import java.io.Serializable;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.stream.Stream;
+
+/**
+ * A set of data/base files + set of log files, that make up an unit for all operations.
+ */
+public class HoodieFileGroup implements Serializable {
+
+  public static Comparator&lt;String&gt; getReverseCommitTimeComparator() {
+<span class="nc" id="L38">    return Comparator.reverseOrder();</span>
+  }
+
+  /**
+   * file group id.
+   */
+  private final HoodieFileGroupId fileGroupId;
+
+  /**
+   * Slices of files in this group, sorted with greater commit first.
+   */
+  private final TreeMap&lt;String, FileSlice&gt; fileSlices;
+
+  /**
+   * Timeline, based on which all getter work.
+   */
+  private final HoodieTimeline timeline;
+
+  /**
+   * The last completed instant, that acts as a high watermark for all getters.
+   */
+  private final Option&lt;HoodieInstant&gt; lastInstant;
+
+  public HoodieFileGroup(String partitionPath, String id, HoodieTimeline timeline) {
+<span class="nc" id="L62">    this(new HoodieFileGroupId(partitionPath, id), timeline);</span>
+<span class="nc" id="L63">  }</span>
+
+<span class="nc" id="L65">  public HoodieFileGroup(HoodieFileGroupId fileGroupId, HoodieTimeline timeline) {</span>
+<span class="nc" id="L66">    this.fileGroupId = fileGroupId;</span>
+<span class="nc" id="L67">    this.fileSlices = new TreeMap&lt;&gt;(HoodieFileGroup.getReverseCommitTimeComparator());</span>
+<span class="nc" id="L68">    this.timeline = timeline;</span>
+<span class="nc" id="L69">    this.lastInstant = timeline.lastInstant();</span>
+<span class="nc" id="L70">  }</span>
+
+  /**
+   * Potentially add a new file-slice by adding base-instant time A file-slice without any data-file and log-files can
+   * exist (if a compaction just got requested).
+   */
+  public void addNewFileSliceAtInstant(String baseInstantTime) {
+<span class="nc bnc" id="L77" title="All 2 branches missed.">    if (!fileSlices.containsKey(baseInstantTime)) {</span>
+<span class="nc" id="L78">      fileSlices.put(baseInstantTime, new FileSlice(fileGroupId, baseInstantTime));</span>
+    }
+<span class="nc" id="L80">  }</span>
+
+  /**
+   * Add a new datafile into the file group.
+   */
+  public void addBaseFile(HoodieBaseFile dataFile) {
+<span class="nc bnc" id="L86" title="All 2 branches missed.">    if (!fileSlices.containsKey(dataFile.getCommitTime())) {</span>
+<span class="nc" id="L87">      fileSlices.put(dataFile.getCommitTime(), new FileSlice(fileGroupId, dataFile.getCommitTime()));</span>
+    }
+<span class="nc" id="L89">    fileSlices.get(dataFile.getCommitTime()).setBaseFile(dataFile);</span>
+<span class="nc" id="L90">  }</span>
+
+  /**
+   * Add a new log file into the group.
+   */
+  public void addLogFile(HoodieLogFile logFile) {
+<span class="nc bnc" id="L96" title="All 2 branches missed.">    if (!fileSlices.containsKey(logFile.getBaseCommitTime())) {</span>
+<span class="nc" id="L97">      fileSlices.put(logFile.getBaseCommitTime(), new FileSlice(fileGroupId, logFile.getBaseCommitTime()));</span>
+    }
+<span class="nc" id="L99">    fileSlices.get(logFile.getBaseCommitTime()).addLogFile(logFile);</span>
+<span class="nc" id="L100">  }</span>
+
+  public String getPartitionPath() {
+<span class="nc" id="L103">    return fileGroupId.getPartitionPath();</span>
+  }
+
+  public HoodieFileGroupId getFileGroupId() {
+<span class="nc" id="L107">    return fileGroupId;</span>
+  }
+
+  /**
+   * A FileSlice is considered committed, if one of the following is true - There is a committed data file - There are
+   * some log files, that are based off a commit or delta commit.
+   */
+  private boolean isFileSliceCommitted(FileSlice slice) {
+<span class="nc" id="L115">    String maxCommitTime = lastInstant.get().getTimestamp();</span>
+<span class="nc bnc" id="L116" title="All 2 branches missed.">    return timeline.containsOrBeforeTimelineStarts(slice.getBaseInstantTime())</span>
+<span class="nc bnc" id="L117" title="All 2 branches missed.">        &amp;&amp; HoodieTimeline.compareTimestamps(slice.getBaseInstantTime(), maxCommitTime, HoodieTimeline.LESSER_OR_EQUAL);</span>
+
+  }
+
+  /**
+   * Get all the the file slices including in-flight ones as seen in underlying file-system.
+   */
+  public Stream&lt;FileSlice&gt; getAllFileSlicesIncludingInflight() {
+<span class="nc" id="L125">    return fileSlices.entrySet().stream().map(Map.Entry::getValue);</span>
+  }
+
+  /**
+   * Get latest file slices including in-flight ones.
+   */
+  public Option&lt;FileSlice&gt; getLatestFileSlicesIncludingInflight() {
+<span class="nc" id="L132">    return Option.fromJavaOptional(getAllFileSlicesIncludingInflight().findFirst());</span>
+  }
+
+  /**
+   * Provides a stream of committed file slices, sorted reverse base commit time.
+   */
+  public Stream&lt;FileSlice&gt; getAllFileSlices() {
+<span class="nc bnc" id="L139" title="All 2 branches missed.">    if (!timeline.empty()) {</span>
+<span class="nc" id="L140">      return fileSlices.entrySet().stream().map(Map.Entry::getValue).filter(this::isFileSliceCommitted);</span>
+    }
+<span class="nc" id="L142">    return Stream.empty();</span>
+  }
+
+  /**
+   * Gets the latest slice - this can contain either.
+   * &lt;p&gt;
+   * - just the log files without data file - (or) data file with 0 or more log files
+   */
+  public Option&lt;FileSlice&gt; getLatestFileSlice() {
+    // there should always be one
+<span class="nc" id="L152">    return Option.fromJavaOptional(getAllFileSlices().findFirst());</span>
+  }
+
+  /**
+   * Gets the latest data file.
+   */
+  public Option&lt;HoodieBaseFile&gt; getLatestDataFile() {
+<span class="nc" id="L159">    return Option.fromJavaOptional(getAllBaseFiles().findFirst());</span>
+  }
+
+  /**
+   * Obtain the latest file slice, upto a commitTime i.e &lt;= maxCommitTime.
+   */
+  public Option&lt;FileSlice&gt; getLatestFileSliceBeforeOrOn(String maxCommitTime) {
+<span class="nc" id="L166">    return Option.fromJavaOptional(getAllFileSlices().filter(slice -&gt; HoodieTimeline</span>
+<span class="nc" id="L167">        .compareTimestamps(slice.getBaseInstantTime(), maxCommitTime, HoodieTimeline.LESSER_OR_EQUAL)).findFirst());</span>
+  }
+
+  /**
+   * Obtain the latest file slice, upto a commitTime i.e &lt; maxInstantTime.
+   * 
+   * @param maxInstantTime Max Instant Time
+   * @return
+   */
+  public Option&lt;FileSlice&gt; getLatestFileSliceBefore(String maxInstantTime) {
+<span class="nc" id="L177">    return Option.fromJavaOptional(getAllFileSlices().filter(</span>
+<span class="nc" id="L178">        slice -&gt; HoodieTimeline.compareTimestamps(slice.getBaseInstantTime(), maxInstantTime, HoodieTimeline.LESSER))</span>
+<span class="nc" id="L179">        .findFirst());</span>
+  }
+
+  public Option&lt;FileSlice&gt; getLatestFileSliceInRange(List&lt;String&gt; commitRange) {
+<span class="nc" id="L183">    return Option.fromJavaOptional(</span>
+<span class="nc" id="L184">        getAllFileSlices().filter(slice -&gt; commitRange.contains(slice.getBaseInstantTime())).findFirst());</span>
+  }
+
+  /**
+   * Stream of committed data files, sorted reverse commit time.
+   */
+  public Stream&lt;HoodieBaseFile&gt; getAllBaseFiles() {
+<span class="nc" id="L191">    return getAllFileSlices().filter(slice -&gt; slice.getBaseFile().isPresent()).map(slice -&gt; slice.getBaseFile().get());</span>
+  }
+
+  @Override
+  public String toString() {
+<span class="nc" id="L196">    final StringBuilder sb = new StringBuilder(&quot;HoodieFileGroup {&quot;);</span>
+<span class="nc" id="L197">    sb.append(&quot;id=&quot;).append(fileGroupId);</span>
+<span class="nc" id="L198">    sb.append(&quot;, fileSlices='&quot;).append(fileSlices).append('\'');</span>
+<span class="nc" id="L199">    sb.append(&quot;, lastInstant='&quot;).append(lastInstant).append('\'');</span>
+<span class="nc" id="L200">    sb.append('}');</span>
+<span class="nc" id="L201">    return sb.toString();</span>
+  }
+
+  public void addFileSlice(FileSlice slice) {
+<span class="nc" id="L205">    fileSlices.put(slice.getBaseInstantTime(), slice);</span>
+<span class="nc" id="L206">  }</span>
+
+  public Stream&lt;FileSlice&gt; getAllRawFileSlices() {
+<span class="nc" id="L209">    return fileSlices.values().stream();</span>
+  }
+
+  public HoodieTimeline getTimeline() {
+<span class="nc" id="L213">    return timeline;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieRollingStat.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.model</a> &gt; <span class="el_source">HoodieRollingStat.java</span></div><h1>HoodieRollingStat.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.model;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
+import javax.annotation.Nullable;
+
+import java.io.Serializable;
+
+/**
+ * A model class defines hoodie rolling stat.
+ */
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class HoodieRollingStat implements Serializable {
+
+  private String fileId;
+  private long inserts;
+  private long upserts;
+  private long deletes;
+  // TODO
+  @Nullable
+  private long totalInputWriteBytesToDisk;
+  @Nullable
+  private long totalInputWriteBytesOnDisk;
+
+<span class="nc" id="L43">  public HoodieRollingStat() {</span>
+    // called by jackson json lib
+<span class="nc" id="L45">  }</span>
+
+<span class="nc" id="L47">  public HoodieRollingStat(String fileId, long inserts, long upserts, long deletes, long totalInputWriteBytesOnDisk) {</span>
+<span class="nc" id="L48">    this.fileId = fileId;</span>
+<span class="nc" id="L49">    this.inserts = inserts;</span>
+<span class="nc" id="L50">    this.upserts = upserts;</span>
+<span class="nc" id="L51">    this.deletes = deletes;</span>
+<span class="nc" id="L52">    this.totalInputWriteBytesOnDisk = totalInputWriteBytesOnDisk;</span>
+<span class="nc" id="L53">  }</span>
+
+  public String getFileId() {
+<span class="nc" id="L56">    return fileId;</span>
+  }
+
+  public void setFileId(String fileId) {
+<span class="nc" id="L60">    this.fileId = fileId;</span>
+<span class="nc" id="L61">  }</span>
+
+  public long getInserts() {
+<span class="nc" id="L64">    return inserts;</span>
+  }
+
+  public void setInserts(long inserts) {
+<span class="nc" id="L68">    this.inserts = inserts;</span>
+<span class="nc" id="L69">  }</span>
+
+  public long getUpserts() {
+<span class="nc" id="L72">    return upserts;</span>
+  }
+
+  public void setUpserts(long upserts) {
+<span class="nc" id="L76">    this.upserts = upserts;</span>
+<span class="nc" id="L77">  }</span>
+
+  public long getDeletes() {
+<span class="nc" id="L80">    return deletes;</span>
+  }
+
+  public void setDeletes(long deletes) {
+<span class="nc" id="L84">    this.deletes = deletes;</span>
+<span class="nc" id="L85">  }</span>
+
+  public long addInserts(long inserts) {
+<span class="nc" id="L88">    this.inserts += inserts;</span>
+<span class="nc" id="L89">    return this.inserts;</span>
+  }
+
+  public long addUpserts(long upserts) {
+<span class="nc" id="L93">    this.upserts += upserts;</span>
+<span class="nc" id="L94">    return this.upserts;</span>
+  }
+
+  public long addDeletes(long deletes) {
+<span class="nc" id="L98">    this.deletes += deletes;</span>
+<span class="nc" id="L99">    return this.deletes;</span>
+  }
+
+  public long getTotalInputWriteBytesOnDisk() {
+<span class="nc" id="L103">    return totalInputWriteBytesOnDisk;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

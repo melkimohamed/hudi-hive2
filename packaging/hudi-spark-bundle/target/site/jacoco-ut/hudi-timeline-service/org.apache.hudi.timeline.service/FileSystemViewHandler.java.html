@@ -1,0 +1,362 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>FileSystemViewHandler.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-timeline-service</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.timeline.service</a> &gt; <span class="el_source">FileSystemViewHandler.java</span></div><h1>FileSystemViewHandler.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.timeline.service;
+
+import org.apache.hudi.common.table.HoodieTimeline;
+import org.apache.hudi.common.table.SyncableFileSystemView;
+import org.apache.hudi.common.table.timeline.dto.CompactionOpDTO;
+import org.apache.hudi.common.table.timeline.dto.BaseFileDTO;
+import org.apache.hudi.common.table.timeline.dto.FileGroupDTO;
+import org.apache.hudi.common.table.timeline.dto.FileSliceDTO;
+import org.apache.hudi.common.table.timeline.dto.InstantDTO;
+import org.apache.hudi.common.table.timeline.dto.TimelineDTO;
+import org.apache.hudi.common.table.view.FileSystemViewManager;
+import org.apache.hudi.common.table.view.RemoteHoodieTableFileSystemView;
+import org.apache.hudi.timeline.service.handlers.BaseFileHandler;
+import org.apache.hudi.timeline.service.handlers.FileSliceHandler;
+import org.apache.hudi.timeline.service.handlers.TimelineHandler;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.base.Preconditions;
+import io.javalin.Context;
+import io.javalin.Handler;
+import io.javalin.Javalin;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+import org.jetbrains.annotations.NotNull;
+
+import java.io.IOException;
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
+
+/**
+ * Main REST Handler class that handles local view staleness and delegates calls to slice/data-file/timeline handlers.
+ */
+public class FileSystemViewHandler {
+
+<span class="nc" id="L56">  private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();</span>
+<span class="nc" id="L57">  private static final Logger LOG = LogManager.getLogger(FileSystemViewHandler.class);</span>
+
+  private final FileSystemViewManager viewManager;
+  private final Javalin app;
+  private final TimelineHandler instantHandler;
+  private final FileSliceHandler sliceHandler;
+  private final BaseFileHandler dataFileHandler;
+
+<span class="nc" id="L65">  public FileSystemViewHandler(Javalin app, Configuration conf, FileSystemViewManager viewManager) throws IOException {</span>
+<span class="nc" id="L66">    this.viewManager = viewManager;</span>
+<span class="nc" id="L67">    this.app = app;</span>
+<span class="nc" id="L68">    this.instantHandler = new TimelineHandler(conf, viewManager);</span>
+<span class="nc" id="L69">    this.sliceHandler = new FileSliceHandler(conf, viewManager);</span>
+<span class="nc" id="L70">    this.dataFileHandler = new BaseFileHandler(conf, viewManager);</span>
+<span class="nc" id="L71">  }</span>
+
+  public void register() {
+<span class="nc" id="L74">    registerDataFilesAPI();</span>
+<span class="nc" id="L75">    registerFileSlicesAPI();</span>
+<span class="nc" id="L76">    registerTimelineAPI();</span>
+<span class="nc" id="L77">  }</span>
+
+  /**
+   * Determines if local view of table's timeline is behind that of client's view.
+   */
+  private boolean isLocalViewBehind(Context ctx) {
+<span class="nc" id="L83">    String basePath = ctx.queryParam(RemoteHoodieTableFileSystemView.BASEPATH_PARAM);</span>
+<span class="nc" id="L84">    String lastKnownInstantFromClient =</span>
+<span class="nc" id="L85">        ctx.queryParam(RemoteHoodieTableFileSystemView.LAST_INSTANT_TS, HoodieTimeline.INVALID_INSTANT_TS);</span>
+<span class="nc" id="L86">    String timelineHashFromClient = ctx.queryParam(RemoteHoodieTableFileSystemView.TIMELINE_HASH, &quot;&quot;);</span>
+<span class="nc" id="L87">    HoodieTimeline localTimeline =</span>
+<span class="nc" id="L88">        viewManager.getFileSystemView(basePath).getTimeline().filterCompletedAndCompactionInstants();</span>
+<span class="nc bnc" id="L89" title="All 2 branches missed.">    if (LOG.isDebugEnabled()) {</span>
+<span class="nc" id="L90">      LOG.debug(&quot;Client [ LastTs=&quot; + lastKnownInstantFromClient + &quot;, TimelineHash=&quot; + timelineHashFromClient</span>
+<span class="nc" id="L91">          + &quot;], localTimeline=&quot; + localTimeline.getInstants().collect(Collectors.toList()));</span>
+    }
+
+<span class="nc bnc" id="L94" title="All 2 branches missed.">    if ((localTimeline.getInstants().count() == 0)</span>
+<span class="nc bnc" id="L95" title="All 2 branches missed.">        &amp;&amp; HoodieTimeline.INVALID_INSTANT_TS.equals(lastKnownInstantFromClient)) {</span>
+<span class="nc" id="L96">      return false;</span>
+    }
+
+<span class="nc" id="L99">    String localTimelineHash = localTimeline.getTimelineHash();</span>
+<span class="nc bnc" id="L100" title="All 2 branches missed.">    if (!localTimelineHash.equals(timelineHashFromClient)) {</span>
+<span class="nc" id="L101">      return true;</span>
+    }
+
+    // As a safety check, even if hash is same, ensure instant is present
+<span class="nc bnc" id="L105" title="All 2 branches missed.">    return !localTimeline.containsOrBeforeTimelineStarts(lastKnownInstantFromClient);</span>
+  }
+
+  /**
+   * Syncs data-set view if local view is behind.
+   */
+  private boolean syncIfLocalViewBehind(Context ctx) {
+<span class="nc bnc" id="L112" title="All 2 branches missed.">    if (isLocalViewBehind(ctx)) {</span>
+<span class="nc" id="L113">      String basePath = ctx.queryParam(RemoteHoodieTableFileSystemView.BASEPATH_PARAM);</span>
+<span class="nc" id="L114">      String lastKnownInstantFromClient =</span>
+<span class="nc" id="L115">          ctx.queryParam(RemoteHoodieTableFileSystemView.LAST_INSTANT_TS, HoodieTimeline.INVALID_INSTANT_TS);</span>
+<span class="nc" id="L116">      SyncableFileSystemView view = viewManager.getFileSystemView(basePath);</span>
+<span class="nc" id="L117">      synchronized (view) {</span>
+<span class="nc bnc" id="L118" title="All 2 branches missed.">        if (isLocalViewBehind(ctx)) {</span>
+<span class="nc" id="L119">          HoodieTimeline localTimeline = viewManager.getFileSystemView(basePath).getTimeline();</span>
+<span class="nc" id="L120">          LOG.warn(&quot;Syncing view as client passed last known instant &quot; + lastKnownInstantFromClient</span>
+              + &quot; as last known instant but server has the folling timeline :&quot;
+<span class="nc" id="L122">              + localTimeline.getInstants().collect(Collectors.toList()));</span>
+<span class="nc" id="L123">          view.sync();</span>
+<span class="nc" id="L124">          return true;</span>
+        }
+<span class="nc" id="L126">      }</span>
+    }
+<span class="nc" id="L128">    return false;</span>
+  }
+
+  private void writeValueAsString(Context ctx, Object obj) throws JsonProcessingException {
+<span class="nc bnc" id="L132" title="All 2 branches missed.">    boolean prettyPrint = ctx.queryParam(&quot;pretty&quot;) != null;</span>
+<span class="nc" id="L133">    long beginJsonTs = System.currentTimeMillis();</span>
+<span class="nc bnc" id="L134" title="All 2 branches missed.">    String result =</span>
+<span class="nc" id="L135">        prettyPrint ? OBJECT_MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(obj) : OBJECT_MAPPER.writeValueAsString(obj);</span>
+<span class="nc" id="L136">    long endJsonTs = System.currentTimeMillis();</span>
+<span class="nc" id="L137">    LOG.debug(&quot;Jsonify TimeTaken=&quot; + (endJsonTs - beginJsonTs));</span>
+<span class="nc" id="L138">    ctx.result(result);</span>
+<span class="nc" id="L139">  }</span>
+
+  /**
+   * Register Timeline API calls.
+   */
+  private void registerTimelineAPI() {
+<span class="nc" id="L145">    app.get(RemoteHoodieTableFileSystemView.LAST_INSTANT, new ViewHandler(ctx -&gt; {</span>
+<span class="nc" id="L146">      List&lt;InstantDTO&gt; dtos = instantHandler</span>
+<span class="nc" id="L147">          .getLastInstant(ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.BASEPATH_PARAM).getValue());</span>
+<span class="nc" id="L148">      writeValueAsString(ctx, dtos);</span>
+<span class="nc" id="L149">    }, false));</span>
+
+<span class="nc" id="L151">    app.get(RemoteHoodieTableFileSystemView.TIMELINE, new ViewHandler(ctx -&gt; {</span>
+<span class="nc" id="L152">      TimelineDTO dto = instantHandler</span>
+<span class="nc" id="L153">          .getTimeline(ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.BASEPATH_PARAM).getValue());</span>
+<span class="nc" id="L154">      writeValueAsString(ctx, dto);</span>
+<span class="nc" id="L155">    }, false));</span>
+<span class="nc" id="L156">  }</span>
+
+  /**
+   * Register Data-Files API calls.
+   */
+  private void registerDataFilesAPI() {
+<span class="nc" id="L162">    app.get(RemoteHoodieTableFileSystemView.LATEST_PARTITION_DATA_FILES_URL, new ViewHandler(ctx -&gt; {</span>
+<span class="nc" id="L163">      List&lt;BaseFileDTO&gt; dtos = dataFileHandler.getLatestDataFiles(</span>
+<span class="nc" id="L164">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.BASEPATH_PARAM).getOrThrow(),</span>
+<span class="nc" id="L165">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.PARTITION_PARAM).getOrThrow());</span>
+<span class="nc" id="L166">      writeValueAsString(ctx, dtos);</span>
+<span class="nc" id="L167">    }, true));</span>
+
+<span class="nc" id="L169">    app.get(RemoteHoodieTableFileSystemView.LATEST_PARTITION_DATA_FILE_URL, new ViewHandler(ctx -&gt; {</span>
+<span class="nc" id="L170">      List&lt;BaseFileDTO&gt; dtos = dataFileHandler.getLatestDataFile(</span>
+<span class="nc" id="L171">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.BASEPATH_PARAM).getOrThrow(),</span>
+<span class="nc" id="L172">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.PARTITION_PARAM).getOrThrow(),</span>
+<span class="nc" id="L173">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.FILEID_PARAM).getOrThrow());</span>
+<span class="nc" id="L174">      writeValueAsString(ctx, dtos);</span>
+<span class="nc" id="L175">    }, true));</span>
+
+<span class="nc" id="L177">    app.get(RemoteHoodieTableFileSystemView.LATEST_ALL_DATA_FILES, new ViewHandler(ctx -&gt; {</span>
+<span class="nc" id="L178">      List&lt;BaseFileDTO&gt; dtos = dataFileHandler</span>
+<span class="nc" id="L179">          .getLatestDataFiles(ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.BASEPATH_PARAM).getOrThrow());</span>
+<span class="nc" id="L180">      writeValueAsString(ctx, dtos);</span>
+<span class="nc" id="L181">    }, true));</span>
+
+<span class="nc" id="L183">    app.get(RemoteHoodieTableFileSystemView.LATEST_DATA_FILES_BEFORE_ON_INSTANT_URL, new ViewHandler(ctx -&gt; {</span>
+<span class="nc" id="L184">      List&lt;BaseFileDTO&gt; dtos = dataFileHandler.getLatestDataFilesBeforeOrOn(</span>
+<span class="nc" id="L185">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.BASEPATH_PARAM).getOrThrow(),</span>
+<span class="nc" id="L186">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.PARTITION_PARAM).getOrThrow(),</span>
+<span class="nc" id="L187">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.MAX_INSTANT_PARAM).getOrThrow());</span>
+<span class="nc" id="L188">      writeValueAsString(ctx, dtos);</span>
+<span class="nc" id="L189">    }, true));</span>
+
+<span class="nc" id="L191">    app.get(RemoteHoodieTableFileSystemView.LATEST_DATA_FILE_ON_INSTANT_URL, new ViewHandler(ctx -&gt; {</span>
+<span class="nc" id="L192">      List&lt;BaseFileDTO&gt; dtos = dataFileHandler.getLatestDataFileOn(</span>
+<span class="nc" id="L193">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.BASEPATH_PARAM).getOrThrow(),</span>
+<span class="nc" id="L194">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.PARTITION_PARAM).getOrThrow(),</span>
+<span class="nc" id="L195">          ctx.queryParam(RemoteHoodieTableFileSystemView.INSTANT_PARAM),</span>
+<span class="nc" id="L196">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.FILEID_PARAM).getOrThrow());</span>
+<span class="nc" id="L197">      writeValueAsString(ctx, dtos);</span>
+<span class="nc" id="L198">    }, true));</span>
+
+<span class="nc" id="L200">    app.get(RemoteHoodieTableFileSystemView.ALL_DATA_FILES, new ViewHandler(ctx -&gt; {</span>
+<span class="nc" id="L201">      List&lt;BaseFileDTO&gt; dtos = dataFileHandler.getAllDataFiles(</span>
+<span class="nc" id="L202">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.BASEPATH_PARAM).getOrThrow(),</span>
+<span class="nc" id="L203">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.PARTITION_PARAM).getOrThrow());</span>
+<span class="nc" id="L204">      writeValueAsString(ctx, dtos);</span>
+<span class="nc" id="L205">    }, true));</span>
+
+<span class="nc" id="L207">    app.get(RemoteHoodieTableFileSystemView.LATEST_DATA_FILES_RANGE_INSTANT_URL, new ViewHandler(ctx -&gt; {</span>
+<span class="nc" id="L208">      List&lt;BaseFileDTO&gt; dtos = dataFileHandler.getLatestDataFilesInRange(</span>
+<span class="nc" id="L209">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.BASEPATH_PARAM).getOrThrow(), Arrays</span>
+<span class="nc" id="L210">              .asList(ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.INSTANTS_PARAM).getOrThrow().split(&quot;,&quot;)));</span>
+<span class="nc" id="L211">      writeValueAsString(ctx, dtos);</span>
+<span class="nc" id="L212">    }, true));</span>
+<span class="nc" id="L213">  }</span>
+
+  /**
+   * Register File Slices API calls.
+   */
+  private void registerFileSlicesAPI() {
+<span class="nc" id="L219">    app.get(RemoteHoodieTableFileSystemView.LATEST_PARTITION_SLICES_URL, new ViewHandler(ctx -&gt; {</span>
+<span class="nc" id="L220">      List&lt;FileSliceDTO&gt; dtos = sliceHandler.getLatestFileSlices(</span>
+<span class="nc" id="L221">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.BASEPATH_PARAM).getOrThrow(),</span>
+<span class="nc" id="L222">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.PARTITION_PARAM).getOrThrow());</span>
+<span class="nc" id="L223">      writeValueAsString(ctx, dtos);</span>
+<span class="nc" id="L224">    }, true));</span>
+
+<span class="nc" id="L226">    app.get(RemoteHoodieTableFileSystemView.LATEST_PARTITION_SLICE_URL, new ViewHandler(ctx -&gt; {</span>
+<span class="nc" id="L227">      List&lt;FileSliceDTO&gt; dtos = sliceHandler.getLatestFileSlice(</span>
+<span class="nc" id="L228">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.BASEPATH_PARAM).getOrThrow(),</span>
+<span class="nc" id="L229">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.PARTITION_PARAM).getOrThrow(),</span>
+<span class="nc" id="L230">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.FILEID_PARAM).getOrThrow());</span>
+<span class="nc" id="L231">      writeValueAsString(ctx, dtos);</span>
+<span class="nc" id="L232">    }, true));</span>
+
+<span class="nc" id="L234">    app.get(RemoteHoodieTableFileSystemView.LATEST_PARTITION_UNCOMPACTED_SLICES_URL, new ViewHandler(ctx -&gt; {</span>
+<span class="nc" id="L235">      List&lt;FileSliceDTO&gt; dtos = sliceHandler.getLatestUnCompactedFileSlices(</span>
+<span class="nc" id="L236">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.BASEPATH_PARAM).getOrThrow(),</span>
+<span class="nc" id="L237">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.PARTITION_PARAM).getOrThrow());</span>
+<span class="nc" id="L238">      writeValueAsString(ctx, dtos);</span>
+<span class="nc" id="L239">    }, true));</span>
+
+<span class="nc" id="L241">    app.get(RemoteHoodieTableFileSystemView.ALL_SLICES_URL, new ViewHandler(ctx -&gt; {</span>
+<span class="nc" id="L242">      List&lt;FileSliceDTO&gt; dtos = sliceHandler.getAllFileSlices(</span>
+<span class="nc" id="L243">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.BASEPATH_PARAM).getOrThrow(),</span>
+<span class="nc" id="L244">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.PARTITION_PARAM).getOrThrow());</span>
+<span class="nc" id="L245">      writeValueAsString(ctx, dtos);</span>
+<span class="nc" id="L246">    }, true));</span>
+
+<span class="nc" id="L248">    app.get(RemoteHoodieTableFileSystemView.LATEST_SLICES_RANGE_INSTANT_URL, new ViewHandler(ctx -&gt; {</span>
+<span class="nc" id="L249">      List&lt;FileSliceDTO&gt; dtos = sliceHandler.getLatestFileSliceInRange(</span>
+<span class="nc" id="L250">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.BASEPATH_PARAM).getOrThrow(), Arrays</span>
+<span class="nc" id="L251">              .asList(ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.INSTANTS_PARAM).getOrThrow().split(&quot;,&quot;)));</span>
+<span class="nc" id="L252">      writeValueAsString(ctx, dtos);</span>
+<span class="nc" id="L253">    }, true));</span>
+
+<span class="nc" id="L255">    app.get(RemoteHoodieTableFileSystemView.LATEST_SLICES_MERGED_BEFORE_ON_INSTANT_URL, new ViewHandler(ctx -&gt; {</span>
+<span class="nc" id="L256">      List&lt;FileSliceDTO&gt; dtos = sliceHandler.getLatestMergedFileSlicesBeforeOrOn(</span>
+<span class="nc" id="L257">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.BASEPATH_PARAM).getOrThrow(),</span>
+<span class="nc" id="L258">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.PARTITION_PARAM).getOrThrow(),</span>
+<span class="nc" id="L259">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.MAX_INSTANT_PARAM).getOrThrow());</span>
+<span class="nc" id="L260">      writeValueAsString(ctx, dtos);</span>
+<span class="nc" id="L261">    }, true));</span>
+
+<span class="nc" id="L263">    app.get(RemoteHoodieTableFileSystemView.LATEST_SLICES_BEFORE_ON_INSTANT_URL, new ViewHandler(ctx -&gt; {</span>
+<span class="nc" id="L264">      List&lt;FileSliceDTO&gt; dtos = sliceHandler.getLatestFileSlicesBeforeOrOn(</span>
+<span class="nc" id="L265">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.BASEPATH_PARAM).getOrThrow(),</span>
+<span class="nc" id="L266">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.PARTITION_PARAM).getOrThrow(),</span>
+<span class="nc" id="L267">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.MAX_INSTANT_PARAM).getOrThrow(),</span>
+<span class="nc" id="L268">          Boolean.parseBoolean(</span>
+<span class="nc" id="L269">              ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.INCLUDE_FILES_IN_PENDING_COMPACTION_PARAM)</span>
+<span class="nc" id="L270">                  .getOrThrow()));</span>
+<span class="nc" id="L271">      writeValueAsString(ctx, dtos);</span>
+<span class="nc" id="L272">    }, true));</span>
+
+<span class="nc" id="L274">    app.get(RemoteHoodieTableFileSystemView.PENDING_COMPACTION_OPS, new ViewHandler(ctx -&gt; {</span>
+<span class="nc" id="L275">      List&lt;CompactionOpDTO&gt; dtos = sliceHandler.getPendingCompactionOperations(</span>
+<span class="nc" id="L276">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.BASEPATH_PARAM).getOrThrow());</span>
+<span class="nc" id="L277">      writeValueAsString(ctx, dtos);</span>
+<span class="nc" id="L278">    }, true));</span>
+
+<span class="nc" id="L280">    app.get(RemoteHoodieTableFileSystemView.ALL_FILEGROUPS_FOR_PARTITION_URL, new ViewHandler(ctx -&gt; {</span>
+<span class="nc" id="L281">      List&lt;FileGroupDTO&gt; dtos = sliceHandler.getAllFileGroups(</span>
+<span class="nc" id="L282">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.BASEPATH_PARAM).getOrThrow(),</span>
+<span class="nc" id="L283">          ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.PARTITION_PARAM).getOrThrow());</span>
+<span class="nc" id="L284">      writeValueAsString(ctx, dtos);</span>
+<span class="nc" id="L285">    }, true));</span>
+
+<span class="nc" id="L287">    app.post(RemoteHoodieTableFileSystemView.REFRESH_TABLE, new ViewHandler(ctx -&gt; {</span>
+<span class="nc" id="L288">      boolean success = sliceHandler</span>
+<span class="nc" id="L289">          .refreshTable(ctx.validatedQueryParam(RemoteHoodieTableFileSystemView.BASEPATH_PARAM).getOrThrow());</span>
+<span class="nc" id="L290">      writeValueAsString(ctx, success);</span>
+<span class="nc" id="L291">    }, false));</span>
+<span class="nc" id="L292">  }</span>
+
+  private static boolean isRefreshCheckDisabledInQuery(Context ctxt) {
+<span class="nc" id="L295">    return Boolean.parseBoolean(ctxt.queryParam(RemoteHoodieTableFileSystemView.REFRESH_OFF));</span>
+  }
+
+  /**
+   * Used for logging and performing refresh check.
+   */
+  private class ViewHandler implements Handler {
+
+    private final Handler handler;
+    private final boolean performRefreshCheck;
+
+<span class="nc" id="L306">    ViewHandler(Handler handler, boolean performRefreshCheck) {</span>
+<span class="nc" id="L307">      this.handler = handler;</span>
+<span class="nc" id="L308">      this.performRefreshCheck = performRefreshCheck;</span>
+<span class="nc" id="L309">    }</span>
+
+    @Override
+    public void handle(@NotNull Context context) throws Exception {
+<span class="nc" id="L313">      boolean success = true;</span>
+<span class="nc" id="L314">      long beginTs = System.currentTimeMillis();</span>
+<span class="nc" id="L315">      boolean synced = false;</span>
+<span class="nc bnc" id="L316" title="All 4 branches missed.">      boolean refreshCheck = performRefreshCheck &amp;&amp; !isRefreshCheckDisabledInQuery(context);</span>
+<span class="nc" id="L317">      long refreshCheckTimeTaken = 0;</span>
+<span class="nc" id="L318">      long handleTimeTaken = 0;</span>
+<span class="nc" id="L319">      long finalCheckTimeTaken = 0;</span>
+      try {
+<span class="nc bnc" id="L321" title="All 2 branches missed.">        if (refreshCheck) {</span>
+<span class="nc" id="L322">          long beginRefreshCheck = System.currentTimeMillis();</span>
+<span class="nc" id="L323">          synced = syncIfLocalViewBehind(context);</span>
+<span class="nc" id="L324">          long endRefreshCheck = System.currentTimeMillis();</span>
+<span class="nc" id="L325">          refreshCheckTimeTaken = endRefreshCheck - beginRefreshCheck;</span>
+        }
+
+<span class="nc" id="L328">        long handleBeginMs = System.currentTimeMillis();</span>
+<span class="nc" id="L329">        handler.handle(context);</span>
+<span class="nc" id="L330">        long handleEndMs = System.currentTimeMillis();</span>
+<span class="nc" id="L331">        handleTimeTaken = handleEndMs - handleBeginMs;</span>
+
+<span class="nc bnc" id="L333" title="All 2 branches missed.">        if (refreshCheck) {</span>
+<span class="nc" id="L334">          long beginFinalCheck = System.currentTimeMillis();</span>
+<span class="nc" id="L335">          String errMsg =</span>
+              &quot;Last known instant from client was &quot;
+<span class="nc" id="L337">                  + context.queryParam(RemoteHoodieTableFileSystemView.LAST_INSTANT_TS,</span>
+                      HoodieTimeline.INVALID_INSTANT_TS)
+                  + &quot; but server has the following timeline &quot;
+<span class="nc" id="L340">                  + viewManager.getFileSystemView(context.queryParam(RemoteHoodieTableFileSystemView.BASEPATH_PARAM))</span>
+<span class="nc" id="L341">                      .getTimeline().getInstants().collect(Collectors.toList());</span>
+<span class="nc bnc" id="L342" title="All 2 branches missed.">          Preconditions.checkArgument(!isLocalViewBehind(context), errMsg);</span>
+<span class="nc" id="L343">          long endFinalCheck = System.currentTimeMillis();</span>
+<span class="nc" id="L344">          finalCheckTimeTaken = endFinalCheck - beginFinalCheck;</span>
+        }
+<span class="nc" id="L346">      } catch (RuntimeException re) {</span>
+<span class="nc" id="L347">        success = false;</span>
+<span class="nc" id="L348">        LOG.error(&quot;Got runtime exception servicing request &quot; + context.queryString(), re);</span>
+<span class="nc" id="L349">        throw re;</span>
+      } finally {
+<span class="nc" id="L351">        long endTs = System.currentTimeMillis();</span>
+<span class="nc" id="L352">        long timeTakenMillis = endTs - beginTs;</span>
+<span class="nc" id="L353">        LOG.info(String.format(</span>
+                &quot;TimeTakenMillis[Total=%d, Refresh=%d, handle=%d, Check=%d], &quot;
+                    + &quot;Success=%s, Query=%s, Host=%s, synced=%s&quot;,
+<span class="nc" id="L356">                timeTakenMillis, refreshCheckTimeTaken, handleTimeTaken, finalCheckTimeTaken, success,</span>
+<span class="nc" id="L357">                context.queryString(), context.host(), synced));</span>
+      }
+<span class="nc" id="L359">    }</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

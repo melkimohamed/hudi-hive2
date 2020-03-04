@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<checkstyle version="8.18">
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-spark/src/main/java/org/apache/hudi/DataSourceUtils.java">
+<error line="23" severity="info" message="Import org.apache.hudi.client.HoodieReadClient appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="37" severity="info" message="Import org.apache.hudi.exception.HoodieException appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="45" severity="info" message="Import org.apache.hudi.keygen.KeyGenerator appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="46" severity="info" message="&apos;org.apache.spark.api.java.JavaRDD&apos; devrait être séparé des imports précédents." source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-spark/src/main/java/org/apache/hudi/HoodieDataSourceHelpers.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-spark/src/main/java/org/apache/hudi/QuickstartUtils.java">
+<error line="51" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-spark/src/main/java/org/apache/hudi/keygen/ComplexKeyGenerator.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-spark/src/main/java/org/apache/hudi/keygen/GlobalDeleteKeyGenerator.java">
+<error line="23" severity="info" message="Import org.apache.avro.generic.GenericRecord appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="24" severity="info" message="Import org.apache.hudi.DataSourceUtils appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-spark/src/main/java/org/apache/hudi/keygen/KeyGenerator.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-spark/src/main/java/org/apache/hudi/keygen/NonpartitionedKeyGenerator.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-spark/src/main/java/org/apache/hudi/keygen/SimpleKeyGenerator.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-spark/src/main/java/org/apache/hudi/payload/AWSDmsAvroPayload.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-spark/src/test/java/DataSourceTestUtils.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-spark/src/test/java/DataSourceUtilsTest.java">
+<error line="22" severity="info" message="Import org.apache.hudi.DataSourceUtils appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="23" severity="info" message="&apos;org.junit.Test&apos; devrait être séparé des imports précédents." source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="29" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-spark/src/test/java/HoodieJavaApp.java">
+<error line="24" severity="info" message="Import org.apache.hudi.common.HoodieClientTestUtils appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-spark/src/test/java/HoodieJavaStreamingApp.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-spark/src/test/resources/log4j-surefire-quiet.properties">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-spark/src/test/resources/log4j-surefire.properties">
+</file>
+</checkstyle>

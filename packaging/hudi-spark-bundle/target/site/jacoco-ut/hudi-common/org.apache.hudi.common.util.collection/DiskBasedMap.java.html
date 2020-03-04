@@ -1,0 +1,389 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>DiskBasedMap.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.util.collection</a> &gt; <span class="el_source">DiskBasedMap.java</span></div><h1>DiskBasedMap.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.util.collection;
+
+import org.apache.hudi.common.util.BufferedRandomAccessFile;
+import org.apache.hudi.common.util.SerializationUtils;
+import org.apache.hudi.common.util.SpillableMapUtils;
+import org.apache.hudi.common.util.collection.io.storage.SizeAwareDataOutputStream;
+import org.apache.hudi.exception.HoodieException;
+import org.apache.hudi.exception.HoodieIOException;
+import org.apache.hudi.exception.HoodieNotSupportedException;
+
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.io.Serializable;
+import java.net.InetAddress;
+import java.util.AbstractMap;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Queue;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Stream;
+
+/**
+ * This class provides a disk spillable only map implementation. All of the data is currenly written to one file,
+ * without any rollover support. It uses the following : 1) An in-memory map that tracks the key-&gt; latest ValueMetadata.
+ * 2) Current position in the file NOTE : Only String.class type supported for Key
+ */
+public final class DiskBasedMap&lt;T extends Serializable, R extends Serializable&gt; implements Map&lt;T, R&gt;, Iterable&lt;R&gt; {
+
+<span class="nc" id="L58">  public static int BUFFER_SIZE = 128 * 1024;  // 128 KB</span>
+<span class="nc" id="L59">  private static final Logger LOG = LogManager.getLogger(DiskBasedMap.class);</span>
+  // Stores the key and corresponding value's latest metadata spilled to disk
+  private final Map&lt;T, ValueMetadata&gt; valueMetadataMap;
+  // Write only file
+  private File writeOnlyFile;
+  // Write only OutputStream to be able to ONLY append to the file
+  private SizeAwareDataOutputStream writeOnlyFileHandle;
+  // FileOutputStream for the file handle to be able to force fsync
+  // since FileOutputStream's flush() does not force flush to disk
+  private FileOutputStream fileOutputStream;
+  // Current position in the file
+  private AtomicLong filePosition;
+  // FilePath to store the spilled data
+  private String filePath;
+  // Thread-safe random access file
+<span class="nc" id="L74">  private ThreadLocal&lt;BufferedRandomAccessFile&gt; randomAccessFile = new ThreadLocal&lt;&gt;();</span>
+<span class="nc" id="L75">  private Queue&lt;BufferedRandomAccessFile&gt; openedAccessFiles = new ConcurrentLinkedQueue&lt;&gt;();</span>
+
+<span class="nc" id="L77">  public DiskBasedMap(String baseFilePath) throws IOException {</span>
+<span class="nc" id="L78">    this.valueMetadataMap = new ConcurrentHashMap&lt;&gt;();</span>
+<span class="nc" id="L79">    this.writeOnlyFile = new File(baseFilePath, UUID.randomUUID().toString());</span>
+<span class="nc" id="L80">    this.filePath = writeOnlyFile.getPath();</span>
+<span class="nc" id="L81">    initFile(writeOnlyFile);</span>
+<span class="nc" id="L82">    this.fileOutputStream = new FileOutputStream(writeOnlyFile, true);</span>
+<span class="nc" id="L83">    this.writeOnlyFileHandle = new SizeAwareDataOutputStream(fileOutputStream, BUFFER_SIZE);</span>
+<span class="nc" id="L84">    this.filePosition = new AtomicLong(0L);</span>
+<span class="nc" id="L85">  }</span>
+
+  /**
+   * RandomAcessFile is not thread-safe. This API opens a new file handle per thread and returns.
+   * 
+   * @return
+   */
+  private BufferedRandomAccessFile getRandomAccessFile() {
+    try {
+<span class="nc" id="L94">      BufferedRandomAccessFile readHandle = randomAccessFile.get();</span>
+<span class="nc bnc" id="L95" title="All 2 branches missed.">      if (readHandle == null) {</span>
+<span class="nc" id="L96">        readHandle = new BufferedRandomAccessFile(filePath, &quot;r&quot;);</span>
+<span class="nc" id="L97">        readHandle.seek(0);</span>
+<span class="nc" id="L98">        randomAccessFile.set(readHandle);</span>
+<span class="nc" id="L99">        openedAccessFiles.offer(readHandle);</span>
+      }
+<span class="nc" id="L101">      return readHandle;</span>
+<span class="nc" id="L102">    } catch (IOException ioe) {</span>
+<span class="nc" id="L103">      throw new HoodieException(ioe);</span>
+    }
+  }
+
+  private void initFile(File writeOnlyFile) throws IOException {
+    // delete the file if it exists
+<span class="nc bnc" id="L109" title="All 2 branches missed.">    if (writeOnlyFile.exists()) {</span>
+<span class="nc" id="L110">      writeOnlyFile.delete();</span>
+    }
+<span class="nc bnc" id="L112" title="All 2 branches missed.">    if (!writeOnlyFile.getParentFile().exists()) {</span>
+<span class="nc" id="L113">      writeOnlyFile.getParentFile().mkdir();</span>
+    }
+<span class="nc" id="L115">    writeOnlyFile.createNewFile();</span>
+<span class="nc" id="L116">    LOG.info(&quot;Spilling to file location &quot; + writeOnlyFile.getAbsolutePath() + &quot; in host (&quot;</span>
+<span class="nc" id="L117">        + InetAddress.getLocalHost().getHostAddress() + &quot;) with hostname (&quot; + InetAddress.getLocalHost().getHostName()</span>
+        + &quot;)&quot;);
+    // Make sure file is deleted when JVM exits
+<span class="nc" id="L120">    writeOnlyFile.deleteOnExit();</span>
+<span class="nc" id="L121">    addShutDownHook();</span>
+<span class="nc" id="L122">  }</span>
+
+  /**
+   * Register shutdown hook to force flush contents of the data written to FileOutputStream from OS page cache
+   * (typically 4 KB) to disk.
+   */
+  private void addShutDownHook() {
+<span class="nc" id="L129">    Runtime.getRuntime().addShutdownHook(new Thread() {</span>
+      @Override
+      public void run() {
+        try {
+<span class="nc bnc" id="L133" title="All 2 branches missed.">          if (writeOnlyFileHandle != null) {</span>
+<span class="nc" id="L134">            writeOnlyFileHandle.flush();</span>
+<span class="nc" id="L135">            fileOutputStream.getChannel().force(false);</span>
+<span class="nc" id="L136">            writeOnlyFileHandle.close();</span>
+          }
+
+<span class="nc bnc" id="L139" title="All 2 branches missed.">          while (!openedAccessFiles.isEmpty()) {</span>
+<span class="nc" id="L140">            BufferedRandomAccessFile file = openedAccessFiles.poll();</span>
+<span class="nc bnc" id="L141" title="All 2 branches missed.">            if (null != file) {</span>
+              try {
+<span class="nc" id="L143">                file.close();</span>
+<span class="nc" id="L144">              } catch (IOException ioe) {</span>
+                // skip exception
+<span class="nc" id="L146">              }</span>
+            }
+<span class="nc" id="L148">          }</span>
+<span class="nc" id="L149">          writeOnlyFile.delete();</span>
+<span class="nc" id="L150">        } catch (Exception e) {</span>
+          // delete the file for any sort of exception
+<span class="nc" id="L152">          writeOnlyFile.delete();</span>
+<span class="nc" id="L153">        }</span>
+<span class="nc" id="L154">      }</span>
+    });
+<span class="nc" id="L156">  }</span>
+
+  private void flushToDisk() {
+    try {
+<span class="nc" id="L160">      writeOnlyFileHandle.flush();</span>
+<span class="nc" id="L161">    } catch (IOException e) {</span>
+<span class="nc" id="L162">      throw new HoodieIOException(&quot;Failed to flush to DiskBasedMap file&quot;, e);</span>
+<span class="nc" id="L163">    }</span>
+<span class="nc" id="L164">  }</span>
+
+  /**
+   * Custom iterator to iterate over values written to disk.
+   */
+  @Override
+  public Iterator&lt;R&gt; iterator() {
+<span class="nc" id="L171">    return new LazyFileIterable(filePath, valueMetadataMap).iterator();</span>
+  }
+
+  /**
+   * Number of bytes spilled to disk.
+   */
+  public long sizeOfFileOnDiskInBytes() {
+<span class="nc" id="L178">    return filePosition.get();</span>
+  }
+
+  @Override
+  public int size() {
+<span class="nc" id="L183">    return valueMetadataMap.size();</span>
+  }
+
+  @Override
+  public boolean isEmpty() {
+<span class="nc" id="L188">    return valueMetadataMap.isEmpty();</span>
+  }
+
+  @Override
+  public boolean containsKey(Object key) {
+<span class="nc" id="L193">    return valueMetadataMap.containsKey(key);</span>
+  }
+
+  @Override
+  public boolean containsValue(Object value) {
+<span class="nc" id="L198">    throw new HoodieNotSupportedException(&quot;unable to compare values in map&quot;);</span>
+  }
+
+  @Override
+  public R get(Object key) {
+<span class="nc" id="L203">    ValueMetadata entry = valueMetadataMap.get(key);</span>
+<span class="nc bnc" id="L204" title="All 2 branches missed.">    if (entry == null) {</span>
+<span class="nc" id="L205">      return null;</span>
+    }
+<span class="nc" id="L207">    return get(entry);</span>
+  }
+
+  private R get(ValueMetadata entry) {
+<span class="nc" id="L211">    return get(entry, getRandomAccessFile());</span>
+  }
+
+  public static &lt;R&gt; R get(ValueMetadata entry, RandomAccessFile file) {
+    try {
+<span class="nc" id="L216">      return SerializationUtils</span>
+<span class="nc" id="L217">          .deserialize(SpillableMapUtils.readBytesFromDisk(file, entry.getOffsetOfValue(), entry.getSizeOfValue()));</span>
+<span class="nc" id="L218">    } catch (IOException e) {</span>
+<span class="nc" id="L219">      throw new HoodieIOException(&quot;Unable to readFromDisk Hoodie Record from disk&quot;, e);</span>
+    }
+  }
+
+  private synchronized R put(T key, R value, boolean flush) {
+    try {
+<span class="nc" id="L225">      byte[] val = SerializationUtils.serialize(value);</span>
+<span class="nc" id="L226">      Integer valueSize = val.length;</span>
+<span class="nc" id="L227">      Long timestamp = System.currentTimeMillis();</span>
+<span class="nc" id="L228">      this.valueMetadataMap.put(key,</span>
+<span class="nc" id="L229">          new DiskBasedMap.ValueMetadata(this.filePath, valueSize, filePosition.get(), timestamp));</span>
+<span class="nc" id="L230">      byte[] serializedKey = SerializationUtils.serialize(key);</span>
+<span class="nc" id="L231">      filePosition</span>
+<span class="nc" id="L232">          .set(SpillableMapUtils.spillToDisk(writeOnlyFileHandle, new FileEntry(SpillableMapUtils.generateChecksum(val),</span>
+<span class="nc" id="L233">              serializedKey.length, valueSize, serializedKey, val, timestamp)));</span>
+<span class="nc bnc" id="L234" title="All 2 branches missed.">      if (flush) {</span>
+<span class="nc" id="L235">        flushToDisk();</span>
+      }
+<span class="nc" id="L237">    } catch (IOException io) {</span>
+<span class="nc" id="L238">      throw new HoodieIOException(&quot;Unable to store data in Disk Based map&quot;, io);</span>
+<span class="nc" id="L239">    }</span>
+<span class="nc" id="L240">    return value;</span>
+  }
+
+  @Override
+  public R put(T key, R value) {
+<span class="nc" id="L245">    return put(key, value, true);</span>
+  }
+
+  @Override
+  public R remove(Object key) {
+<span class="nc" id="L250">    R value = get(key);</span>
+<span class="nc" id="L251">    valueMetadataMap.remove(key);</span>
+<span class="nc" id="L252">    return value;</span>
+  }
+
+  @Override
+  public void putAll(Map&lt;? extends T, ? extends R&gt; m) {
+<span class="nc bnc" id="L257" title="All 2 branches missed.">    for (Map.Entry&lt;? extends T, ? extends R&gt; entry : m.entrySet()) {</span>
+<span class="nc" id="L258">      put(entry.getKey(), entry.getValue(), false);</span>
+<span class="nc" id="L259">    }</span>
+<span class="nc" id="L260">    flushToDisk();</span>
+<span class="nc" id="L261">  }</span>
+
+  @Override
+  public void clear() {
+<span class="nc" id="L265">    valueMetadataMap.clear();</span>
+    // Do not delete file-handles &amp; file as there is no way to do it without synchronizing get/put(and
+    // reducing concurrency). Instead, just clear the pointer map. The file will be removed on exit.
+<span class="nc" id="L268">  }</span>
+
+  @Override
+  public Set&lt;T&gt; keySet() {
+<span class="nc" id="L272">    return valueMetadataMap.keySet();</span>
+  }
+
+  @Override
+  public Collection&lt;R&gt; values() {
+<span class="nc" id="L277">    throw new HoodieException(&quot;Unsupported Operation Exception&quot;);</span>
+  }
+
+  public Stream&lt;R&gt; valueStream() {
+<span class="nc" id="L281">    final BufferedRandomAccessFile file = getRandomAccessFile();</span>
+<span class="nc" id="L282">    return valueMetadataMap.values().stream().sorted().sequential().map(valueMetaData -&gt; (R) get(valueMetaData, file));</span>
+  }
+
+  @Override
+  public Set&lt;Entry&lt;T, R&gt;&gt; entrySet() {
+<span class="nc" id="L287">    Set&lt;Entry&lt;T, R&gt;&gt; entrySet = new HashSet&lt;&gt;();</span>
+<span class="nc bnc" id="L288" title="All 2 branches missed.">    for (T key : valueMetadataMap.keySet()) {</span>
+<span class="nc" id="L289">      entrySet.add(new AbstractMap.SimpleEntry&lt;&gt;(key, get(key)));</span>
+<span class="nc" id="L290">    }</span>
+<span class="nc" id="L291">    return entrySet;</span>
+  }
+
+  /**
+   * The file metadata that should be spilled to disk.
+   */
+  public static final class FileEntry {
+
+    // Checksum of the value written to disk, compared during every readFromDisk to make sure no corruption
+    private Long crc;
+    // Size (numberOfBytes) of the key written to disk
+    private Integer sizeOfKey;
+    // Size (numberOfBytes) of the value written to disk
+    private Integer sizeOfValue;
+    // Actual key
+    private byte[] key;
+    // Actual value
+    private byte[] value;
+    // Current timestamp when the value was written to disk
+    private Long timestamp;
+
+<span class="nc" id="L312">    public FileEntry(long crc, int sizeOfKey, int sizeOfValue, byte[] key, byte[] value, long timestamp) {</span>
+<span class="nc" id="L313">      this.crc = crc;</span>
+<span class="nc" id="L314">      this.sizeOfKey = sizeOfKey;</span>
+<span class="nc" id="L315">      this.sizeOfValue = sizeOfValue;</span>
+<span class="nc" id="L316">      this.key = key;</span>
+<span class="nc" id="L317">      this.value = value;</span>
+<span class="nc" id="L318">      this.timestamp = timestamp;</span>
+<span class="nc" id="L319">    }</span>
+
+    public long getCrc() {
+<span class="nc" id="L322">      return crc;</span>
+    }
+
+    public int getSizeOfKey() {
+<span class="nc" id="L326">      return sizeOfKey;</span>
+    }
+
+    public int getSizeOfValue() {
+<span class="nc" id="L330">      return sizeOfValue;</span>
+    }
+
+    public byte[] getKey() {
+<span class="nc" id="L334">      return key;</span>
+    }
+
+    public byte[] getValue() {
+<span class="nc" id="L338">      return value;</span>
+    }
+
+    public long getTimestamp() {
+<span class="nc" id="L342">      return timestamp;</span>
+    }
+  }
+
+  /**
+   * The value relevant metadata.
+   */
+  public static final class ValueMetadata implements Comparable&lt;ValueMetadata&gt; {
+
+    // FilePath to store the spilled data
+    private String filePath;
+    // Size (numberOfBytes) of the value written to disk
+    private Integer sizeOfValue;
+    // FilePosition of the value written to disk
+    private Long offsetOfValue;
+    // Current timestamp when the value was written to disk
+    private Long timestamp;
+
+<span class="nc" id="L360">    protected ValueMetadata(String filePath, int sizeOfValue, long offsetOfValue, long timestamp) {</span>
+<span class="nc" id="L361">      this.filePath = filePath;</span>
+<span class="nc" id="L362">      this.sizeOfValue = sizeOfValue;</span>
+<span class="nc" id="L363">      this.offsetOfValue = offsetOfValue;</span>
+<span class="nc" id="L364">      this.timestamp = timestamp;</span>
+<span class="nc" id="L365">    }</span>
+
+    public String getFilePath() {
+<span class="nc" id="L368">      return filePath;</span>
+    }
+
+    public int getSizeOfValue() {
+<span class="nc" id="L372">      return sizeOfValue;</span>
+    }
+
+    public Long getOffsetOfValue() {
+<span class="nc" id="L376">      return offsetOfValue;</span>
+    }
+
+    public long getTimestamp() {
+<span class="nc" id="L380">      return timestamp;</span>
+    }
+
+    @Override
+    public int compareTo(ValueMetadata o) {
+<span class="nc" id="L385">      return Long.compare(this.offsetOfValue, o.offsetOfValue);</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

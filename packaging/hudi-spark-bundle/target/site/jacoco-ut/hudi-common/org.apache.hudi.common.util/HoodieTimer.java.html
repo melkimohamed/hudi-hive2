@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieTimer.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.util</a> &gt; <span class="el_source">HoodieTimer.java</span></div><h1>HoodieTimer.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.util;
+
+import org.apache.hudi.exception.HoodieException;
+
+import java.util.ArrayDeque;
+import java.util.Deque;
+
+/**
+ * Timing utility to help keep track of execution times of code blocks. This class helps to allow multiple timers
+ * started at the same time and automatically returns the execution time in the order in which the timers are stopped.
+ */
+<span class="nc" id="L30">public class HoodieTimer {</span>
+
+  // Ordered stack of TimeInfo's to make sure stopping the timer returns the correct elapsed time
+<span class="nc" id="L33">  Deque&lt;TimeInfo&gt; timeInfoDeque = new ArrayDeque&lt;&gt;();</span>
+
+  class TimeInfo {
+
+    // captures the startTime of the code block
+    long startTime;
+    // is the timing still running for the last started timer
+    boolean isRunning;
+
+<span class="nc" id="L42">    public TimeInfo(long startTime) {</span>
+<span class="nc" id="L43">      this.startTime = startTime;</span>
+<span class="nc" id="L44">      this.isRunning = true;</span>
+<span class="nc" id="L45">    }</span>
+
+    public long getStartTime() {
+<span class="nc" id="L48">      return startTime;</span>
+    }
+
+    public boolean isRunning() {
+<span class="nc" id="L52">      return isRunning;</span>
+    }
+
+    public long stop() {
+<span class="nc" id="L56">      this.isRunning = false;</span>
+<span class="nc" id="L57">      return System.currentTimeMillis() - startTime;</span>
+    }
+  }
+
+  public HoodieTimer startTimer() {
+<span class="nc" id="L62">    timeInfoDeque.push(new TimeInfo(System.currentTimeMillis()));</span>
+<span class="nc" id="L63">    return this;</span>
+  }
+
+  public long endTimer() {
+<span class="nc bnc" id="L67" title="All 2 branches missed.">    if (timeInfoDeque.isEmpty()) {</span>
+<span class="nc" id="L68">      throw new HoodieException(&quot;Timer was not started&quot;);</span>
+    }
+<span class="nc" id="L70">    return timeInfoDeque.pop().stop();</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>ComplexKeyGenerator.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-spark_2.11</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.keygen</a> &gt; <span class="el_source">ComplexKeyGenerator.java</span></div><h1>ComplexKeyGenerator.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.keygen;
+
+import org.apache.hudi.DataSourceUtils;
+import org.apache.hudi.DataSourceWriteOptions;
+import org.apache.hudi.common.model.HoodieKey;
+import org.apache.hudi.common.util.TypedProperties;
+import org.apache.hudi.exception.HoodieKeyException;
+
+import org.apache.avro.generic.GenericRecord;
+
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
+
+/**
+ * Complex key generator, which takes names of fields to be used for recordKey and partitionPath as configs.
+ */
+public class ComplexKeyGenerator extends KeyGenerator {
+
+  private static final String DEFAULT_PARTITION_PATH = &quot;default&quot;;
+  private static final String DEFAULT_PARTITION_PATH_SEPARATOR = &quot;/&quot;;
+
+  protected static final String NULL_RECORDKEY_PLACEHOLDER = &quot;__null__&quot;;
+  protected static final String EMPTY_RECORDKEY_PLACEHOLDER = &quot;__empty__&quot;;
+
+  protected final List&lt;String&gt; recordKeyFields;
+
+  protected final List&lt;String&gt; partitionPathFields;
+
+  protected final boolean hiveStylePartitioning;
+
+  public ComplexKeyGenerator(TypedProperties props) {
+<span class="nc" id="L51">    super(props);</span>
+<span class="nc" id="L52">    this.recordKeyFields = Arrays.asList(props.getString(DataSourceWriteOptions.RECORDKEY_FIELD_OPT_KEY()).split(&quot;,&quot;))</span>
+<span class="nc" id="L53">            .stream().map(String::trim).collect(Collectors.toList());</span>
+<span class="nc" id="L54">    this.partitionPathFields =</span>
+<span class="nc" id="L55">        Arrays.asList(props.getString(DataSourceWriteOptions.PARTITIONPATH_FIELD_OPT_KEY()).split(&quot;,&quot;))</span>
+<span class="nc" id="L56">                .stream().map(String::trim).collect(Collectors.toList());</span>
+<span class="nc" id="L57">    this.hiveStylePartitioning = props.getBoolean(DataSourceWriteOptions.HIVE_STYLE_PARTITIONING_OPT_KEY(),</span>
+<span class="nc" id="L58">        Boolean.parseBoolean(DataSourceWriteOptions.DEFAULT_HIVE_STYLE_PARTITIONING_OPT_VAL()));</span>
+<span class="nc" id="L59">  }</span>
+
+  @Override
+  public HoodieKey getKey(GenericRecord record) {
+<span class="nc bnc" id="L63" title="All 4 branches missed.">    if (recordKeyFields == null || partitionPathFields == null) {</span>
+<span class="nc" id="L64">      throw new HoodieKeyException(&quot;Unable to find field names for record key or partition path in cfg&quot;);</span>
+    }
+
+<span class="nc" id="L67">    boolean keyIsNullEmpty = true;</span>
+<span class="nc" id="L68">    StringBuilder recordKey = new StringBuilder();</span>
+<span class="nc bnc" id="L69" title="All 2 branches missed.">    for (String recordKeyField : recordKeyFields) {</span>
+<span class="nc" id="L70">      String recordKeyValue = DataSourceUtils.getNestedFieldValAsString(record, recordKeyField, true);</span>
+<span class="nc bnc" id="L71" title="All 2 branches missed.">      if (recordKeyValue == null) {</span>
+<span class="nc" id="L72">        recordKey.append(recordKeyField + &quot;:&quot; + NULL_RECORDKEY_PLACEHOLDER + &quot;,&quot;);</span>
+<span class="nc bnc" id="L73" title="All 2 branches missed.">      } else if (recordKeyValue.isEmpty()) {</span>
+<span class="nc" id="L74">        recordKey.append(recordKeyField + &quot;:&quot; + EMPTY_RECORDKEY_PLACEHOLDER + &quot;,&quot;);</span>
+      } else {
+<span class="nc" id="L76">        recordKey.append(recordKeyField + &quot;:&quot; + recordKeyValue + &quot;,&quot;);</span>
+<span class="nc" id="L77">        keyIsNullEmpty = false;</span>
+      }
+<span class="nc" id="L79">    }</span>
+<span class="nc" id="L80">    recordKey.deleteCharAt(recordKey.length() - 1);</span>
+<span class="nc bnc" id="L81" title="All 2 branches missed.">    if (keyIsNullEmpty) {</span>
+<span class="nc" id="L82">      throw new HoodieKeyException(&quot;recordKey values: \&quot;&quot; + recordKey + &quot;\&quot; for fields: &quot;</span>
+<span class="nc" id="L83">          + recordKeyFields.toString() + &quot; cannot be entirely null or empty.&quot;);</span>
+    }
+
+<span class="nc" id="L86">    StringBuilder partitionPath = new StringBuilder();</span>
+<span class="nc bnc" id="L87" title="All 2 branches missed.">    for (String partitionPathField : partitionPathFields) {</span>
+<span class="nc" id="L88">      String fieldVal = DataSourceUtils.getNestedFieldValAsString(record, partitionPathField, true);</span>
+<span class="nc bnc" id="L89" title="All 4 branches missed.">      if (fieldVal == null || fieldVal.isEmpty()) {</span>
+<span class="nc bnc" id="L90" title="All 2 branches missed.">        partitionPath.append(hiveStylePartitioning ? partitionPathField + &quot;=&quot; + DEFAULT_PARTITION_PATH</span>
+                : DEFAULT_PARTITION_PATH);
+      } else {
+<span class="nc bnc" id="L93" title="All 2 branches missed.">        partitionPath.append(hiveStylePartitioning ? partitionPathField + &quot;=&quot; + fieldVal : fieldVal);</span>
+      }
+<span class="nc" id="L95">      partitionPath.append(DEFAULT_PARTITION_PATH_SEPARATOR);</span>
+<span class="nc" id="L96">    }</span>
+<span class="nc" id="L97">    partitionPath.deleteCharAt(partitionPath.length() - 1);</span>
+
+<span class="nc" id="L99">    return new HoodieKey(recordKey.toString(), partitionPath.toString());</span>
+  }
+
+  public List&lt;String&gt; getRecordKeyFields() {
+<span class="nc" id="L103">    return recordKeyFields;</span>
+  }
+
+  public List&lt;String&gt; getPartitionPathFields() {
+<span class="nc" id="L107">    return partitionPathFields;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

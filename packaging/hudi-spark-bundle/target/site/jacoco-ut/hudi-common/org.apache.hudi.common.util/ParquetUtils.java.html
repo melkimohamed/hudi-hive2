@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>ParquetUtils.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.util</a> &gt; <span class="el_source">ParquetUtils.java</span></div><h1>ParquetUtils.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.util;
+
+import org.apache.hudi.avro.HoodieAvroWriteSupport;
+import org.apache.hudi.common.bloom.filter.BloomFilter;
+import org.apache.hudi.common.bloom.filter.BloomFilterFactory;
+import org.apache.hudi.common.bloom.filter.BloomFilterTypeCode;
+import org.apache.hudi.common.model.HoodieRecord;
+import org.apache.hudi.exception.HoodieException;
+import org.apache.hudi.exception.HoodieIOException;
+import org.apache.hudi.exception.MetadataNotFoundException;
+
+import org.apache.avro.Schema;
+import org.apache.avro.generic.GenericRecord;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.parquet.avro.AvroParquetReader;
+import org.apache.parquet.avro.AvroReadSupport;
+import org.apache.parquet.avro.AvroSchemaConverter;
+import org.apache.parquet.hadoop.ParquetFileReader;
+import org.apache.parquet.hadoop.ParquetReader;
+import org.apache.parquet.hadoop.metadata.ParquetMetadata;
+import org.apache.parquet.schema.MessageType;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+
+/**
+ * Utility functions involving with parquet.
+ */
+<span class="nc" id="L54">public class ParquetUtils {</span>
+
+  /**
+   * Read the rowKey list from the given parquet file.
+   *
+   * @param filePath      The parquet file path.
+   * @param configuration configuration to build fs object
+   * @return Set Set of row keys
+   */
+  public static Set&lt;String&gt; readRowKeysFromParquet(Configuration configuration, Path filePath) {
+<span class="nc" id="L64">    return filterParquetRowKeys(configuration, filePath, new HashSet&lt;&gt;());</span>
+  }
+
+  /**
+   * Read the rowKey list matching the given filter, from the given parquet file. If the filter is empty, then this will
+   * return all the rowkeys.
+   *
+   * @param filePath      The parquet file path.
+   * @param configuration configuration to build fs object
+   * @param filter        record keys filter
+   * @return Set Set of row keys matching candidateRecordKeys
+   */
+  public static Set&lt;String&gt; filterParquetRowKeys(Configuration configuration, Path filePath, Set&lt;String&gt; filter) {
+<span class="nc" id="L77">    Option&lt;RecordKeysFilterFunction&gt; filterFunction = Option.empty();</span>
+<span class="nc bnc" id="L78" title="All 4 branches missed.">    if (filter != null &amp;&amp; !filter.isEmpty()) {</span>
+<span class="nc" id="L79">      filterFunction = Option.of(new RecordKeysFilterFunction(filter));</span>
+    }
+<span class="nc" id="L81">    Configuration conf = new Configuration(configuration);</span>
+<span class="nc" id="L82">    conf.addResource(FSUtils.getFs(filePath.toString(), conf).getConf());</span>
+<span class="nc" id="L83">    Schema readSchema = HoodieAvroUtils.getRecordKeySchema();</span>
+<span class="nc" id="L84">    AvroReadSupport.setAvroReadSchema(conf, readSchema);</span>
+<span class="nc" id="L85">    AvroReadSupport.setRequestedProjection(conf, readSchema);</span>
+<span class="nc" id="L86">    Set&lt;String&gt; rowKeys = new HashSet&lt;&gt;();</span>
+<span class="nc" id="L87">    try (ParquetReader reader = AvroParquetReader.builder(filePath).withConf(conf).build()) {</span>
+<span class="nc" id="L88">      Object obj = reader.read();</span>
+<span class="nc bnc" id="L89" title="All 2 branches missed.">      while (obj != null) {</span>
+<span class="nc bnc" id="L90" title="All 2 branches missed.">        if (obj instanceof GenericRecord) {</span>
+<span class="nc" id="L91">          String recordKey = ((GenericRecord) obj).get(HoodieRecord.RECORD_KEY_METADATA_FIELD).toString();</span>
+<span class="nc bnc" id="L92" title="All 4 branches missed.">          if (!filterFunction.isPresent() || filterFunction.get().apply(recordKey)) {</span>
+<span class="nc" id="L93">            rowKeys.add(recordKey);</span>
+          }
+        }
+<span class="nc" id="L96">        obj = reader.read();</span>
+      }
+<span class="nc" id="L98">    } catch (IOException e) {</span>
+<span class="nc" id="L99">      throw new HoodieIOException(&quot;Failed to read row keys from Parquet &quot; + filePath, e);</span>
+
+<span class="nc" id="L101">    }</span>
+    // ignore
+<span class="nc" id="L103">    return rowKeys;</span>
+  }
+
+  public static ParquetMetadata readMetadata(Configuration conf, Path parquetFilePath) {
+    ParquetMetadata footer;
+    try {
+      // TODO(vc): Should we use the parallel reading version here?
+<span class="nc" id="L110">      footer = ParquetFileReader.readFooter(FSUtils.getFs(parquetFilePath.toString(), conf).getConf(), parquetFilePath);</span>
+<span class="nc" id="L111">    } catch (IOException e) {</span>
+<span class="nc" id="L112">      throw new HoodieIOException(&quot;Failed to read footer for parquet &quot; + parquetFilePath, e);</span>
+<span class="nc" id="L113">    }</span>
+<span class="nc" id="L114">    return footer;</span>
+  }
+
+  /**
+   * Get the schema of the given parquet file.
+   */
+  public static MessageType readSchema(Configuration configuration, Path parquetFilePath) {
+<span class="nc" id="L121">    return readMetadata(configuration, parquetFilePath).getFileMetaData().getSchema();</span>
+  }
+
+  private static Map&lt;String, String&gt; readParquetFooter(Configuration configuration, boolean required,
+                                                       Path parquetFilePath, String... footerNames) {
+<span class="nc" id="L126">    Map&lt;String, String&gt; footerVals = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L127">    ParquetMetadata footer = readMetadata(configuration, parquetFilePath);</span>
+<span class="nc" id="L128">    Map&lt;String, String&gt; metadata = footer.getFileMetaData().getKeyValueMetaData();</span>
+<span class="nc bnc" id="L129" title="All 2 branches missed.">    for (String footerName : footerNames) {</span>
+<span class="nc bnc" id="L130" title="All 2 branches missed.">      if (metadata.containsKey(footerName)) {</span>
+<span class="nc" id="L131">        footerVals.put(footerName, metadata.get(footerName));</span>
+<span class="nc bnc" id="L132" title="All 2 branches missed.">      } else if (required) {</span>
+<span class="nc" id="L133">        throw new MetadataNotFoundException(</span>
+            &quot;Could not find index in Parquet footer. Looked for key &quot; + footerName + &quot; in &quot; + parquetFilePath);
+      }
+    }
+<span class="nc" id="L137">    return footerVals;</span>
+  }
+
+  public static Schema readAvroSchema(Configuration configuration, Path parquetFilePath) {
+<span class="nc" id="L141">    return new AvroSchemaConverter().convert(readSchema(configuration, parquetFilePath));</span>
+  }
+
+  /**
+   * Read out the bloom filter from the parquet file meta data.
+   */
+  public static BloomFilter readBloomFilterFromParquetMetadata(Configuration configuration, Path parquetFilePath) {
+<span class="nc" id="L148">    Map&lt;String, String&gt; footerVals =</span>
+<span class="nc" id="L149">        readParquetFooter(configuration, false, parquetFilePath,</span>
+            HoodieAvroWriteSupport.HOODIE_AVRO_BLOOM_FILTER_METADATA_KEY,
+            HoodieAvroWriteSupport.OLD_HOODIE_AVRO_BLOOM_FILTER_METADATA_KEY,
+            HoodieAvroWriteSupport.HOODIE_BLOOM_FILTER_TYPE_CODE);
+<span class="nc" id="L153">    String footerVal = footerVals.get(HoodieAvroWriteSupport.HOODIE_AVRO_BLOOM_FILTER_METADATA_KEY);</span>
+<span class="nc bnc" id="L154" title="All 2 branches missed.">    if (null == footerVal) {</span>
+      // We use old style key &quot;com.uber.hoodie.bloomfilter&quot;
+<span class="nc" id="L156">      footerVal = footerVals.get(HoodieAvroWriteSupport.OLD_HOODIE_AVRO_BLOOM_FILTER_METADATA_KEY);</span>
+    }
+<span class="nc" id="L158">    BloomFilter toReturn = null;</span>
+<span class="nc bnc" id="L159" title="All 2 branches missed.">    if (footerVal != null) {</span>
+<span class="nc bnc" id="L160" title="All 2 branches missed.">      if (footerVals.containsKey(HoodieAvroWriteSupport.HOODIE_BLOOM_FILTER_TYPE_CODE)) {</span>
+<span class="nc" id="L161">        toReturn = BloomFilterFactory.fromString(footerVal,</span>
+<span class="nc" id="L162">            footerVals.get(HoodieAvroWriteSupport.HOODIE_BLOOM_FILTER_TYPE_CODE));</span>
+      } else {
+<span class="nc" id="L164">        toReturn = BloomFilterFactory.fromString(footerVal, BloomFilterTypeCode.SIMPLE.name());</span>
+      }
+    }
+<span class="nc" id="L167">    return toReturn;</span>
+  }
+
+  public static String[] readMinMaxRecordKeys(Configuration configuration, Path parquetFilePath) {
+<span class="nc" id="L171">    Map&lt;String, String&gt; minMaxKeys = readParquetFooter(configuration, true, parquetFilePath,</span>
+        HoodieAvroWriteSupport.HOODIE_MIN_RECORD_KEY_FOOTER, HoodieAvroWriteSupport.HOODIE_MAX_RECORD_KEY_FOOTER);
+<span class="nc bnc" id="L173" title="All 2 branches missed.">    if (minMaxKeys.size() != 2) {</span>
+<span class="nc" id="L174">      throw new HoodieException(</span>
+<span class="nc" id="L175">          String.format(&quot;Could not read min/max record key out of footer correctly from %s. read) : %s&quot;,</span>
+              parquetFilePath, minMaxKeys));
+    }
+<span class="nc" id="L178">    return new String[] {minMaxKeys.get(HoodieAvroWriteSupport.HOODIE_MIN_RECORD_KEY_FOOTER),</span>
+<span class="nc" id="L179">        minMaxKeys.get(HoodieAvroWriteSupport.HOODIE_MAX_RECORD_KEY_FOOTER)};</span>
+  }
+
+  /**
+   * NOTE: This literally reads the entire file contents, thus should be used with caution.
+   */
+  public static List&lt;GenericRecord&gt; readAvroRecords(Configuration configuration, Path filePath) {
+<span class="nc" id="L186">    ParquetReader reader = null;</span>
+<span class="nc" id="L187">    List&lt;GenericRecord&gt; records = new ArrayList&lt;&gt;();</span>
+    try {
+<span class="nc" id="L189">      reader = AvroParquetReader.builder(filePath).withConf(configuration).build();</span>
+<span class="nc" id="L190">      Object obj = reader.read();</span>
+<span class="nc bnc" id="L191" title="All 2 branches missed.">      while (obj != null) {</span>
+<span class="nc bnc" id="L192" title="All 2 branches missed.">        if (obj instanceof GenericRecord) {</span>
+<span class="nc" id="L193">          records.add(((GenericRecord) obj));</span>
+        }
+<span class="nc" id="L195">        obj = reader.read();</span>
+      }
+<span class="nc" id="L197">    } catch (IOException e) {</span>
+<span class="nc" id="L198">      throw new HoodieIOException(&quot;Failed to read avro records from Parquet &quot; + filePath, e);</span>
+
+    } finally {
+<span class="nc bnc" id="L201" title="All 2 branches missed.">      if (reader != null) {</span>
+        try {
+<span class="nc" id="L203">          reader.close();</span>
+<span class="nc" id="L204">        } catch (IOException e) {</span>
+          // ignore
+<span class="nc" id="L206">        }</span>
+      }
+    }
+<span class="nc" id="L209">    return records;</span>
+  }
+
+  static class RecordKeysFilterFunction implements Function&lt;String, Boolean&gt; {
+
+    private final Set&lt;String&gt; candidateKeys;
+
+<span class="nc" id="L216">    RecordKeysFilterFunction(Set&lt;String&gt; candidateKeys) {</span>
+<span class="nc" id="L217">      this.candidateKeys = candidateKeys;</span>
+<span class="nc" id="L218">    }</span>
+
+    @Override
+    public Boolean apply(String recordKey) {
+<span class="nc" id="L222">      return candidateKeys.contains(recordKey);</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

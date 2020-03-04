@@ -1,0 +1,418 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>BufferedRandomAccessFile.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.util</a> &gt; <span class="el_source">BufferedRandomAccessFile.java</span></div><h1>BufferedRandomAccessFile.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.util;
+
+import org.apache.log4j.Logger;
+
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
+
+/**
+ * Use a private buffer for the read/write/seek operations of the RandomAccessFile
+ * to reduce the number of disk operations.
+ *
+ *                S    C   L/E
+ * Buffer:        |----+---|
+ *  File:  +---------------D-------------------+
+ *     S. startPosition - file position of start of the buffer.
+ *     C. currentPosition - file position of current pointer in the buffer.
+ *     L. validLastPosition - file position of the last byte in the buffer. (This is same as
+ *        endPosition of the buffer. Except for the last file block).
+ *                                              S-C--L--E
+ *                                                    (A)
+ *        Buffer:                               |-+--+--|
+ *        File:  +-----------------------------------D
+ *     E. endPosition() - end file position of the current buffer.
+ *     D. DiskPosition - Position in the file pointed by underlying RandomAccessFile.
+ *        When reading from the file, diskPosition aligns with startPosition.  When writing to
+ *        the file, diskPosition(D) aligns with validLastPosition(L/E).
+ *
+ *     A. AvailableSpace - Space between validLastPosition(L) and EndPosition(E)
+ *        is the available space in buffer, when writing/appending records
+ *        into the buffer/file.
+ *
+ * Note: Based on BufferedRandomAccessFile implementation in Apache/Cassandra.
+ *         - adopted from org.apache.cassandra.io
+ *           Copyright: 2015-2019 The Apache Software Foundation
+ *           Home page: http://cassandra.apache.org/
+ *           License: http://www.apache.org/licenses/LICENSE-2.0
+ */
+public final class BufferedRandomAccessFile extends RandomAccessFile {
+<span class="nc" id="L60">  private static final Logger LOG = Logger.getLogger(BufferedRandomAccessFile.class);</span>
+  static final int DEFAULT_BUFFER_SIZE = (1 &lt;&lt; 16); // 64K buffer
+  static final int BUFFER_BOUNDARY_MASK = -DEFAULT_BUFFER_SIZE;
+
+  private int capacity;
+  private ByteBuffer dataBuffer;
+<span class="nc" id="L66">  private long startPosition = 0L;</span>
+<span class="nc" id="L67">  private long currentPosition = 0L;</span>
+<span class="nc" id="L68">  private long validLastPosition = 0L;</span>
+<span class="nc" id="L69">  private long diskPosition = 0L;</span>
+<span class="nc" id="L70">  private boolean isDirty = false;</span>
+<span class="nc" id="L71">  private boolean isClosed = false;</span>
+<span class="nc" id="L72">  private boolean isEOF = false;</span>
+
+  /**
+   *
+   * @param file  - file name
+   * @param mode - &quot;r&quot; for read only; &quot;rw&quot; for read write
+   * @throws IOException
+   */
+  public BufferedRandomAccessFile(File file, String mode) throws IOException {
+<span class="nc" id="L81">    super(file, mode);</span>
+<span class="nc" id="L82">    this.init(0);</span>
+<span class="nc" id="L83">  }</span>
+
+  /**
+   *
+   * @param file  - file name
+   * @param mode - &quot;r&quot; for read only; &quot;rw&quot; for read write
+   * @param size - size/capacity of the buffer.
+   * @throws IOException
+   */
+  public BufferedRandomAccessFile(File file, String mode, int size) throws IOException {
+<span class="nc" id="L93">    super(file, mode);</span>
+<span class="nc" id="L94">    this.init(size);</span>
+<span class="nc" id="L95">  }</span>
+
+  /**
+   *
+   * @param name - name of the file
+   * @param mode - &quot;r&quot; for read only; &quot;rw&quot; for read write
+   * @throws IOException
+   */
+  public BufferedRandomAccessFile(String name, String mode) throws IOException {
+<span class="nc" id="L104">    super(name, mode);</span>
+<span class="nc" id="L105">    this.init(0);</span>
+<span class="nc" id="L106">  }</span>
+
+  /**
+   *
+   * @param name - name of the file
+   * @param mode - &quot;r&quot; for read only; &quot;rw&quot; for read write
+   * @param size - size/capacity of the buffer
+   * @throws FileNotFoundException
+   */
+  public BufferedRandomAccessFile(String name, String mode, int size) throws FileNotFoundException {
+<span class="nc" id="L116">    super(name, mode);</span>
+<span class="nc" id="L117">    this.init(size);</span>
+<span class="nc" id="L118">  }</span>
+
+  /**
+   *
+   * @param size - capacity of the buffer
+   */
+  private void init(int size) {
+<span class="nc" id="L125">    this.capacity = Math.max(DEFAULT_BUFFER_SIZE, size);</span>
+<span class="nc" id="L126">    this.dataBuffer = ByteBuffer.wrap(new byte[this.capacity]);</span>
+<span class="nc" id="L127">  }</span>
+
+  /**
+   * Close the file, after flushing data in the buffer.
+   * @throws IOException
+   */
+  @Override
+  public void close() throws IOException {
+<span class="nc bnc" id="L135" title="All 2 branches missed.">    if (!isClosed) {</span>
+<span class="nc" id="L136">      this.flush();</span>
+<span class="nc" id="L137">      super.close();</span>
+<span class="nc" id="L138">      this.isClosed = true;</span>
+    }
+<span class="nc" id="L140">  }</span>
+
+  /**
+   * If the file is writable, flush any bytes in the buffer that have not yet been written to disk.
+   * @throws IOException
+   */
+  public void flush() throws IOException {
+<span class="nc" id="L147">    this.flushBuffer();</span>
+<span class="nc" id="L148">  }</span>
+
+  /**
+   * Flush any dirty bytes in the buffer to disk.
+   * @throws IOException
+   */
+  private void flushBuffer() throws IOException {
+<span class="nc bnc" id="L155" title="All 2 branches missed.">    if (this.isDirty) {</span>
+<span class="nc" id="L156">      alignDiskPositionToBufferStartIfNeeded();</span>
+<span class="nc" id="L157">      int len = (int) (this.currentPosition - this.startPosition);</span>
+<span class="nc" id="L158">      super.write(this.dataBuffer.array(), 0, len);</span>
+<span class="nc" id="L159">      this.diskPosition = this.currentPosition;</span>
+<span class="nc" id="L160">      this.isDirty = false;</span>
+    }
+<span class="nc" id="L162">  }</span>
+
+  /**
+   * read ahead file contents to buffer.
+   * @return number of bytes filled
+   * @throws IOException
+   */
+  private int fillBuffer() throws IOException {
+<span class="nc" id="L170">    int cnt = 0;</span>
+<span class="nc" id="L171">    int bytesToRead = this.capacity;</span>
+    // blocking read, until buffer is filled or EOF reached
+<span class="nc bnc" id="L173" title="All 2 branches missed.">    while (bytesToRead &gt; 0) {</span>
+<span class="nc" id="L174">      int n = super.read(this.dataBuffer.array(), cnt, bytesToRead);</span>
+<span class="nc bnc" id="L175" title="All 2 branches missed.">      if (n &lt; 0) {</span>
+<span class="nc" id="L176">        break;</span>
+      }
+<span class="nc" id="L178">      cnt += n;</span>
+<span class="nc" id="L179">      bytesToRead -= n;</span>
+<span class="nc" id="L180">    }</span>
+<span class="nc bnc" id="L181" title="All 2 branches missed.">    this.isEOF = (cnt &lt; this.dataBuffer.array().length);</span>
+<span class="nc" id="L182">    this.diskPosition += cnt;</span>
+<span class="nc" id="L183">    return cnt;</span>
+  }
+
+  /**
+   * If the diskPosition differs from the startPosition, flush the data in the buffer
+   * and realign/fill the buffer at startPosition.
+   * @throws IOException
+   */
+  private void alignDiskPositionToBufferStartIfNeeded() throws IOException {
+<span class="nc bnc" id="L192" title="All 2 branches missed.">    if (this.diskPosition != this.startPosition) {</span>
+<span class="nc" id="L193">      super.seek(this.startPosition);</span>
+<span class="nc" id="L194">      this.diskPosition = this.startPosition;</span>
+    }
+<span class="nc" id="L196">  }</span>
+
+  /**
+   * If the new seek position is in the buffer, adjust the currentPostion.
+   * If the new seek position is outside of the buffer, flush the contents to
+   * the file and reload the buffer corresponding to the position.
+   *
+   * We logically view the file as group blocks, where each block will perfectly
+   * fit into the buffer (except for the last block).  Given a position to seek,
+   * we identify the block to be loaded using BUFFER_BOUNDARY_MASK.
+   *
+   * When dealing with the last block, we will have extra space between validLastPosition
+   * and endPosition of the buffer.
+   *
+   * @param pos  - position in the file to be loaded to the buffer.
+   * @throws IOException
+   */
+  @Override
+  public void seek(long pos) throws IOException {
+<span class="nc bnc" id="L215" title="All 4 branches missed.">    if (pos &gt;= this.validLastPosition || pos &lt; this.startPosition) {</span>
+      // seeking outside of current buffer -- flush and read
+<span class="nc" id="L217">      this.flushBuffer();</span>
+<span class="nc" id="L218">      this.startPosition = pos &amp; BUFFER_BOUNDARY_MASK; // start at BuffSz boundary</span>
+<span class="nc" id="L219">      alignDiskPositionToBufferStartIfNeeded();</span>
+<span class="nc" id="L220">      int n = this.fillBuffer();</span>
+<span class="nc" id="L221">      this.validLastPosition = this.startPosition + (long) n;</span>
+<span class="nc" id="L222">    } else {</span>
+      // seeking inside current buffer -- no read required
+<span class="nc bnc" id="L224" title="All 2 branches missed.">      if (pos &lt; this.currentPosition) {</span>
+        // if seeking backwards, flush buffer.
+<span class="nc" id="L226">        this.flushBuffer();</span>
+      }
+    }
+<span class="nc" id="L229">    this.currentPosition = pos;</span>
+<span class="nc" id="L230">  }</span>
+
+  /**
+   * @return current file position
+   */
+  @Override
+  public long getFilePointer() {
+<span class="nc" id="L237">    return this.currentPosition;</span>
+  }
+
+  /**
+   * Returns the length of the file, depending on whether buffer has more data (to be flushed).
+   * @return - length of the file (including data yet to be flushed to the file).
+   * @throws IOException
+   */
+  @Override
+  public long length() throws IOException {
+<span class="nc" id="L247">    return Math.max(this.currentPosition, super.length());</span>
+  }
+
+  /**
+   * @return whether currentPosition has reached the end of valid buffer.
+   */
+  private boolean endOfBufferReached() {
+<span class="nc bnc" id="L254" title="All 2 branches missed.">    return this.currentPosition &gt;= this.validLastPosition;</span>
+  }
+
+  /**
+   * Load a new data block.  Returns false, when EOF is reached.
+   * @return - whether new data block was loaded or not
+   * @throws IOException
+   */
+  private boolean loadNewBlockToBuffer() throws IOException {
+<span class="nc bnc" id="L263" title="All 2 branches missed.">    if (this.isEOF) {</span>
+<span class="nc" id="L264">      return false;</span>
+    }
+
+    // read next block into buffer
+<span class="nc" id="L268">    this.seek(this.currentPosition);</span>
+
+    // if currentPosition is at start, EOF has been reached
+<span class="nc bnc" id="L271" title="All 2 branches missed.">    return this.currentPosition != this.validLastPosition;</span>
+  }
+
+  /**
+   * @return - returns a byte as an integer.
+   * @throws IOException
+   */
+  @Override
+  public int read() throws IOException {
+<span class="nc bnc" id="L280" title="All 2 branches missed.">    if (endOfBufferReached()) {</span>
+<span class="nc bnc" id="L281" title="All 2 branches missed.">      if (!loadNewBlockToBuffer()) {</span>
+<span class="nc" id="L282">        return -1;</span>
+      }
+    }
+<span class="nc" id="L285">    byte res = this.dataBuffer.array()[(int) (this.currentPosition - this.startPosition)];</span>
+<span class="nc" id="L286">    this.currentPosition++;</span>
+<span class="nc" id="L287">    return ((int) res) &amp; 0xFF; // convert byte -&gt; int</span>
+  }
+
+  /**
+   * @param b - byte array into which to read data.
+   * @return  - returns number of bytes read.
+   * @throws IOException
+   */
+  @Override
+  public int read(byte[] b) throws IOException {
+<span class="nc" id="L297">    return this.read(b, 0, b.length);</span>
+  }
+
+  /**
+   * Read specified number of bytes into given array starting at given offset.
+   * @param b  - byte array
+   * @param off - start offset
+   * @param len  - length of bytes to be read
+   * @return - number of bytes read.
+   * @throws IOException
+   */
+  @Override
+  public int read(byte[] b, int off, int len) throws IOException {
+<span class="nc bnc" id="L310" title="All 2 branches missed.">    if (endOfBufferReached()) {</span>
+<span class="nc bnc" id="L311" title="All 2 branches missed.">      if (!loadNewBlockToBuffer()) {</span>
+<span class="nc" id="L312">        return -1;</span>
+      }
+    }
+
+    // copy data from buffer
+<span class="nc" id="L317">    len = Math.min(len, (int) (this.validLastPosition - this.currentPosition));</span>
+<span class="nc" id="L318">    int buffOff = (int) (this.currentPosition - this.startPosition);</span>
+<span class="nc" id="L319">    System.arraycopy(this.dataBuffer.array(), buffOff, b, off, len);</span>
+<span class="nc" id="L320">    this.currentPosition += len;</span>
+<span class="nc" id="L321">    return len;</span>
+  }
+
+  /**
+   * @return endPosition of the buffer.  For the last file block, this may not be a valid position.
+   */
+  private long endPosition() {
+<span class="nc" id="L328">    return this.startPosition + this.capacity;</span>
+  }
+
+  /**
+   * @return - whether space is available at the end of the buffer.
+   */
+  private boolean spaceAvailableInBuffer() {
+<span class="nc bnc" id="L335" title="All 4 branches missed.">    return (this.isEOF &amp;&amp; (this.validLastPosition &lt; this.endPosition()));</span>
+  }
+
+  /**
+   * write a byte to the buffer/file.
+   * @param v - value to be written
+   * @throws IOException
+   */
+  @Override
+  public void write(int v) throws IOException {
+<span class="nc" id="L345">    byte [] b = new byte[1];</span>
+<span class="nc" id="L346">    b[0] = (byte) v;</span>
+<span class="nc" id="L347">    this.write(b, 0, b.length);</span>
+<span class="nc" id="L348">  }</span>
+
+  /**
+   * write an array of bytes to the buffer/file.
+   * @param b - byte array with data to be written
+   * @throws IOException
+   */
+  @Override
+  public void write(byte[] b) throws IOException {
+<span class="nc" id="L357">    this.write(b, 0, b.length);</span>
+<span class="nc" id="L358">  }</span>
+
+  /**
+   * Write specified number of bytes into buffer/file, with given starting offset and length.
+   * @param b - byte array with data to be written
+   * @param off - starting offset.
+   * @param len - length of bytes to be written
+   * @throws IOException
+   */
+  @Override
+  public void write(byte[] b, int off, int len) throws IOException {
+    // As all data may not fit into the buffer, more than one write would be required.
+<span class="nc bnc" id="L370" title="All 2 branches missed.">    while (len &gt; 0) {</span>
+<span class="nc" id="L371">      int n = this.writeAtMost(b, off, len);</span>
+<span class="nc" id="L372">      off += n;</span>
+<span class="nc" id="L373">      len -= n;</span>
+<span class="nc" id="L374">      this.isDirty = true;</span>
+<span class="nc" id="L375">    }</span>
+<span class="nc" id="L376">  }</span>
+
+  /**
+   * If space is available at the end of the buffer, start using it. Otherwise,
+   * flush the unwritten data into the file and load the buffer corresponding to startPosition.
+   * @throws IOException
+   */
+  private void expandBufferToCapacityIfNeeded() throws IOException {
+<span class="nc bnc" id="L384" title="All 2 branches missed.">    if (spaceAvailableInBuffer()) {</span>
+      // space available at end of buffer -- adjust validLastPosition
+<span class="nc" id="L386">      this.validLastPosition = this.endPosition();</span>
+    } else {
+<span class="nc" id="L388">      loadNewBlockToBuffer();</span>
+      // appending to EOF, adjust validLastPosition.
+<span class="nc bnc" id="L390" title="All 2 branches missed.">      if (this.currentPosition == this.validLastPosition) {</span>
+<span class="nc" id="L391">        this.validLastPosition = this.endPosition();</span>
+      }
+    }
+<span class="nc" id="L394">  }</span>
+
+  /**
+   * Given a byte array, offset in the array and length of bytes to be written,
+   * update the buffer/file.
+   * @param b - byte array of data to be written
+   * @param off - starting offset.
+   * @param len - length of bytes to be written
+   * @return - number of bytes written
+   * @throws IOException
+   */
+  private int writeAtMost(byte[] b, int off, int len) throws IOException {
+<span class="nc bnc" id="L406" title="All 2 branches missed.">    if (endOfBufferReached()) {</span>
+<span class="nc" id="L407">      expandBufferToCapacityIfNeeded();</span>
+    }
+
+    // copy data to buffer, until all data is copied or to buffer capacity.
+<span class="nc" id="L411">    len = Math.min(len, (int) (this.validLastPosition - this.currentPosition));</span>
+<span class="nc" id="L412">    int buffOff = (int) (this.currentPosition - this.startPosition);</span>
+<span class="nc" id="L413">    System.arraycopy(b, off, this.dataBuffer.array(), buffOff, len);</span>
+<span class="nc" id="L414">    this.currentPosition += len;</span>
+<span class="nc" id="L415">    return len;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

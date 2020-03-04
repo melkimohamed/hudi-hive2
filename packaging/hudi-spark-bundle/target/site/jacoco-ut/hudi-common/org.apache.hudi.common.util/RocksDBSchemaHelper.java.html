@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>RocksDBSchemaHelper.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.util</a> &gt; <span class="el_source">RocksDBSchemaHelper.java</span></div><h1>RocksDBSchemaHelper.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.util;
+
+import org.apache.hudi.common.model.FileSlice;
+import org.apache.hudi.common.model.HoodieFileGroup;
+import org.apache.hudi.common.model.HoodieFileGroupId;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
+
+import java.util.Arrays;
+import java.util.List;
+
+/**
+ * Helper class to generate Key and column names for rocksdb based view
+ *
+ * For RocksDB, 3 colFamilies are used for storing file-system view for each table. (a) View (b) Partitions Cached (c)
+ * Pending Compactions
+ *
+ *
+ * View : Key : Store both slice and Data file stored. Slice : Key =
+ * &quot;type=slice,part=&lt;PartitionPath&gt;,id=&lt;FileId&gt;,instant=&lt;Timestamp&gt;&quot; Value = Serialized FileSlice Data File : Key =
+ * &quot;type=df,part=&lt;PartitionPath&gt;,id=&lt;FileId&gt;,instant=&lt;Timestamp&gt;&quot; Value = Serialized DataFile
+ *
+ * Partitions : Key = &quot;part=&lt;PartitionPath&gt;&quot; Value = Boolean
+ *
+ * Pending Compactions Key = &quot;part=&lt;PartitionPath&gt;,id=&lt;FileId&gt;&quot; Value = Pair&lt;CompactionTime, CompactionOperation&gt;
+ */
+public class RocksDBSchemaHelper {
+
+  private final String colFamilyForView;
+  private final String colFamilyForPendingCompaction;
+  private final String colFamilyForStoredPartitions;
+
+<span class="nc" id="L50">  public RocksDBSchemaHelper(HoodieTableMetaClient metaClient) {</span>
+<span class="nc" id="L51">    this.colFamilyForPendingCompaction = &quot;hudi_pending_compaction_&quot; + metaClient.getBasePath().replace(&quot;/&quot;, &quot;_&quot;);</span>
+<span class="nc" id="L52">    this.colFamilyForStoredPartitions = &quot;hudi_partitions_&quot; + metaClient.getBasePath().replace(&quot;/&quot;, &quot;_&quot;);</span>
+<span class="nc" id="L53">    this.colFamilyForView = &quot;hudi_view_&quot; + metaClient.getBasePath().replace(&quot;/&quot;, &quot;_&quot;);</span>
+<span class="nc" id="L54">  }</span>
+
+  public List&lt;String&gt; getAllColumnFamilies() {
+<span class="nc" id="L57">    return Arrays.asList(getColFamilyForView(), getColFamilyForPendingCompaction(), getColFamilyForStoredPartitions());</span>
+  }
+
+  public String getKeyForPartitionLookup(String partition) {
+<span class="nc" id="L61">    return String.format(&quot;part=%s&quot;, partition);</span>
+  }
+
+  public String getKeyForPendingCompactionLookup(HoodieFileGroupId fgId) {
+<span class="nc" id="L65">    return getPartitionFileIdBasedLookup(fgId);</span>
+  }
+
+  public String getKeyForSliceView(HoodieFileGroup fileGroup, FileSlice slice) {
+<span class="nc" id="L69">    return getKeyForSliceView(fileGroup.getPartitionPath(), fileGroup.getFileGroupId().getFileId(),</span>
+<span class="nc" id="L70">        slice.getBaseInstantTime());</span>
+  }
+
+  public String getKeyForSliceView(String partitionPath, String fileId, String instantTime) {
+<span class="nc" id="L74">    return String.format(&quot;type=slice,part=%s,id=%s,instant=%s&quot;, partitionPath, fileId, instantTime);</span>
+  }
+
+  public String getPrefixForSliceViewByPartitionFile(String partitionPath, String fileId) {
+<span class="nc" id="L78">    return String.format(&quot;type=slice,part=%s,id=%s,instant=&quot;, partitionPath, fileId);</span>
+  }
+
+  public String getPrefixForDataFileViewByPartitionFile(String partitionPath, String fileId) {
+<span class="nc" id="L82">    return String.format(&quot;type=df,part=%s,id=%s,instant=&quot;, partitionPath, fileId);</span>
+  }
+
+  public String getKeyForDataFileView(HoodieFileGroup fileGroup, FileSlice slice) {
+<span class="nc" id="L86">    return String.format(&quot;type=df,part=%s,id=%s,instant=%s&quot;, fileGroup.getPartitionPath(),</span>
+<span class="nc" id="L87">        fileGroup.getFileGroupId().getFileId(), slice.getBaseInstantTime());</span>
+  }
+
+  public String getPrefixForSliceViewByPartition(String partitionPath) {
+<span class="nc" id="L91">    return String.format(&quot;type=slice,part=%s,id=&quot;, partitionPath);</span>
+  }
+
+  public String getPrefixForSliceView() {
+<span class="nc" id="L95">    return &quot;type=slice,part=&quot;;</span>
+  }
+
+  public String getPrefixForDataFileViewByPartition(String partitionPath) {
+<span class="nc" id="L99">    return String.format(&quot;type=df,part=%s,id=&quot;, partitionPath);</span>
+  }
+
+  private String getPartitionFileIdBasedLookup(HoodieFileGroupId fgId) {
+<span class="nc" id="L103">    return String.format(&quot;part=%s,id=%s&quot;, fgId.getPartitionPath(), fgId.getFileId());</span>
+  }
+
+  public String getColFamilyForView() {
+<span class="nc" id="L107">    return colFamilyForView;</span>
+  }
+
+  public String getColFamilyForPendingCompaction() {
+<span class="nc" id="L111">    return colFamilyForPendingCompaction;</span>
+  }
+
+  public String getColFamilyForStoredPartitions() {
+<span class="nc" id="L115">    return colFamilyForStoredPartitions;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

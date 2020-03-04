@@ -1,0 +1,890 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieWrapperFileSystem.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.io.storage</a> &gt; <span class="el_source">HoodieWrapperFileSystem.java</span></div><h1>HoodieWrapperFileSystem.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.io.storage;
+
+import org.apache.hudi.common.storage.StorageSchemes;
+import org.apache.hudi.common.util.ConsistencyGuard;
+import org.apache.hudi.common.util.FSUtils;
+import org.apache.hudi.common.util.NoOpConsistencyGuard;
+import org.apache.hudi.exception.HoodieException;
+import org.apache.hudi.exception.HoodieIOException;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.BlockLocation;
+import org.apache.hadoop.fs.ContentSummary;
+import org.apache.hadoop.fs.CreateFlag;
+import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FSDataOutputStream;
+import org.apache.hadoop.fs.FileChecksum;
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.FsServerDefaults;
+import org.apache.hadoop.fs.FsStatus;
+import org.apache.hadoop.fs.LocatedFileStatus;
+import org.apache.hadoop.fs.Options;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.PathFilter;
+import org.apache.hadoop.fs.RemoteIterator;
+import org.apache.hadoop.fs.XAttrSetFlag;
+import org.apache.hadoop.fs.permission.AclEntry;
+import org.apache.hadoop.fs.permission.AclStatus;
+import org.apache.hadoop.fs.permission.FsAction;
+import org.apache.hadoop.fs.permission.FsPermission;
+import org.apache.hadoop.security.Credentials;
+import org.apache.hadoop.security.token.Token;
+import org.apache.hadoop.util.Progressable;
+
+import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.TimeoutException;
+
+/**
+ * HoodieWrapperFileSystem wraps the default file system. It holds state about the open streams in the file system to
+ * support getting the written size to each of the open streams.
+ */
+public class HoodieWrapperFileSystem extends FileSystem {
+
+  public static final String HOODIE_SCHEME_PREFIX = &quot;hoodie-&quot;;
+
+<span class="nc" id="L71">  private ConcurrentMap&lt;String, SizeAwareFSDataOutputStream&gt; openStreams = new ConcurrentHashMap&lt;&gt;();</span>
+  private FileSystem fileSystem;
+  private URI uri;
+<span class="nc" id="L74">  private ConsistencyGuard consistencyGuard = new NoOpConsistencyGuard();</span>
+
+<span class="nc" id="L76">  public HoodieWrapperFileSystem() {}</span>
+
+<span class="nc" id="L78">  public HoodieWrapperFileSystem(FileSystem fileSystem, ConsistencyGuard consistencyGuard) {</span>
+<span class="nc" id="L79">    this.fileSystem = fileSystem;</span>
+<span class="nc" id="L80">    this.uri = fileSystem.getUri();</span>
+<span class="nc" id="L81">    this.consistencyGuard = consistencyGuard;</span>
+<span class="nc" id="L82">  }</span>
+
+  public static Path convertToHoodiePath(Path file, Configuration conf) {
+    try {
+<span class="nc" id="L86">      String scheme = FSUtils.getFs(file.toString(), conf).getScheme();</span>
+<span class="nc" id="L87">      return convertPathWithScheme(file, getHoodieScheme(scheme));</span>
+<span class="nc" id="L88">    } catch (HoodieIOException e) {</span>
+<span class="nc" id="L89">      throw e;</span>
+    }
+  }
+
+  private static Path convertPathWithScheme(Path oldPath, String newScheme) {
+<span class="nc" id="L94">    URI oldURI = oldPath.toUri();</span>
+    URI newURI;
+    try {
+<span class="nc" id="L97">      newURI = new URI(newScheme, oldURI.getUserInfo(), oldURI.getHost(), oldURI.getPort(), oldURI.getPath(),</span>
+<span class="nc" id="L98">          oldURI.getQuery(), oldURI.getFragment());</span>
+<span class="nc" id="L99">      return new Path(newURI);</span>
+<span class="nc" id="L100">    } catch (URISyntaxException e) {</span>
+      // TODO - Better Exception handling
+<span class="nc" id="L102">      throw new RuntimeException(e);</span>
+    }
+  }
+
+  public static String getHoodieScheme(String scheme) {
+    String newScheme;
+<span class="nc bnc" id="L108" title="All 2 branches missed.">    if (StorageSchemes.isSchemeSupported(scheme)) {</span>
+<span class="nc" id="L109">      newScheme = HOODIE_SCHEME_PREFIX + scheme;</span>
+    } else {
+<span class="nc" id="L111">      throw new IllegalArgumentException(&quot;BlockAlignedAvroParquetWriter does not support scheme &quot; + scheme);</span>
+    }
+<span class="nc" id="L113">    return newScheme;</span>
+  }
+
+  @Override
+  public void initialize(URI uri, Configuration conf) {
+    // Get the default filesystem to decorate
+<span class="nc" id="L119">    Path path = new Path(uri);</span>
+    // Remove 'hoodie-' prefix from path
+<span class="nc bnc" id="L121" title="All 2 branches missed.">    if (path.toString().startsWith(HOODIE_SCHEME_PREFIX)) {</span>
+<span class="nc" id="L122">      path = new Path(path.toString().replace(HOODIE_SCHEME_PREFIX, &quot;&quot;));</span>
+<span class="nc" id="L123">      this.uri = path.toUri();</span>
+    } else {
+<span class="nc" id="L125">      this.uri = uri;</span>
+    }
+<span class="nc" id="L127">    this.fileSystem = FSUtils.getFs(path.toString(), conf);</span>
+    // Do not need to explicitly initialize the default filesystem, its done already in the above
+    // FileSystem.get
+    // fileSystem.initialize(FileSystem.getDefaultUri(conf), conf);
+    // fileSystem.setConf(conf);
+<span class="nc" id="L132">  }</span>
+
+  @Override
+  public URI getUri() {
+<span class="nc" id="L136">    return uri;</span>
+  }
+
+  @Override
+  public FSDataInputStream open(Path f, int bufferSize) throws IOException {
+<span class="nc" id="L141">    return fileSystem.open(convertToDefaultPath(f), bufferSize);</span>
+  }
+
+  @Override
+  public FSDataOutputStream create(Path f, FsPermission permission, boolean overwrite, int bufferSize,
+      short replication, long blockSize, Progressable progress) throws IOException {
+<span class="nc" id="L147">    final Path translatedPath = convertToDefaultPath(f);</span>
+<span class="nc" id="L148">    return wrapOutputStream(f,</span>
+<span class="nc" id="L149">        fileSystem.create(translatedPath, permission, overwrite, bufferSize, replication, blockSize, progress));</span>
+  }
+
+  private FSDataOutputStream wrapOutputStream(final Path path, FSDataOutputStream fsDataOutputStream)
+      throws IOException {
+<span class="nc bnc" id="L154" title="All 2 branches missed.">    if (fsDataOutputStream instanceof SizeAwareFSDataOutputStream) {</span>
+<span class="nc" id="L155">      return fsDataOutputStream;</span>
+    }
+
+<span class="nc" id="L158">    SizeAwareFSDataOutputStream os = new SizeAwareFSDataOutputStream(path, fsDataOutputStream, consistencyGuard,</span>
+<span class="nc" id="L159">        () -&gt; openStreams.remove(path.getName()));</span>
+<span class="nc" id="L160">    openStreams.put(path.getName(), os);</span>
+<span class="nc" id="L161">    return os;</span>
+  }
+
+  @Override
+  public FSDataOutputStream create(Path f, boolean overwrite) throws IOException {
+<span class="nc" id="L166">    return wrapOutputStream(f, fileSystem.create(convertToDefaultPath(f), overwrite));</span>
+  }
+
+  @Override
+  public FSDataOutputStream create(Path f) throws IOException {
+<span class="nc" id="L171">    return wrapOutputStream(f, fileSystem.create(convertToDefaultPath(f)));</span>
+  }
+
+  @Override
+  public FSDataOutputStream create(Path f, Progressable progress) throws IOException {
+<span class="nc" id="L176">    return wrapOutputStream(f, fileSystem.create(convertToDefaultPath(f), progress));</span>
+  }
+
+  @Override
+  public FSDataOutputStream create(Path f, short replication) throws IOException {
+<span class="nc" id="L181">    return wrapOutputStream(f, fileSystem.create(convertToDefaultPath(f), replication));</span>
+  }
+
+  @Override
+  public FSDataOutputStream create(Path f, short replication, Progressable progress) throws IOException {
+<span class="nc" id="L186">    return wrapOutputStream(f, fileSystem.create(convertToDefaultPath(f), replication, progress));</span>
+  }
+
+  @Override
+  public FSDataOutputStream create(Path f, boolean overwrite, int bufferSize) throws IOException {
+<span class="nc" id="L191">    return wrapOutputStream(f, fileSystem.create(convertToDefaultPath(f), overwrite, bufferSize));</span>
+  }
+
+  @Override
+  public FSDataOutputStream create(Path f, boolean overwrite, int bufferSize, Progressable progress)
+      throws IOException {
+<span class="nc" id="L197">    return wrapOutputStream(f, fileSystem.create(convertToDefaultPath(f), overwrite, bufferSize, progress));</span>
+  }
+
+  @Override
+  public FSDataOutputStream create(Path f, boolean overwrite, int bufferSize, short replication, long blockSize,
+      Progressable progress) throws IOException {
+<span class="nc" id="L203">    return wrapOutputStream(f,</span>
+<span class="nc" id="L204">        fileSystem.create(convertToDefaultPath(f), overwrite, bufferSize, replication, blockSize, progress));</span>
+  }
+
+  @Override
+  public FSDataOutputStream create(Path f, FsPermission permission, EnumSet&lt;CreateFlag&gt; flags, int bufferSize,
+      short replication, long blockSize, Progressable progress) throws IOException {
+<span class="nc" id="L210">    return wrapOutputStream(f,</span>
+<span class="nc" id="L211">        fileSystem.create(convertToDefaultPath(f), permission, flags, bufferSize, replication, blockSize, progress));</span>
+  }
+
+  @Override
+  public FSDataOutputStream create(Path f, FsPermission permission, EnumSet&lt;CreateFlag&gt; flags, int bufferSize,
+      short replication, long blockSize, Progressable progress, Options.ChecksumOpt checksumOpt) throws IOException {
+<span class="nc" id="L217">    return wrapOutputStream(f, fileSystem.create(convertToDefaultPath(f), permission, flags, bufferSize, replication,</span>
+        blockSize, progress, checksumOpt));
+  }
+
+  @Override
+  public FSDataOutputStream create(Path f, boolean overwrite, int bufferSize, short replication, long blockSize)
+      throws IOException {
+<span class="nc" id="L224">    return wrapOutputStream(f,</span>
+<span class="nc" id="L225">        fileSystem.create(convertToDefaultPath(f), overwrite, bufferSize, replication, blockSize));</span>
+  }
+
+  @Override
+  public FSDataOutputStream append(Path f, int bufferSize, Progressable progress) throws IOException {
+<span class="nc" id="L230">    return wrapOutputStream(f, fileSystem.append(convertToDefaultPath(f), bufferSize, progress));</span>
+  }
+
+  @Override
+  public boolean rename(Path src, Path dst) throws IOException {
+    try {
+<span class="nc" id="L236">      consistencyGuard.waitTillFileAppears(convertToDefaultPath(src));</span>
+<span class="nc" id="L237">    } catch (TimeoutException e) {</span>
+<span class="nc" id="L238">      throw new HoodieException(&quot;Timed out waiting for &quot; + src + &quot; to appear&quot;, e);</span>
+<span class="nc" id="L239">    }</span>
+
+<span class="nc" id="L241">    boolean success = fileSystem.rename(convertToDefaultPath(src), convertToDefaultPath(dst));</span>
+
+<span class="nc bnc" id="L243" title="All 2 branches missed.">    if (success) {</span>
+      try {
+<span class="nc" id="L245">        consistencyGuard.waitTillFileAppears(convertToDefaultPath(dst));</span>
+<span class="nc" id="L246">      } catch (TimeoutException e) {</span>
+<span class="nc" id="L247">        throw new HoodieException(&quot;Timed out waiting for &quot; + dst + &quot; to appear&quot;, e);</span>
+<span class="nc" id="L248">      }</span>
+
+      try {
+<span class="nc" id="L251">        consistencyGuard.waitTillFileDisappears(convertToDefaultPath(src));</span>
+<span class="nc" id="L252">      } catch (TimeoutException e) {</span>
+<span class="nc" id="L253">        throw new HoodieException(&quot;Timed out waiting for &quot; + src + &quot; to disappear&quot;, e);</span>
+<span class="nc" id="L254">      }</span>
+    }
+<span class="nc" id="L256">    return success;</span>
+  }
+
+  @Override
+  public boolean delete(Path f, boolean recursive) throws IOException {
+<span class="nc" id="L261">    boolean success = fileSystem.delete(convertToDefaultPath(f), recursive);</span>
+
+<span class="nc bnc" id="L263" title="All 2 branches missed.">    if (success) {</span>
+      try {
+<span class="nc" id="L265">        consistencyGuard.waitTillFileDisappears(f);</span>
+<span class="nc" id="L266">      } catch (TimeoutException e) {</span>
+<span class="nc" id="L267">        throw new HoodieException(&quot;Timed out waiting for &quot; + f + &quot; to disappear&quot;, e);</span>
+<span class="nc" id="L268">      }</span>
+    }
+<span class="nc" id="L270">    return success;</span>
+  }
+
+  @Override
+  public FileStatus[] listStatus(Path f) throws IOException {
+<span class="nc" id="L275">    return fileSystem.listStatus(convertToDefaultPath(f));</span>
+  }
+
+  @Override
+  public Path getWorkingDirectory() {
+<span class="nc" id="L280">    return convertToHoodiePath(fileSystem.getWorkingDirectory());</span>
+  }
+
+  @Override
+  public void setWorkingDirectory(Path newDir) {
+<span class="nc" id="L285">    fileSystem.setWorkingDirectory(convertToDefaultPath(newDir));</span>
+<span class="nc" id="L286">  }</span>
+
+  @Override
+  public boolean mkdirs(Path f, FsPermission permission) throws IOException {
+<span class="nc" id="L290">    boolean success = fileSystem.mkdirs(convertToDefaultPath(f), permission);</span>
+<span class="nc bnc" id="L291" title="All 2 branches missed.">    if (success) {</span>
+      try {
+<span class="nc" id="L293">        consistencyGuard.waitTillFileAppears(convertToDefaultPath(f));</span>
+<span class="nc" id="L294">      } catch (TimeoutException e) {</span>
+<span class="nc" id="L295">        throw new HoodieException(&quot;Timed out waiting for directory &quot; + f + &quot; to appear&quot;, e);</span>
+<span class="nc" id="L296">      }</span>
+    }
+<span class="nc" id="L298">    return success;</span>
+  }
+
+  @Override
+  public FileStatus getFileStatus(Path f) throws IOException {
+    try {
+<span class="nc" id="L304">      consistencyGuard.waitTillFileAppears(convertToDefaultPath(f));</span>
+<span class="nc" id="L305">    } catch (TimeoutException e) {</span>
+      // pass
+<span class="nc" id="L307">    }</span>
+<span class="nc" id="L308">    return fileSystem.getFileStatus(convertToDefaultPath(f));</span>
+  }
+
+  @Override
+  public String getScheme() {
+<span class="nc" id="L313">    return uri.getScheme();</span>
+  }
+
+  @Override
+  public String getCanonicalServiceName() {
+<span class="nc" id="L318">    return fileSystem.getCanonicalServiceName();</span>
+  }
+
+  @Override
+  public String getName() {
+<span class="nc" id="L323">    return fileSystem.getName();</span>
+  }
+
+  @Override
+  public Path makeQualified(Path path) {
+<span class="nc" id="L328">    return convertToHoodiePath(fileSystem.makeQualified(convertToDefaultPath(path)));</span>
+  }
+
+  @Override
+  public Token&lt;?&gt; getDelegationToken(String renewer) throws IOException {
+<span class="nc" id="L333">    return fileSystem.getDelegationToken(renewer);</span>
+  }
+
+  @Override
+  public Token&lt;?&gt;[] addDelegationTokens(String renewer, Credentials credentials) throws IOException {
+<span class="nc" id="L338">    return fileSystem.addDelegationTokens(renewer, credentials);</span>
+  }
+
+  @Override
+  public FileSystem[] getChildFileSystems() {
+<span class="nc" id="L343">    return fileSystem.getChildFileSystems();</span>
+  }
+
+  @Override
+  public BlockLocation[] getFileBlockLocations(FileStatus file, long start, long len) throws IOException {
+<span class="nc" id="L348">    return fileSystem.getFileBlockLocations(file, start, len);</span>
+  }
+
+  @Override
+  public BlockLocation[] getFileBlockLocations(Path p, long start, long len) throws IOException {
+<span class="nc" id="L353">    return fileSystem.getFileBlockLocations(convertToDefaultPath(p), start, len);</span>
+  }
+
+  @Override
+  public FsServerDefaults getServerDefaults() throws IOException {
+<span class="nc" id="L358">    return fileSystem.getServerDefaults();</span>
+  }
+
+  @Override
+  public FsServerDefaults getServerDefaults(Path p) throws IOException {
+<span class="nc" id="L363">    return fileSystem.getServerDefaults(convertToDefaultPath(p));</span>
+  }
+
+  @Override
+  public Path resolvePath(Path p) throws IOException {
+<span class="nc" id="L368">    return convertToHoodiePath(fileSystem.resolvePath(convertToDefaultPath(p)));</span>
+  }
+
+  @Override
+  public FSDataInputStream open(Path f) throws IOException {
+<span class="nc" id="L373">    return fileSystem.open(convertToDefaultPath(f));</span>
+  }
+
+  @Override
+  public FSDataOutputStream createNonRecursive(Path f, boolean overwrite, int bufferSize, short replication,
+      long blockSize, Progressable progress) throws IOException {
+<span class="nc" id="L379">    Path p = convertToDefaultPath(f);</span>
+<span class="nc" id="L380">    return wrapOutputStream(p,</span>
+<span class="nc" id="L381">        fileSystem.createNonRecursive(p, overwrite, bufferSize, replication, blockSize, progress));</span>
+  }
+
+  @Override
+  public FSDataOutputStream createNonRecursive(Path f, FsPermission permission, boolean overwrite, int bufferSize,
+      short replication, long blockSize, Progressable progress) throws IOException {
+<span class="nc" id="L387">    Path p = convertToDefaultPath(f);</span>
+<span class="nc" id="L388">    return wrapOutputStream(p,</span>
+<span class="nc" id="L389">        fileSystem.createNonRecursive(p, permission, overwrite, bufferSize, replication, blockSize, progress));</span>
+  }
+
+  @Override
+  public FSDataOutputStream createNonRecursive(Path f, FsPermission permission, EnumSet&lt;CreateFlag&gt; flags,
+      int bufferSize, short replication, long blockSize, Progressable progress) throws IOException {
+<span class="nc" id="L395">    Path p = convertToDefaultPath(f);</span>
+<span class="nc" id="L396">    return wrapOutputStream(p,</span>
+<span class="nc" id="L397">        fileSystem.createNonRecursive(p, permission, flags, bufferSize, replication, blockSize, progress));</span>
+  }
+
+  @Override
+  public boolean createNewFile(Path f) throws IOException {
+<span class="nc" id="L402">    boolean newFile = fileSystem.createNewFile(convertToDefaultPath(f));</span>
+<span class="nc bnc" id="L403" title="All 2 branches missed.">    if (newFile) {</span>
+      try {
+<span class="nc" id="L405">        consistencyGuard.waitTillFileAppears(convertToDefaultPath(f));</span>
+<span class="nc" id="L406">      } catch (TimeoutException e) {</span>
+<span class="nc" id="L407">        throw new HoodieException(&quot;Timed out waiting for &quot; + f + &quot; to appear&quot;, e);</span>
+<span class="nc" id="L408">      }</span>
+    }
+<span class="nc" id="L410">    return newFile;</span>
+  }
+
+  @Override
+  public FSDataOutputStream append(Path f) throws IOException {
+<span class="nc" id="L415">    return wrapOutputStream(f, fileSystem.append(convertToDefaultPath(f)));</span>
+  }
+
+  @Override
+  public FSDataOutputStream append(Path f, int bufferSize) throws IOException {
+<span class="nc" id="L420">    return wrapOutputStream(f, fileSystem.append(convertToDefaultPath(f), bufferSize));</span>
+  }
+
+  @Override
+  public void concat(Path trg, Path[] psrcs) throws IOException {
+<span class="nc" id="L425">    Path[] psrcsNew = convertDefaults(psrcs);</span>
+<span class="nc" id="L426">    fileSystem.concat(convertToDefaultPath(trg), psrcsNew);</span>
+    try {
+<span class="nc" id="L428">      consistencyGuard.waitTillFileAppears(convertToDefaultPath(trg));</span>
+<span class="nc" id="L429">    } catch (TimeoutException e) {</span>
+<span class="nc" id="L430">      throw new HoodieException(&quot;Timed out waiting for &quot; + trg + &quot; to appear&quot;, e);</span>
+<span class="nc" id="L431">    }</span>
+<span class="nc" id="L432">  }</span>
+
+  @Override
+  public short getReplication(Path src) throws IOException {
+<span class="nc" id="L436">    return fileSystem.getReplication(convertToDefaultPath(src));</span>
+  }
+
+  @Override
+  public boolean setReplication(Path src, short replication) throws IOException {
+<span class="nc" id="L441">    return fileSystem.setReplication(convertToDefaultPath(src), replication);</span>
+  }
+
+  @Override
+  public boolean delete(Path f) throws IOException {
+<span class="nc" id="L446">    return delete(f, true);</span>
+  }
+
+  @Override
+  public boolean deleteOnExit(Path f) throws IOException {
+<span class="nc" id="L451">    return fileSystem.deleteOnExit(convertToDefaultPath(f));</span>
+  }
+
+  @Override
+  public boolean cancelDeleteOnExit(Path f) {
+<span class="nc" id="L456">    return fileSystem.cancelDeleteOnExit(convertToDefaultPath(f));</span>
+  }
+
+  @Override
+  public boolean exists(Path f) throws IOException {
+<span class="nc" id="L461">    return fileSystem.exists(convertToDefaultPath(f));</span>
+  }
+
+  @Override
+  public boolean isDirectory(Path f) throws IOException {
+<span class="nc" id="L466">    return fileSystem.isDirectory(convertToDefaultPath(f));</span>
+  }
+
+  @Override
+  public boolean isFile(Path f) throws IOException {
+<span class="nc" id="L471">    return fileSystem.isFile(convertToDefaultPath(f));</span>
+  }
+
+  @Override
+  public long getLength(Path f) throws IOException {
+<span class="nc" id="L476">    return fileSystem.getLength(convertToDefaultPath(f));</span>
+  }
+
+  @Override
+  public ContentSummary getContentSummary(Path f) throws IOException {
+<span class="nc" id="L481">    return fileSystem.getContentSummary(convertToDefaultPath(f));</span>
+  }
+
+  @Override
+  public RemoteIterator&lt;Path&gt; listCorruptFileBlocks(Path path) throws IOException {
+<span class="nc" id="L486">    return fileSystem.listCorruptFileBlocks(convertToDefaultPath(path));</span>
+  }
+
+  @Override
+  public FileStatus[] listStatus(Path f, PathFilter filter) throws IOException {
+<span class="nc" id="L491">    return fileSystem.listStatus(convertToDefaultPath(f), filter);</span>
+  }
+
+  @Override
+  public FileStatus[] listStatus(Path[] files) throws IOException {
+<span class="nc" id="L496">    return fileSystem.listStatus(convertDefaults(files));</span>
+  }
+
+  @Override
+  public FileStatus[] listStatus(Path[] files, PathFilter filter) throws IOException {
+<span class="nc" id="L501">    return fileSystem.listStatus(convertDefaults(files), filter);</span>
+  }
+
+  @Override
+  public FileStatus[] globStatus(Path pathPattern) throws IOException {
+<span class="nc" id="L506">    return fileSystem.globStatus(convertToDefaultPath(pathPattern));</span>
+  }
+
+  @Override
+  public FileStatus[] globStatus(Path pathPattern, PathFilter filter) throws IOException {
+<span class="nc" id="L511">    return fileSystem.globStatus(convertToDefaultPath(pathPattern), filter);</span>
+  }
+
+  @Override
+  public RemoteIterator&lt;LocatedFileStatus&gt; listLocatedStatus(Path f) throws IOException {
+<span class="nc" id="L516">    return fileSystem.listLocatedStatus(convertToDefaultPath(f));</span>
+  }
+
+  @Override
+  public RemoteIterator&lt;LocatedFileStatus&gt; listFiles(Path f, boolean recursive) throws IOException {
+<span class="nc" id="L521">    return fileSystem.listFiles(convertToDefaultPath(f), recursive);</span>
+  }
+
+  @Override
+  public Path getHomeDirectory() {
+<span class="nc" id="L526">    return convertToHoodiePath(fileSystem.getHomeDirectory());</span>
+  }
+
+  @Override
+  public boolean mkdirs(Path f) throws IOException {
+<span class="nc" id="L531">    boolean success = fileSystem.mkdirs(convertToDefaultPath(f));</span>
+<span class="nc bnc" id="L532" title="All 2 branches missed.">    if (success) {</span>
+      try {
+<span class="nc" id="L534">        consistencyGuard.waitTillFileAppears(convertToDefaultPath(f));</span>
+<span class="nc" id="L535">      } catch (TimeoutException e) {</span>
+<span class="nc" id="L536">        throw new HoodieException(&quot;Timed out waiting for directory &quot; + f + &quot; to appear&quot;, e);</span>
+<span class="nc" id="L537">      }</span>
+    }
+<span class="nc" id="L539">    return success;</span>
+  }
+
+  @Override
+  public void copyFromLocalFile(Path src, Path dst) throws IOException {
+<span class="nc" id="L544">    fileSystem.copyFromLocalFile(convertToLocalPath(src), convertToDefaultPath(dst));</span>
+    try {
+<span class="nc" id="L546">      consistencyGuard.waitTillFileAppears(convertToDefaultPath(dst));</span>
+<span class="nc" id="L547">    } catch (TimeoutException e) {</span>
+<span class="nc" id="L548">      throw new HoodieException(&quot;Timed out waiting for destination &quot; + dst + &quot; to appear&quot;, e);</span>
+<span class="nc" id="L549">    }</span>
+<span class="nc" id="L550">  }</span>
+
+  @Override
+  public void moveFromLocalFile(Path[] srcs, Path dst) throws IOException {
+<span class="nc" id="L554">    fileSystem.moveFromLocalFile(convertLocalPaths(srcs), convertToDefaultPath(dst));</span>
+    try {
+<span class="nc" id="L556">      consistencyGuard.waitTillFileAppears(convertToDefaultPath(dst));</span>
+<span class="nc" id="L557">    } catch (TimeoutException e) {</span>
+<span class="nc" id="L558">      throw new HoodieException(&quot;Timed out waiting for destination &quot; + dst + &quot; to appear&quot;, e);</span>
+<span class="nc" id="L559">    }</span>
+<span class="nc" id="L560">  }</span>
+
+  @Override
+  public void moveFromLocalFile(Path src, Path dst) throws IOException {
+<span class="nc" id="L564">    fileSystem.moveFromLocalFile(convertToLocalPath(src), convertToDefaultPath(dst));</span>
+    try {
+<span class="nc" id="L566">      consistencyGuard.waitTillFileAppears(convertToDefaultPath(dst));</span>
+<span class="nc" id="L567">    } catch (TimeoutException e) {</span>
+<span class="nc" id="L568">      throw new HoodieException(&quot;Timed out waiting for destination &quot; + dst + &quot; to appear&quot;, e);</span>
+<span class="nc" id="L569">    }</span>
+<span class="nc" id="L570">  }</span>
+
+  @Override
+  public void copyFromLocalFile(boolean delSrc, Path src, Path dst) throws IOException {
+<span class="nc" id="L574">    fileSystem.copyFromLocalFile(delSrc, convertToLocalPath(src), convertToDefaultPath(dst));</span>
+    try {
+<span class="nc" id="L576">      consistencyGuard.waitTillFileAppears(convertToDefaultPath(dst));</span>
+<span class="nc" id="L577">    } catch (TimeoutException e) {</span>
+<span class="nc" id="L578">      throw new HoodieException(&quot;Timed out waiting for destination &quot; + dst + &quot; to appear&quot;, e);</span>
+<span class="nc" id="L579">    }</span>
+<span class="nc" id="L580">  }</span>
+
+  @Override
+  public void copyFromLocalFile(boolean delSrc, boolean overwrite, Path[] srcs, Path dst) throws IOException {
+<span class="nc" id="L584">    fileSystem.copyFromLocalFile(delSrc, overwrite, convertLocalPaths(srcs), convertToDefaultPath(dst));</span>
+    try {
+<span class="nc" id="L586">      consistencyGuard.waitTillFileAppears(convertToDefaultPath(dst));</span>
+<span class="nc" id="L587">    } catch (TimeoutException e) {</span>
+<span class="nc" id="L588">      throw new HoodieException(&quot;Timed out waiting for destination &quot; + dst + &quot; to appear&quot;, e);</span>
+<span class="nc" id="L589">    }</span>
+<span class="nc" id="L590">  }</span>
+
+  @Override
+  public void copyFromLocalFile(boolean delSrc, boolean overwrite, Path src, Path dst) throws IOException {
+<span class="nc" id="L594">    fileSystem.copyFromLocalFile(delSrc, overwrite, convertToLocalPath(src), convertToDefaultPath(dst));</span>
+    try {
+<span class="nc" id="L596">      consistencyGuard.waitTillFileAppears(convertToDefaultPath(dst));</span>
+<span class="nc" id="L597">    } catch (TimeoutException e) {</span>
+<span class="nc" id="L598">      throw new HoodieException(&quot;Timed out waiting for destination &quot; + dst + &quot; to appear&quot;, e);</span>
+<span class="nc" id="L599">    }</span>
+<span class="nc" id="L600">  }</span>
+
+  @Override
+  public void copyToLocalFile(Path src, Path dst) throws IOException {
+<span class="nc" id="L604">    fileSystem.copyToLocalFile(convertToDefaultPath(src), convertToLocalPath(dst));</span>
+<span class="nc" id="L605">  }</span>
+
+  @Override
+  public void moveToLocalFile(Path src, Path dst) throws IOException {
+<span class="nc" id="L609">    fileSystem.moveToLocalFile(convertToDefaultPath(src), convertToLocalPath(dst));</span>
+<span class="nc" id="L610">  }</span>
+
+  @Override
+  public void copyToLocalFile(boolean delSrc, Path src, Path dst) throws IOException {
+<span class="nc" id="L614">    fileSystem.copyToLocalFile(delSrc, convertToDefaultPath(src), convertToLocalPath(dst));</span>
+<span class="nc" id="L615">  }</span>
+
+  @Override
+  public void copyToLocalFile(boolean delSrc, Path src, Path dst, boolean useRawLocalFileSystem) throws IOException {
+<span class="nc" id="L619">    fileSystem.copyToLocalFile(delSrc, convertToDefaultPath(src), convertToLocalPath(dst), useRawLocalFileSystem);</span>
+<span class="nc" id="L620">  }</span>
+
+  @Override
+  public Path startLocalOutput(Path fsOutputFile, Path tmpLocalFile) throws IOException {
+<span class="nc" id="L624">    return convertToHoodiePath(</span>
+<span class="nc" id="L625">        fileSystem.startLocalOutput(convertToDefaultPath(fsOutputFile), convertToDefaultPath(tmpLocalFile)));</span>
+  }
+
+  @Override
+  public void completeLocalOutput(Path fsOutputFile, Path tmpLocalFile) throws IOException {
+<span class="nc" id="L630">    fileSystem.completeLocalOutput(convertToDefaultPath(fsOutputFile), convertToDefaultPath(tmpLocalFile));</span>
+<span class="nc" id="L631">  }</span>
+
+  @Override
+  public void close() throws IOException {
+    // Don't close the wrapped `fileSystem` object. This will end up closing it for every thread since it
+    // could be cached across jvm. We don't own that object anyway.
+<span class="nc" id="L637">    super.close();</span>
+<span class="nc" id="L638">  }</span>
+
+  @Override
+  public long getUsed() throws IOException {
+<span class="nc" id="L642">    return fileSystem.getUsed();</span>
+  }
+
+  @Override
+  public long getBlockSize(Path f) throws IOException {
+<span class="nc" id="L647">    return fileSystem.getBlockSize(convertToDefaultPath(f));</span>
+  }
+
+  @Override
+  public long getDefaultBlockSize() {
+<span class="nc" id="L652">    return fileSystem.getDefaultBlockSize();</span>
+  }
+
+  @Override
+  public long getDefaultBlockSize(Path f) {
+<span class="nc" id="L657">    return fileSystem.getDefaultBlockSize(convertToDefaultPath(f));</span>
+  }
+
+  @Override
+  public short getDefaultReplication() {
+<span class="nc" id="L662">    return fileSystem.getDefaultReplication();</span>
+  }
+
+  @Override
+  public short getDefaultReplication(Path path) {
+<span class="nc" id="L667">    return fileSystem.getDefaultReplication(convertToDefaultPath(path));</span>
+  }
+
+  @Override
+  public void access(Path path, FsAction mode) throws IOException {
+<span class="nc" id="L672">    fileSystem.access(convertToDefaultPath(path), mode);</span>
+<span class="nc" id="L673">  }</span>
+
+  @Override
+  public void createSymlink(Path target, Path link, boolean createParent) throws IOException {
+<span class="nc" id="L677">    fileSystem.createSymlink(convertToDefaultPath(target), convertToDefaultPath(link), createParent);</span>
+<span class="nc" id="L678">  }</span>
+
+  @Override
+  public FileStatus getFileLinkStatus(Path f) throws IOException {
+<span class="nc" id="L682">    return fileSystem.getFileLinkStatus(convertToDefaultPath(f));</span>
+  }
+
+  @Override
+  public boolean supportsSymlinks() {
+<span class="nc" id="L687">    return fileSystem.supportsSymlinks();</span>
+  }
+
+  @Override
+  public Path getLinkTarget(Path f) throws IOException {
+<span class="nc" id="L692">    return convertToHoodiePath(fileSystem.getLinkTarget(convertToDefaultPath(f)));</span>
+  }
+
+  @Override
+  public FileChecksum getFileChecksum(Path f) throws IOException {
+<span class="nc" id="L697">    return fileSystem.getFileChecksum(convertToDefaultPath(f));</span>
+  }
+
+  @Override
+  public FileChecksum getFileChecksum(Path f, long length) throws IOException {
+<span class="nc" id="L702">    return fileSystem.getFileChecksum(convertToDefaultPath(f), length);</span>
+  }
+
+  @Override
+  public void setVerifyChecksum(boolean verifyChecksum) {
+<span class="nc" id="L707">    fileSystem.setVerifyChecksum(verifyChecksum);</span>
+<span class="nc" id="L708">  }</span>
+
+  @Override
+  public void setWriteChecksum(boolean writeChecksum) {
+<span class="nc" id="L712">    fileSystem.setWriteChecksum(writeChecksum);</span>
+<span class="nc" id="L713">  }</span>
+
+  @Override
+  public FsStatus getStatus() throws IOException {
+<span class="nc" id="L717">    return fileSystem.getStatus();</span>
+  }
+
+  @Override
+  public FsStatus getStatus(Path p) throws IOException {
+<span class="nc" id="L722">    return fileSystem.getStatus(convertToDefaultPath(p));</span>
+  }
+
+  @Override
+  public void setPermission(Path p, FsPermission permission) throws IOException {
+<span class="nc" id="L727">    fileSystem.setPermission(convertToDefaultPath(p), permission);</span>
+<span class="nc" id="L728">  }</span>
+
+  @Override
+  public void setOwner(Path p, String username, String groupname) throws IOException {
+<span class="nc" id="L732">    fileSystem.setOwner(convertToDefaultPath(p), username, groupname);</span>
+<span class="nc" id="L733">  }</span>
+
+  @Override
+  public void setTimes(Path p, long mtime, long atime) throws IOException {
+<span class="nc" id="L737">    fileSystem.setTimes(convertToDefaultPath(p), mtime, atime);</span>
+<span class="nc" id="L738">  }</span>
+
+  @Override
+  public Path createSnapshot(Path path, String snapshotName) throws IOException {
+<span class="nc" id="L742">    return convertToHoodiePath(fileSystem.createSnapshot(convertToDefaultPath(path), snapshotName));</span>
+  }
+
+  @Override
+  public void renameSnapshot(Path path, String snapshotOldName, String snapshotNewName) throws IOException {
+<span class="nc" id="L747">    fileSystem.renameSnapshot(convertToDefaultPath(path), snapshotOldName, snapshotNewName);</span>
+<span class="nc" id="L748">  }</span>
+
+  @Override
+  public void deleteSnapshot(Path path, String snapshotName) throws IOException {
+<span class="nc" id="L752">    fileSystem.deleteSnapshot(convertToDefaultPath(path), snapshotName);</span>
+<span class="nc" id="L753">  }</span>
+
+  @Override
+  public void modifyAclEntries(Path path, List&lt;AclEntry&gt; aclSpec) throws IOException {
+<span class="nc" id="L757">    fileSystem.modifyAclEntries(convertToDefaultPath(path), aclSpec);</span>
+<span class="nc" id="L758">  }</span>
+
+  @Override
+  public void removeAclEntries(Path path, List&lt;AclEntry&gt; aclSpec) throws IOException {
+<span class="nc" id="L762">    fileSystem.removeAclEntries(convertToDefaultPath(path), aclSpec);</span>
+<span class="nc" id="L763">  }</span>
+
+  @Override
+  public void removeDefaultAcl(Path path) throws IOException {
+<span class="nc" id="L767">    fileSystem.removeDefaultAcl(convertToDefaultPath(path));</span>
+<span class="nc" id="L768">  }</span>
+
+  @Override
+  public void removeAcl(Path path) throws IOException {
+<span class="nc" id="L772">    fileSystem.removeAcl(convertToDefaultPath(path));</span>
+<span class="nc" id="L773">  }</span>
+
+  @Override
+  public void setAcl(Path path, List&lt;AclEntry&gt; aclSpec) throws IOException {
+<span class="nc" id="L777">    fileSystem.setAcl(convertToDefaultPath(path), aclSpec);</span>
+<span class="nc" id="L778">  }</span>
+
+  @Override
+  public AclStatus getAclStatus(Path path) throws IOException {
+<span class="nc" id="L782">    return fileSystem.getAclStatus(convertToDefaultPath(path));</span>
+  }
+
+  @Override
+  public void setXAttr(Path path, String name, byte[] value) throws IOException {
+<span class="nc" id="L787">    fileSystem.setXAttr(convertToDefaultPath(path), name, value);</span>
+<span class="nc" id="L788">  }</span>
+
+  @Override
+  public void setXAttr(Path path, String name, byte[] value, EnumSet&lt;XAttrSetFlag&gt; flag) throws IOException {
+<span class="nc" id="L792">    fileSystem.setXAttr(convertToDefaultPath(path), name, value, flag);</span>
+<span class="nc" id="L793">  }</span>
+
+  @Override
+  public byte[] getXAttr(Path path, String name) throws IOException {
+<span class="nc" id="L797">    return fileSystem.getXAttr(convertToDefaultPath(path), name);</span>
+  }
+
+  @Override
+  public Map&lt;String, byte[]&gt; getXAttrs(Path path) throws IOException {
+<span class="nc" id="L802">    return fileSystem.getXAttrs(convertToDefaultPath(path));</span>
+  }
+
+  @Override
+  public Map&lt;String, byte[]&gt; getXAttrs(Path path, List&lt;String&gt; names) throws IOException {
+<span class="nc" id="L807">    return fileSystem.getXAttrs(convertToDefaultPath(path), names);</span>
+  }
+
+  @Override
+  public List&lt;String&gt; listXAttrs(Path path) throws IOException {
+<span class="nc" id="L812">    return fileSystem.listXAttrs(convertToDefaultPath(path));</span>
+  }
+
+  @Override
+  public void removeXAttr(Path path, String name) throws IOException {
+<span class="nc" id="L817">    fileSystem.removeXAttr(convertToDefaultPath(path), name);</span>
+<span class="nc" id="L818">  }</span>
+
+  @Override
+  public Configuration getConf() {
+<span class="nc" id="L822">    return fileSystem.getConf();</span>
+  }
+
+  @Override
+  public void setConf(Configuration conf) {
+    // ignore this. we will set conf on init
+<span class="nc" id="L828">  }</span>
+
+  @Override
+  public int hashCode() {
+<span class="nc" id="L832">    return fileSystem.hashCode();</span>
+  }
+
+  @Override
+  public boolean equals(Object obj) {
+<span class="nc" id="L837">    return fileSystem.equals(obj);</span>
+  }
+
+  @Override
+  public String toString() {
+<span class="nc" id="L842">    return fileSystem.toString();</span>
+  }
+
+  public Path convertToHoodiePath(Path oldPath) {
+<span class="nc" id="L846">    return convertPathWithScheme(oldPath, getHoodieScheme(getScheme()));</span>
+  }
+
+  private Path convertToDefaultPath(Path oldPath) {
+<span class="nc" id="L850">    return convertPathWithScheme(oldPath, getScheme());</span>
+  }
+
+  private Path convertToLocalPath(Path oldPath) {
+    try {
+<span class="nc" id="L855">      return convertPathWithScheme(oldPath, FileSystem.getLocal(getConf()).getScheme());</span>
+<span class="nc" id="L856">    } catch (IOException e) {</span>
+<span class="nc" id="L857">      throw new HoodieIOException(e.getMessage(), e);</span>
+    }
+  }
+
+  private Path[] convertLocalPaths(Path[] psrcs) {
+<span class="nc" id="L862">    Path[] psrcsNew = new Path[psrcs.length];</span>
+<span class="nc bnc" id="L863" title="All 2 branches missed.">    for (int i = 0; i &lt; psrcs.length; i++) {</span>
+<span class="nc" id="L864">      psrcsNew[i] = convertToLocalPath(psrcs[i]);</span>
+    }
+<span class="nc" id="L866">    return psrcsNew;</span>
+  }
+
+  private Path[] convertDefaults(Path[] psrcs) {
+<span class="nc" id="L870">    Path[] psrcsNew = new Path[psrcs.length];</span>
+<span class="nc bnc" id="L871" title="All 2 branches missed.">    for (int i = 0; i &lt; psrcs.length; i++) {</span>
+<span class="nc" id="L872">      psrcsNew[i] = convertToDefaultPath(psrcs[i]);</span>
+    }
+<span class="nc" id="L874">    return psrcsNew;</span>
+  }
+
+  public long getBytesWritten(Path file) {
+<span class="nc bnc" id="L878" title="All 2 branches missed.">    if (openStreams.containsKey(file.getName())) {</span>
+<span class="nc" id="L879">      return openStreams.get(file.getName()).getBytesWritten();</span>
+    }
+    // When the file is first written, we do not have a track of it
+<span class="nc" id="L882">    throw new IllegalArgumentException(</span>
+<span class="nc" id="L883">        file.toString() + &quot; does not have a open stream. Cannot get the bytes written on the stream&quot;);</span>
+  }
+
+  public FileSystem getFileSystem() {
+<span class="nc" id="L887">    return fileSystem;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

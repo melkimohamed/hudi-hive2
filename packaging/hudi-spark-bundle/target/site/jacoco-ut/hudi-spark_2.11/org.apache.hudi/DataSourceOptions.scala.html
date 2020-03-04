@@ -1,0 +1,279 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>DataSourceOptions.scala</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-spark_2.11</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi</a> &gt; <span class="el_source">DataSourceOptions.scala</span></div><h1>DataSourceOptions.scala</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi
+
+import org.apache.hudi.common.model.HoodieTableType
+import org.apache.hudi.common.model.OverwriteWithLatestAvroPayload
+import org.apache.hudi.hive.SlashEncodedDayPartitionValueExtractor
+import org.apache.hudi.keygen.SimpleKeyGenerator
+import org.apache.log4j.LogManager
+
+/**
+  * List of options that can be passed to the Hoodie datasource,
+  * in addition to the hoodie client configs
+  */
+
+/**
+  * Options supported for reading hoodie tables.
+  */
+object DataSourceReadOptions {
+
+<span class="nc" id="L36">  private val log = LogManager.getLogger(classOf[DefaultSource])</span>
+
+  /**
+    * Whether data needs to be read, in
+    *
+    * 1) Snapshot mode (obtain latest view, based on row &amp; columnar data)
+    * 2) incremental mode (new data since an instantTime)
+    * 3) Read Optimized mode (obtain latest view, based on columnar data)
+    *
+    * Default: snapshot
+    */
+<span class="nc" id="L47">  val QUERY_TYPE_OPT_KEY = &quot;hoodie.datasource.query.type&quot;</span>
+<span class="nc" id="L48">  val QUERY_TYPE_SNAPSHOT_OPT_VAL = &quot;snapshot&quot;</span>
+<span class="nc" id="L49">  val QUERY_TYPE_READ_OPTIMIZED_OPT_VAL = &quot;read_optimized&quot;</span>
+<span class="nc" id="L50">  val QUERY_TYPE_INCREMENTAL_OPT_VAL = &quot;incremental&quot;</span>
+<span class="nc" id="L51">  val DEFAULT_QUERY_TYPE_OPT_VAL: String = QUERY_TYPE_SNAPSHOT_OPT_VAL</span>
+
+  @Deprecated
+<span class="nc" id="L54">  val VIEW_TYPE_OPT_KEY = &quot;hoodie.datasource.view.type&quot;</span>
+  @Deprecated
+<span class="nc" id="L56">  val VIEW_TYPE_READ_OPTIMIZED_OPT_VAL = &quot;read_optimized&quot;</span>
+  @Deprecated
+<span class="nc" id="L58">  val VIEW_TYPE_INCREMENTAL_OPT_VAL = &quot;incremental&quot;</span>
+  @Deprecated
+<span class="nc" id="L60">  val VIEW_TYPE_REALTIME_OPT_VAL = &quot;realtime&quot;</span>
+  @Deprecated
+<span class="nc" id="L62">  val DEFAULT_VIEW_TYPE_OPT_VAL = VIEW_TYPE_READ_OPTIMIZED_OPT_VAL</span>
+
+  /**
+    * This eases migration from old configs to new configs.
+    */
+<span class="nc" id="L67">  def translateViewTypesToQueryTypes(optParams: Map[String, String]) : Map[String, String] = {</span>
+<span class="nc" id="L68">    val translation = Map(VIEW_TYPE_READ_OPTIMIZED_OPT_VAL -&gt; QUERY_TYPE_SNAPSHOT_OPT_VAL,</span>
+<span class="nc" id="L69">                          VIEW_TYPE_INCREMENTAL_OPT_VAL -&gt; QUERY_TYPE_INCREMENTAL_OPT_VAL,</span>
+<span class="nc" id="L70">                          VIEW_TYPE_REALTIME_OPT_VAL -&gt; QUERY_TYPE_SNAPSHOT_OPT_VAL)</span>
+<span class="nc bnc" id="L71" title="All 4 branches missed.">    if (optParams.contains(VIEW_TYPE_OPT_KEY) &amp;&amp; !optParams.contains(QUERY_TYPE_OPT_KEY)) {</span>
+<span class="nc" id="L72">      log.warn(VIEW_TYPE_OPT_KEY + &quot; is deprecated and will be removed in a later release. Please use &quot; + QUERY_TYPE_OPT_KEY)</span>
+<span class="nc" id="L73">      optParams ++ Map(QUERY_TYPE_OPT_KEY -&gt; translation(optParams(VIEW_TYPE_OPT_KEY)))</span>
+    } else {
+<span class="nc" id="L75">      optParams</span>
+    }
+  }
+
+  /**
+    * Instant time to start incrementally pulling data from. The instanttime here need not
+    * necessarily correspond to an instant on the timeline. New data written with an
+    * `instant_time &gt; BEGIN_INSTANTTIME` are fetched out. For e.g: '20170901080000' will get
+    * all new data written after Sep 1, 2017 08:00AM.
+    *
+    * Default: None (Mandatory in incremental mode)
+    */
+<span class="nc" id="L87">  val BEGIN_INSTANTTIME_OPT_KEY = &quot;hoodie.datasource.read.begin.instanttime&quot;</span>
+
+
+  /**
+    * Instant time to limit incrementally fetched data to. New data written with an
+    * `instant_time &lt;= END_INSTANTTIME` are fetched out.
+    *
+    * Default: latest instant (i.e fetches all new data since begin instant time)
+    *
+    */
+<span class="nc" id="L97">  val END_INSTANTTIME_OPT_KEY = &quot;hoodie.datasource.read.end.instanttime&quot;</span>
+
+  /**
+    * For use-cases like DeltaStreamer which reads from Hoodie Incremental table and applies opaque map functions,
+    * filters appearing late in the sequence of transformations cannot be automatically pushed down.
+    * This option allows setting filters directly on Hoodie Source
+    */
+<span class="nc" id="L104">  val PUSH_DOWN_INCR_FILTERS_OPT_KEY = &quot;hoodie.datasource.read.incr.filters&quot;</span>
+<span class="nc" id="L105">  val DEFAULT_PUSH_DOWN_FILTERS_OPT_VAL = &quot;&quot;</span>
+
+  /**
+   * For the use-cases like users only want to incremental pull from certain partitions instead of the full table.
+   * This option allows using glob pattern to directly filter on path.
+   */
+<span class="nc" id="L111">  val INCR_PATH_GLOB_OPT_KEY = &quot;hoodie.datasource.read.incr.path.glob&quot;</span>
+<span class="nc" id="L112">  val DEFAULT_INCR_PATH_GLOB_OPT_VAL = &quot;&quot;</span>
+}
+
+/**
+  * Options supported for writing hoodie tables.
+  */
+<span class="nc" id="L118">object DataSourceWriteOptions {</span>
+
+<span class="nc" id="L120">  private val log = LogManager.getLogger(classOf[DefaultSource])</span>
+
+  /**
+    * The write operation, that this write should do
+    *
+    * Default: upsert()
+    */
+<span class="nc" id="L127">  val OPERATION_OPT_KEY = &quot;hoodie.datasource.write.operation&quot;</span>
+<span class="nc" id="L128">  val BULK_INSERT_OPERATION_OPT_VAL = &quot;bulk_insert&quot;</span>
+<span class="nc" id="L129">  val INSERT_OPERATION_OPT_VAL = &quot;insert&quot;</span>
+<span class="nc" id="L130">  val UPSERT_OPERATION_OPT_VAL = &quot;upsert&quot;</span>
+<span class="nc" id="L131">  val DELETE_OPERATION_OPT_VAL = &quot;delete&quot;</span>
+<span class="nc" id="L132">  val DEFAULT_OPERATION_OPT_VAL = UPSERT_OPERATION_OPT_VAL</span>
+
+  /**
+    * The table type for the underlying data, for this write.
+    * Note that this can't change across writes.
+    *
+    * Default: COPY_ON_WRITE
+    */
+<span class="nc" id="L140">  val TABLE_TYPE_OPT_KEY = &quot;hoodie.datasource.write.table.type&quot;</span>
+<span class="nc" id="L141">  val COW_TABLE_TYPE_OPT_VAL = HoodieTableType.COPY_ON_WRITE.name</span>
+<span class="nc" id="L142">  val MOR_TABLE_TYPE_OPT_VAL = HoodieTableType.MERGE_ON_READ.name</span>
+<span class="nc" id="L143">  val DEFAULT_TABLE_TYPE_OPT_VAL = COW_TABLE_TYPE_OPT_VAL</span>
+
+  @Deprecated
+<span class="nc" id="L146">  val STORAGE_TYPE_OPT_KEY = &quot;hoodie.datasource.write.storage.type&quot;</span>
+  @Deprecated
+<span class="nc" id="L148">  val COW_STORAGE_TYPE_OPT_VAL = HoodieTableType.COPY_ON_WRITE.name</span>
+  @Deprecated
+<span class="nc" id="L150">  val MOR_STORAGE_TYPE_OPT_VAL = HoodieTableType.MERGE_ON_READ.name</span>
+  @Deprecated
+<span class="nc" id="L152">  val DEFAULT_STORAGE_TYPE_OPT_VAL = COW_STORAGE_TYPE_OPT_VAL</span>
+
+  def translateStorageTypeToTableType(optParams: Map[String, String]) : Map[String, String] = {
+<span class="nc bnc" id="L155" title="All 4 branches missed.">    if (optParams.contains(STORAGE_TYPE_OPT_KEY) &amp;&amp; !optParams.contains(TABLE_TYPE_OPT_KEY)) {</span>
+<span class="nc" id="L156">      log.warn(STORAGE_TYPE_OPT_KEY + &quot; is deprecated and will be removed in a later release; Please use &quot; + TABLE_TYPE_OPT_KEY)</span>
+<span class="nc" id="L157">      optParams ++ Map(TABLE_TYPE_OPT_KEY -&gt; optParams(STORAGE_TYPE_OPT_KEY))</span>
+    } else {
+<span class="nc" id="L159">      optParams</span>
+    }
+  }
+
+
+  /**
+    * Hive table name, to register the table into.
+    *
+    * Default:  None (mandatory)
+    */
+<span class="nc" id="L169">  val TABLE_NAME_OPT_KEY = &quot;hoodie.datasource.write.table.name&quot;</span>
+
+  /**
+    * Field used in preCombining before actual write. When two records have the same
+    * key value, we will pick the one with the largest value for the precombine field,
+    * determined by Object.compareTo(..)
+    */
+<span class="nc" id="L176">  val PRECOMBINE_FIELD_OPT_KEY = &quot;hoodie.datasource.write.precombine.field&quot;</span>
+<span class="nc" id="L177">  val DEFAULT_PRECOMBINE_FIELD_OPT_VAL = &quot;ts&quot;</span>
+
+
+  /**
+    * Payload class used. Override this, if you like to roll your own merge logic, when upserting/inserting.
+    * This will render any value set for `PRECOMBINE_FIELD_OPT_VAL` in-effective
+    */
+<span class="nc" id="L184">  val PAYLOAD_CLASS_OPT_KEY = &quot;hoodie.datasource.write.payload.class&quot;</span>
+<span class="nc" id="L185">  val DEFAULT_PAYLOAD_OPT_VAL = classOf[OverwriteWithLatestAvroPayload].getName</span>
+
+  /**
+    * Record key field. Value to be used as the `recordKey` component of `HoodieKey`. Actual value
+    * will be obtained by invoking .toString() on the field value. Nested fields can be specified using
+    * the dot notation eg: `a.b.c`
+    *
+    */
+<span class="nc" id="L193">  val RECORDKEY_FIELD_OPT_KEY = &quot;hoodie.datasource.write.recordkey.field&quot;</span>
+<span class="nc" id="L194">  val DEFAULT_RECORDKEY_FIELD_OPT_VAL = &quot;uuid&quot;</span>
+
+  /**
+    * Partition path field. Value to be used at the `partitionPath` component of `HoodieKey`. Actual
+    * value ontained by invoking .toString()
+    */
+<span class="nc" id="L200">  val PARTITIONPATH_FIELD_OPT_KEY = &quot;hoodie.datasource.write.partitionpath.field&quot;</span>
+<span class="nc" id="L201">  val DEFAULT_PARTITIONPATH_FIELD_OPT_VAL = &quot;partitionpath&quot;</span>
+
+  /**
+    * Flag to indicate whether to use Hive style partitioning.
+    * If set true, the names of partition folders follow &lt;partition_column_name&gt;=&lt;partition_value&gt; format.
+    * By default false (the names of partition folders are only partition values)
+    */
+<span class="nc" id="L208">  val HIVE_STYLE_PARTITIONING_OPT_KEY = &quot;hoodie.datasource.write.hive_style_partitioning&quot;</span>
+<span class="nc" id="L209">  val DEFAULT_HIVE_STYLE_PARTITIONING_OPT_VAL = &quot;false&quot;</span>
+
+  /**
+    * Key generator class, that implements will extract the key out of incoming record
+    *
+    */
+<span class="nc" id="L215">  val KEYGENERATOR_CLASS_OPT_KEY = &quot;hoodie.datasource.write.keygenerator.class&quot;</span>
+<span class="nc" id="L216">  val DEFAULT_KEYGENERATOR_CLASS_OPT_VAL = classOf[SimpleKeyGenerator].getName</span>
+
+  /**
+    * Option keys beginning with this prefix, are automatically added to the commit/deltacommit metadata.
+    * This is useful to store checkpointing information, in a consistent way with the hoodie timeline
+    */
+<span class="nc" id="L222">  val COMMIT_METADATA_KEYPREFIX_OPT_KEY = &quot;hoodie.datasource.write.commitmeta.key.prefix&quot;</span>
+<span class="nc" id="L223">  val DEFAULT_COMMIT_METADATA_KEYPREFIX_OPT_VAL = &quot;_&quot;</span>
+
+  /**
+    * Flag to indicate whether to drop duplicates upon insert.
+    * By default insert will accept duplicates, to gain extra performance.
+    */
+<span class="nc" id="L229">  val INSERT_DROP_DUPS_OPT_KEY = &quot;hoodie.datasource.write.insert.drop.duplicates&quot;</span>
+<span class="nc" id="L230">  val DEFAULT_INSERT_DROP_DUPS_OPT_VAL = &quot;false&quot;</span>
+
+  /**
+    * Flag to indicate how many times streaming job should retry for a failed microbatch
+    * By default 3
+    */
+<span class="nc" id="L236">  val STREAMING_RETRY_CNT_OPT_KEY = &quot;hoodie.datasource.write.streaming.retry.count&quot;</span>
+<span class="nc" id="L237">  val DEFAULT_STREAMING_RETRY_CNT_OPT_VAL = &quot;3&quot;</span>
+
+  /**
+    * Flag to indicate how long (by millisecond) before a retry should issued for failed microbatch
+    * By default 2000 and it will be doubled by every retry
+    */
+<span class="nc" id="L243">  val STREAMING_RETRY_INTERVAL_MS_OPT_KEY = &quot;hoodie.datasource.write.streaming.retry.interval.ms&quot;</span>
+<span class="nc" id="L244">  val DEFAULT_STREAMING_RETRY_INTERVAL_MS_OPT_VAL = &quot;2000&quot;</span>
+
+  /**
+    * Flag to indicate whether to ignore any non exception error (e.g. writestatus error)
+    * within a streaming microbatch
+    * By default true (in favor of streaming progressing over data integrity)
+    */
+<span class="nc" id="L251">  val STREAMING_IGNORE_FAILED_BATCH_OPT_KEY = &quot;hoodie.datasource.write.streaming.ignore.failed.batch&quot;</span>
+<span class="nc" id="L252">  val DEFAULT_STREAMING_IGNORE_FAILED_BATCH_OPT_VAL = &quot;true&quot;</span>
+
+  // HIVE SYNC SPECIFIC CONFIGS
+  //NOTE: DO NOT USE uppercase for the keys as they are internally lower-cased. Using upper-cases causes
+  // unexpected issues with config getting reset
+<span class="nc" id="L257">  val HIVE_SYNC_ENABLED_OPT_KEY = &quot;hoodie.datasource.hive_sync.enable&quot;</span>
+<span class="nc" id="L258">  val HIVE_DATABASE_OPT_KEY = &quot;hoodie.datasource.hive_sync.database&quot;</span>
+<span class="nc" id="L259">  val HIVE_TABLE_OPT_KEY = &quot;hoodie.datasource.hive_sync.table&quot;</span>
+<span class="nc" id="L260">  val HIVE_USER_OPT_KEY = &quot;hoodie.datasource.hive_sync.username&quot;</span>
+<span class="nc" id="L261">  val HIVE_PASS_OPT_KEY = &quot;hoodie.datasource.hive_sync.password&quot;</span>
+<span class="nc" id="L262">  val HIVE_URL_OPT_KEY = &quot;hoodie.datasource.hive_sync.jdbcurl&quot;</span>
+<span class="nc" id="L263">  val HIVE_PARTITION_FIELDS_OPT_KEY = &quot;hoodie.datasource.hive_sync.partition_fields&quot;</span>
+<span class="nc" id="L264">  val HIVE_PARTITION_EXTRACTOR_CLASS_OPT_KEY = &quot;hoodie.datasource.hive_sync.partition_extractor_class&quot;</span>
+<span class="nc" id="L265">  val HIVE_USE_PRE_APACHE_INPUT_FORMAT_OPT_KEY = &quot;hoodie.datasource.hive_sync.use_pre_apache_input_format&quot;</span>
+
+  // DEFAULT FOR HIVE SPECIFIC CONFIGS
+<span class="nc" id="L268">  val DEFAULT_HIVE_SYNC_ENABLED_OPT_VAL = &quot;false&quot;</span>
+<span class="nc" id="L269">  val DEFAULT_HIVE_DATABASE_OPT_VAL = &quot;default&quot;</span>
+<span class="nc" id="L270">  val DEFAULT_HIVE_TABLE_OPT_VAL = &quot;unknown&quot;</span>
+<span class="nc" id="L271">  val DEFAULT_HIVE_USER_OPT_VAL = &quot;hive&quot;</span>
+<span class="nc" id="L272">  val DEFAULT_HIVE_PASS_OPT_VAL = &quot;hive&quot;</span>
+<span class="nc" id="L273">  val DEFAULT_HIVE_URL_OPT_VAL = &quot;jdbc:hive2://localhost:10000&quot;</span>
+<span class="nc" id="L274">  val DEFAULT_HIVE_PARTITION_FIELDS_OPT_VAL = &quot;&quot;</span>
+<span class="nc" id="L275">  val DEFAULT_HIVE_PARTITION_EXTRACTOR_CLASS_OPT_VAL = classOf[SlashEncodedDayPartitionValueExtractor].getCanonicalName</span>
+<span class="nc" id="L276">  val DEFAULT_HIVE_ASSUME_DATE_PARTITION_OPT_VAL = &quot;false&quot;</span>
+<span class="nc" id="L277">  val DEFAULT_USE_PRE_APACHE_INPUT_FORMAT_OPT_VAL = &quot;false&quot;</span>
+<span class="nc" id="L278">}</span>
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

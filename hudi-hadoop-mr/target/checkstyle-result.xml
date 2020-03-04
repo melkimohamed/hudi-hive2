@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<checkstyle version="8.18">
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/com/uber/hoodie/hadoop/HoodieInputFormat.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/com/uber/hoodie/hadoop/realtime/HoodieRealtimeInputFormat.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/HoodieHiveUtil.java">
+<error line="28" severity="info" message="Import org.apache.hadoop.fs.Path appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="33" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/HoodieParquetInputFormat.java">
+<error line="31" severity="info" message="Import org.apache.hadoop.conf.Configurable appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="44" severity="info" message="Import org.apache.hudi.common.model.HoodieCommitMetadata appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="45" severity="info" message="Import org.apache.hudi.common.model.HoodieBaseFile appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="54" severity="info" message="&apos;org.apache.log4j.LogManager&apos; devrait être séparé des imports précédents." source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/HoodieROTablePathFilter.java">
+<error line="26" severity="info" message="Import org.apache.hudi.exception.HoodieException appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/InputPathHandler.java">
+<error line="23" severity="info" message="Import java.io.IOException appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="28" severity="info" message="Import org.apache.hadoop.conf.Configuration appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="30" severity="info" message="Import org.apache.hudi.common.table.HoodieTableMetaClient appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="32" severity="info" message="Import org.apache.hudi.exception.InvalidTableException appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="33" severity="info" message="&apos;org.apache.log4j.LogManager&apos; devrait être séparé des imports précédents." source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/RecordReaderValueIterator.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/SafeParquetRecordReaderWrapper.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/UseFileSplitsFromInputFormat.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/AbstractRealtimeRecordReader.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/HoodieParquetRealtimeInputFormat.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/HoodieParquetSerde.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/HoodieRealtimeFileSplit.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/HoodieRealtimeRecordReader.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/RealtimeCompactedRecordReader.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/main/java/org/apache/hudi/hadoop/realtime/RealtimeUnmergedRecordReader.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/test/java/org/apache/hudi/hadoop/InputFormatTestUtil.java">
+<error line="44" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/test/java/org/apache/hudi/hadoop/InputPathHandlerTest.java">
+<error line="23" severity="info" message="Import java.io.IOException appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="28" severity="info" message="Import org.apache.hadoop.conf.Configuration appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="33" severity="info" message="Import org.apache.hudi.common.minicluster.HdfsTestService appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="38" severity="info" message="&apos;org.junit.AfterClass&apos; devrait être séparé des imports précédents." source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="43" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/test/java/org/apache/hudi/hadoop/TestAnnotation.java">
+<error line="27" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/test/java/org/apache/hudi/hadoop/TestHoodieParquetInputFormat.java">
+<error line="24" severity="info" message="Import java.io.File appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="29" severity="info" message="Import org.apache.avro.Schema appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="38" severity="info" message="Import org.apache.hudi.common.model.HoodieCommitMetadata appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="42" severity="info" message="&apos;org.junit.Before&apos; devrait être séparé des imports précédents." source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="47" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/test/java/org/apache/hudi/hadoop/TestHoodieROTablePathFilter.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/test/java/org/apache/hudi/hadoop/TestRecordReaderValueIterator.java">
+<error line="33" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/test/java/org/apache/hudi/hadoop/realtime/TestHoodieRealtimeRecordReader.java">
+<error line="82" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/test/resources/log4j-surefire-quiet.properties">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hadoop-mr/src/test/resources/log4j-surefire.properties">
+</file>
+</checkstyle>

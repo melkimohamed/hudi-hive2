@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>WriteStatus.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-client</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.client</a> &gt; <span class="el_source">WriteStatus.java</span></div><h1>WriteStatus.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.client;
+
+import org.apache.hudi.common.model.HoodieKey;
+import org.apache.hudi.common.model.HoodieRecord;
+import org.apache.hudi.common.model.HoodieWriteStat;
+import org.apache.hudi.common.util.Option;
+
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+
+/**
+ * Status of a write operation.
+ */
+public class WriteStatus implements Serializable {
+
+  private static final long RANDOM_SEED = 9038412832L;
+
+<span class="nc" id="L40">  private final HashMap&lt;HoodieKey, Throwable&gt; errors = new HashMap&lt;&gt;();</span>
+
+<span class="nc" id="L42">  private final List&lt;HoodieRecord&gt; writtenRecords = new ArrayList&lt;&gt;();</span>
+
+<span class="nc" id="L44">  private final List&lt;HoodieRecord&gt; failedRecords = new ArrayList&lt;&gt;();</span>
+
+<span class="nc" id="L46">  private Throwable globalError = null;</span>
+
+<span class="nc" id="L48">  private String fileId = null;</span>
+
+<span class="nc" id="L50">  private String partitionPath = null;</span>
+
+<span class="nc" id="L52">  private HoodieWriteStat stat = null;</span>
+
+<span class="nc" id="L54">  private long totalRecords = 0;</span>
+<span class="nc" id="L55">  private long totalErrorRecords = 0;</span>
+
+  private final double failureFraction;
+  private final boolean trackSuccessRecords;
+  private final transient Random random;
+
+<span class="nc" id="L61">  public WriteStatus(Boolean trackSuccessRecords, Double failureFraction) {</span>
+<span class="nc" id="L62">    this.trackSuccessRecords = trackSuccessRecords;</span>
+<span class="nc" id="L63">    this.failureFraction = failureFraction;</span>
+<span class="nc" id="L64">    this.random = new Random(RANDOM_SEED);</span>
+<span class="nc" id="L65">  }</span>
+
+  /**
+   * Mark write as success, optionally using given parameters for the purpose of calculating some aggregate metrics.
+   * This method is not meant to cache passed arguments, since WriteStatus objects are collected in Spark Driver.
+   *
+   * @param record deflated {@code HoodieRecord} containing information that uniquely identifies it.
+   * @param optionalRecordMetadata optional metadata related to data contained in {@link HoodieRecord} before deflation.
+   */
+  public void markSuccess(HoodieRecord record, Option&lt;Map&lt;String, String&gt;&gt; optionalRecordMetadata) {
+<span class="nc bnc" id="L75" title="All 2 branches missed.">    if (trackSuccessRecords) {</span>
+<span class="nc" id="L76">      writtenRecords.add(record);</span>
+    }
+<span class="nc" id="L78">    totalRecords++;</span>
+<span class="nc" id="L79">  }</span>
+
+  /**
+   * Mark write as failed, optionally using given parameters for the purpose of calculating some aggregate metrics. This
+   * method is not meant to cache passed arguments, since WriteStatus objects are collected in Spark Driver.
+   *
+   * @param record deflated {@code HoodieRecord} containing information that uniquely identifies it.
+   * @param optionalRecordMetadata optional metadata related to data contained in {@link HoodieRecord} before deflation.
+   */
+  public void markFailure(HoodieRecord record, Throwable t, Option&lt;Map&lt;String, String&gt;&gt; optionalRecordMetadata) {
+<span class="nc bnc" id="L89" title="All 4 branches missed.">    if (failedRecords.isEmpty() || (random.nextDouble() &lt;= failureFraction)) {</span>
+      // Guaranteed to have at-least one error
+<span class="nc" id="L91">      failedRecords.add(record);</span>
+<span class="nc" id="L92">      errors.put(record.getKey(), t);</span>
+    }
+<span class="nc" id="L94">    totalRecords++;</span>
+<span class="nc" id="L95">    totalErrorRecords++;</span>
+<span class="nc" id="L96">  }</span>
+
+  public String getFileId() {
+<span class="nc" id="L99">    return fileId;</span>
+  }
+
+  public void setFileId(String fileId) {
+<span class="nc" id="L103">    this.fileId = fileId;</span>
+<span class="nc" id="L104">  }</span>
+
+  public boolean hasErrors() {
+<span class="nc bnc" id="L107" title="All 2 branches missed.">    return totalErrorRecords &gt; 0;</span>
+  }
+
+  public boolean isErrored(HoodieKey key) {
+<span class="nc" id="L111">    return errors.containsKey(key);</span>
+  }
+
+  public HashMap&lt;HoodieKey, Throwable&gt; getErrors() {
+<span class="nc" id="L115">    return errors;</span>
+  }
+
+  public boolean hasGlobalError() {
+<span class="nc bnc" id="L119" title="All 2 branches missed.">    return globalError != null;</span>
+  }
+
+  public Throwable getGlobalError() {
+<span class="nc" id="L123">    return this.globalError;</span>
+  }
+
+  public void setGlobalError(Throwable t) {
+<span class="nc" id="L127">    this.globalError = t;</span>
+<span class="nc" id="L128">  }</span>
+
+  public List&lt;HoodieRecord&gt; getWrittenRecords() {
+<span class="nc" id="L131">    return writtenRecords;</span>
+  }
+
+  public List&lt;HoodieRecord&gt; getFailedRecords() {
+<span class="nc" id="L135">    return failedRecords;</span>
+  }
+
+  public HoodieWriteStat getStat() {
+<span class="nc" id="L139">    return stat;</span>
+  }
+
+  public void setStat(HoodieWriteStat stat) {
+<span class="nc" id="L143">    this.stat = stat;</span>
+<span class="nc" id="L144">  }</span>
+
+  public String getPartitionPath() {
+<span class="nc" id="L147">    return partitionPath;</span>
+  }
+
+  public void setPartitionPath(String partitionPath) {
+<span class="nc" id="L151">    this.partitionPath = partitionPath;</span>
+<span class="nc" id="L152">  }</span>
+
+  public long getTotalRecords() {
+<span class="nc" id="L155">    return totalRecords;</span>
+  }
+
+  public void setTotalRecords(long totalRecords) {
+<span class="nc" id="L159">    this.totalRecords = totalRecords;</span>
+<span class="nc" id="L160">  }</span>
+
+  public long getTotalErrorRecords() {
+<span class="nc" id="L163">    return totalErrorRecords;</span>
+  }
+
+  public void setTotalErrorRecords(long totalErrorRecords) {
+<span class="nc" id="L167">    this.totalErrorRecords = totalErrorRecords;</span>
+<span class="nc" id="L168">  }</span>
+
+  @Override
+  public String toString() {
+<span class="nc" id="L172">    final StringBuilder sb = new StringBuilder(&quot;WriteStatus {&quot;);</span>
+<span class="nc" id="L173">    sb.append(&quot;fileId=&quot;).append(fileId);</span>
+<span class="nc" id="L174">    sb.append(&quot;, globalError='&quot;).append(globalError).append('\'');</span>
+<span class="nc" id="L175">    sb.append(&quot;, hasErrors='&quot;).append(hasErrors()).append('\'');</span>
+<span class="nc" id="L176">    sb.append(&quot;, errorCount='&quot;).append(totalErrorRecords).append('\'');</span>
+<span class="nc" id="L177">    sb.append(&quot;, errorPct='&quot;).append((100.0 * totalErrorRecords) / totalRecords).append('\'');</span>
+<span class="nc" id="L178">    sb.append('}');</span>
+<span class="nc" id="L179">    return sb.toString();</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieIndexConfig.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-client</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.config</a> &gt; <span class="el_source">HoodieIndexConfig.java</span></div><h1>HoodieIndexConfig.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.config;
+
+import org.apache.hudi.common.bloom.filter.BloomFilterTypeCode;
+import org.apache.hudi.index.HoodieIndex;
+
+import javax.annotation.concurrent.Immutable;
+
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.Properties;
+
+/**
+ * Indexing related config.
+ */
+@Immutable
+public class HoodieIndexConfig extends DefaultHoodieConfig {
+
+  public static final String INDEX_TYPE_PROP = &quot;hoodie.index.type&quot;;
+<span class="nc" id="L38">  public static final String DEFAULT_INDEX_TYPE = HoodieIndex.IndexType.BLOOM.name();</span>
+
+  // ***** Bloom Index configs *****
+  public static final String BLOOM_FILTER_NUM_ENTRIES = &quot;hoodie.index.bloom.num_entries&quot;;
+  public static final String DEFAULT_BLOOM_FILTER_NUM_ENTRIES = &quot;60000&quot;;
+  public static final String BLOOM_FILTER_FPP = &quot;hoodie.index.bloom.fpp&quot;;
+  public static final String DEFAULT_BLOOM_FILTER_FPP = &quot;0.000000001&quot;;
+  public static final String BLOOM_INDEX_PARALLELISM_PROP = &quot;hoodie.bloom.index.parallelism&quot;;
+  // Disable explicit bloom index parallelism setting by default - hoodie auto computes
+  public static final String DEFAULT_BLOOM_INDEX_PARALLELISM = &quot;0&quot;;
+  public static final String BLOOM_INDEX_PRUNE_BY_RANGES_PROP = &quot;hoodie.bloom.index.prune.by.ranges&quot;;
+  public static final String DEFAULT_BLOOM_INDEX_PRUNE_BY_RANGES = &quot;true&quot;;
+  public static final String BLOOM_INDEX_USE_CACHING_PROP = &quot;hoodie.bloom.index.use.caching&quot;;
+  public static final String DEFAULT_BLOOM_INDEX_USE_CACHING = &quot;true&quot;;
+  public static final String BLOOM_INDEX_TREE_BASED_FILTER_PROP = &quot;hoodie.bloom.index.use.treebased.filter&quot;;
+  public static final String DEFAULT_BLOOM_INDEX_TREE_BASED_FILTER = &quot;true&quot;;
+  // TODO: On by default. Once stable, we will remove the other mode.
+  public static final String BLOOM_INDEX_BUCKETIZED_CHECKING_PROP = &quot;hoodie.bloom.index.bucketized.checking&quot;;
+  public static final String DEFAULT_BLOOM_INDEX_BUCKETIZED_CHECKING = &quot;true&quot;;
+  public static final String BLOOM_INDEX_FILTER_TYPE = &quot;hoodie.bloom.index.filter.type&quot;;
+<span class="nc" id="L58">  public static final String DEFAULT_BLOOM_INDEX_FILTER_TYPE = BloomFilterTypeCode.SIMPLE.name();</span>
+  public static final String HOODIE_BLOOM_INDEX_FILTER_DYNAMIC_MAX_ENTRIES = &quot;hoodie.bloom.index.filter.dynamic.max.entries&quot;;
+  public static final String DEFAULT_HOODIE_BLOOM_INDEX_FILTER_DYNAMIC_MAX_ENTRIES = &quot;100000&quot;;
+
+  // 1B bloom filter checks happen in 250 seconds. 500ms to read a bloom filter.
+  // 10M checks in 2500ms, thus amortizing the cost of reading bloom filter across partitions.
+  public static final String BLOOM_INDEX_KEYS_PER_BUCKET_PROP = &quot;hoodie.bloom.index.keys.per.bucket&quot;;
+  public static final String DEFAULT_BLOOM_INDEX_KEYS_PER_BUCKET = &quot;10000000&quot;;
+
+  // ***** HBase Index Configs *****
+  public static final String HBASE_ZKQUORUM_PROP = &quot;hoodie.index.hbase.zkquorum&quot;;
+  public static final String HBASE_ZKPORT_PROP = &quot;hoodie.index.hbase.zkport&quot;;
+  public static final String HBASE_ZK_ZNODEPARENT = &quot;hoodie.index.hbase.zknode.path&quot;;
+  public static final String HBASE_TABLENAME_PROP = &quot;hoodie.index.hbase.table&quot;;
+  public static final String HBASE_GET_BATCH_SIZE_PROP = &quot;hoodie.index.hbase.get.batch.size&quot;;
+  public static final String HBASE_PUT_BATCH_SIZE_PROP = &quot;hoodie.index.hbase.put.batch.size&quot;;
+  public static final String DEFAULT_HBASE_BATCH_SIZE = &quot;100&quot;;
+
+
+  public static final String BLOOM_INDEX_INPUT_STORAGE_LEVEL = &quot;hoodie.bloom.index.input.storage.level&quot;;
+  public static final String DEFAULT_BLOOM_INDEX_INPUT_STORAGE_LEVEL = &quot;MEMORY_AND_DISK_SER&quot;;
+
+  /**
+   * Only applies if index type is GLOBAL_BLOOM.
+   * &lt;p&gt;
+   * When set to true, an update to a record with a different partition from its existing one
+   * will insert the record to the new partition and delete it from the old partition.
+   * &lt;p&gt;
+   * When set to false, a record will be updated to the old partition.
+   */
+  public static final String BLOOM_INDEX_UPDATE_PARTITION_PATH = &quot;hoodie.bloom.index.update.partition.path&quot;;
+  public static final String DEFAULT_BLOOM_INDEX_UPDATE_PARTITION_PATH = &quot;false&quot;;
+
+  private HoodieIndexConfig(Properties props) {
+<span class="nc" id="L92">    super(props);</span>
+<span class="nc" id="L93">  }</span>
+
+  public static HoodieIndexConfig.Builder newBuilder() {
+<span class="nc" id="L96">    return new Builder();</span>
+  }
+
+<span class="nc" id="L99">  public static class Builder {</span>
+
+<span class="nc" id="L101">    private final Properties props = new Properties();</span>
+
+    public Builder fromFile(File propertiesFile) throws IOException {
+<span class="nc" id="L104">      try (FileReader reader = new FileReader(propertiesFile)) {</span>
+<span class="nc" id="L105">        this.props.load(reader);</span>
+<span class="nc" id="L106">        return this;</span>
+      }
+    }
+
+    public Builder fromProperties(Properties props) {
+<span class="nc" id="L111">      this.props.putAll(props);</span>
+<span class="nc" id="L112">      return this;</span>
+    }
+
+    public Builder withIndexType(HoodieIndex.IndexType indexType) {
+<span class="nc" id="L116">      props.setProperty(INDEX_TYPE_PROP, indexType.name());</span>
+<span class="nc" id="L117">      return this;</span>
+    }
+
+    public Builder withHBaseIndexConfig(HoodieHBaseIndexConfig hBaseIndexConfig) {
+<span class="nc" id="L121">      props.putAll(hBaseIndexConfig.getProps());</span>
+<span class="nc" id="L122">      return this;</span>
+    }
+
+    public Builder bloomFilterNumEntries(int numEntries) {
+<span class="nc" id="L126">      props.setProperty(BLOOM_FILTER_NUM_ENTRIES, String.valueOf(numEntries));</span>
+<span class="nc" id="L127">      return this;</span>
+    }
+
+    public Builder bloomFilterFPP(double fpp) {
+<span class="nc" id="L131">      props.setProperty(BLOOM_FILTER_FPP, String.valueOf(fpp));</span>
+<span class="nc" id="L132">      return this;</span>
+    }
+
+    public Builder hbaseZkQuorum(String zkString) {
+<span class="nc" id="L136">      props.setProperty(HBASE_ZKQUORUM_PROP, zkString);</span>
+<span class="nc" id="L137">      return this;</span>
+    }
+
+    public Builder hbaseZkPort(int port) {
+<span class="nc" id="L141">      props.setProperty(HBASE_ZKPORT_PROP, String.valueOf(port));</span>
+<span class="nc" id="L142">      return this;</span>
+    }
+
+    public Builder hbaseZkZnodeParent(String zkZnodeParent) {
+<span class="nc" id="L146">      props.setProperty(HBASE_ZK_ZNODEPARENT, zkZnodeParent);</span>
+<span class="nc" id="L147">      return this;</span>
+    }
+
+    public Builder hbaseTableName(String tableName) {
+<span class="nc" id="L151">      props.setProperty(HBASE_TABLENAME_PROP, tableName);</span>
+<span class="nc" id="L152">      return this;</span>
+    }
+
+    public Builder bloomIndexParallelism(int parallelism) {
+<span class="nc" id="L156">      props.setProperty(BLOOM_INDEX_PARALLELISM_PROP, String.valueOf(parallelism));</span>
+<span class="nc" id="L157">      return this;</span>
+    }
+
+    public Builder bloomIndexPruneByRanges(boolean pruneRanges) {
+<span class="nc" id="L161">      props.setProperty(BLOOM_INDEX_PRUNE_BY_RANGES_PROP, String.valueOf(pruneRanges));</span>
+<span class="nc" id="L162">      return this;</span>
+    }
+
+    public Builder bloomIndexUseCaching(boolean useCaching) {
+<span class="nc" id="L166">      props.setProperty(BLOOM_INDEX_USE_CACHING_PROP, String.valueOf(useCaching));</span>
+<span class="nc" id="L167">      return this;</span>
+    }
+
+    public Builder bloomIndexTreebasedFilter(boolean useTreeFilter) {
+<span class="nc" id="L171">      props.setProperty(BLOOM_INDEX_TREE_BASED_FILTER_PROP, String.valueOf(useTreeFilter));</span>
+<span class="nc" id="L172">      return this;</span>
+    }
+
+    public Builder bloomIndexBucketizedChecking(boolean bucketizedChecking) {
+<span class="nc" id="L176">      props.setProperty(BLOOM_INDEX_BUCKETIZED_CHECKING_PROP, String.valueOf(bucketizedChecking));</span>
+<span class="nc" id="L177">      return this;</span>
+    }
+
+    public Builder bloomIndexKeysPerBucket(int keysPerBucket) {
+<span class="nc" id="L181">      props.setProperty(BLOOM_INDEX_KEYS_PER_BUCKET_PROP, String.valueOf(keysPerBucket));</span>
+<span class="nc" id="L182">      return this;</span>
+    }
+
+    public Builder withBloomIndexInputStorageLevel(String level) {
+<span class="nc" id="L186">      props.setProperty(BLOOM_INDEX_INPUT_STORAGE_LEVEL, level);</span>
+<span class="nc" id="L187">      return this;</span>
+    }
+
+    public Builder withBloomIndexUpdatePartitionPath(boolean updatePartitionPath) {
+<span class="nc" id="L191">      props.setProperty(BLOOM_INDEX_UPDATE_PARTITION_PATH, String.valueOf(updatePartitionPath));</span>
+<span class="nc" id="L192">      return this;</span>
+    }
+
+    public HoodieIndexConfig build() {
+<span class="nc" id="L196">      HoodieIndexConfig config = new HoodieIndexConfig(props);</span>
+<span class="nc bnc" id="L197" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(INDEX_TYPE_PROP), INDEX_TYPE_PROP, DEFAULT_INDEX_TYPE);</span>
+<span class="nc bnc" id="L198" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(BLOOM_FILTER_NUM_ENTRIES), BLOOM_FILTER_NUM_ENTRIES,</span>
+          DEFAULT_BLOOM_FILTER_NUM_ENTRIES);
+<span class="nc bnc" id="L200" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(BLOOM_FILTER_FPP), BLOOM_FILTER_FPP, DEFAULT_BLOOM_FILTER_FPP);</span>
+<span class="nc bnc" id="L201" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(BLOOM_INDEX_PARALLELISM_PROP), BLOOM_INDEX_PARALLELISM_PROP,</span>
+          DEFAULT_BLOOM_INDEX_PARALLELISM);
+<span class="nc bnc" id="L203" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(BLOOM_INDEX_PRUNE_BY_RANGES_PROP),</span>
+          BLOOM_INDEX_PRUNE_BY_RANGES_PROP, DEFAULT_BLOOM_INDEX_PRUNE_BY_RANGES);
+<span class="nc bnc" id="L205" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(BLOOM_INDEX_USE_CACHING_PROP), BLOOM_INDEX_USE_CACHING_PROP,</span>
+          DEFAULT_BLOOM_INDEX_USE_CACHING);
+<span class="nc bnc" id="L207" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(BLOOM_INDEX_INPUT_STORAGE_LEVEL), BLOOM_INDEX_INPUT_STORAGE_LEVEL,</span>
+          DEFAULT_BLOOM_INDEX_INPUT_STORAGE_LEVEL);
+<span class="nc bnc" id="L209" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(BLOOM_INDEX_UPDATE_PARTITION_PATH),</span>
+          BLOOM_INDEX_UPDATE_PARTITION_PATH, DEFAULT_BLOOM_INDEX_UPDATE_PARTITION_PATH);
+<span class="nc bnc" id="L211" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(BLOOM_INDEX_TREE_BASED_FILTER_PROP),</span>
+          BLOOM_INDEX_TREE_BASED_FILTER_PROP, DEFAULT_BLOOM_INDEX_TREE_BASED_FILTER);
+<span class="nc bnc" id="L213" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(BLOOM_INDEX_BUCKETIZED_CHECKING_PROP),</span>
+          BLOOM_INDEX_BUCKETIZED_CHECKING_PROP, DEFAULT_BLOOM_INDEX_BUCKETIZED_CHECKING);
+<span class="nc bnc" id="L215" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(BLOOM_INDEX_KEYS_PER_BUCKET_PROP),</span>
+          BLOOM_INDEX_KEYS_PER_BUCKET_PROP, DEFAULT_BLOOM_INDEX_KEYS_PER_BUCKET);
+<span class="nc bnc" id="L217" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.contains(BLOOM_INDEX_FILTER_TYPE),</span>
+          BLOOM_INDEX_FILTER_TYPE, DEFAULT_BLOOM_INDEX_FILTER_TYPE);
+<span class="nc bnc" id="L219" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.contains(HOODIE_BLOOM_INDEX_FILTER_DYNAMIC_MAX_ENTRIES),</span>
+          HOODIE_BLOOM_INDEX_FILTER_DYNAMIC_MAX_ENTRIES, DEFAULT_HOODIE_BLOOM_INDEX_FILTER_DYNAMIC_MAX_ENTRIES);
+      // Throws IllegalArgumentException if the value set is not a known Hoodie Index Type
+<span class="nc" id="L222">      HoodieIndex.IndexType.valueOf(props.getProperty(INDEX_TYPE_PROP));</span>
+<span class="nc" id="L223">      return config;</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

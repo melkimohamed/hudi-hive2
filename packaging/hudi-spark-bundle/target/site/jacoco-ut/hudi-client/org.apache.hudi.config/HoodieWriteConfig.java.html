@@ -1,0 +1,772 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieWriteConfig.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-client</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.config</a> &gt; <span class="el_source">HoodieWriteConfig.java</span></div><h1>HoodieWriteConfig.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.config;
+
+import org.apache.hudi.client.HoodieWriteClient;
+import org.apache.hudi.client.WriteStatus;
+import org.apache.hudi.common.model.HoodieCleaningPolicy;
+import org.apache.hudi.common.model.TimelineLayoutVersion;
+import org.apache.hudi.common.table.view.FileSystemViewStorageConfig;
+import org.apache.hudi.common.util.ConsistencyGuardConfig;
+import org.apache.hudi.common.util.ReflectionUtils;
+import org.apache.hudi.index.HoodieIndex;
+import org.apache.hudi.table.compact.strategy.CompactionStrategy;
+import org.apache.hudi.metrics.MetricsReporterType;
+
+import org.apache.parquet.hadoop.metadata.CompressionCodecName;
+import org.apache.spark.storage.StorageLevel;
+
+import javax.annotation.concurrent.Immutable;
+
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Properties;
+
+/**
+ * Class storing configs for the {@link HoodieWriteClient}.
+ */
+@Immutable
+public class HoodieWriteConfig extends DefaultHoodieConfig {
+
+  public static final String TABLE_NAME = &quot;hoodie.table.name&quot;;
+  private static final String TIMELINE_LAYOUT_VERSION = &quot;hoodie.timeline.layout.version&quot;;
+  private static final String BASE_PATH_PROP = &quot;hoodie.base.path&quot;;
+  private static final String AVRO_SCHEMA = &quot;hoodie.avro.schema&quot;;
+  private static final String DEFAULT_PARALLELISM = &quot;1500&quot;;
+  private static final String INSERT_PARALLELISM = &quot;hoodie.insert.shuffle.parallelism&quot;;
+  private static final String BULKINSERT_PARALLELISM = &quot;hoodie.bulkinsert.shuffle.parallelism&quot;;
+  private static final String UPSERT_PARALLELISM = &quot;hoodie.upsert.shuffle.parallelism&quot;;
+  private static final String DELETE_PARALLELISM = &quot;hoodie.delete.shuffle.parallelism&quot;;
+  private static final String DEFAULT_ROLLBACK_PARALLELISM = &quot;100&quot;;
+  private static final String ROLLBACK_PARALLELISM = &quot;hoodie.rollback.parallelism&quot;;
+  private static final String WRITE_BUFFER_LIMIT_BYTES = &quot;hoodie.write.buffer.limit.bytes&quot;;
+<span class="nc" id="L63">  private static final String DEFAULT_WRITE_BUFFER_LIMIT_BYTES = String.valueOf(4 * 1024 * 1024);</span>
+  private static final String COMBINE_BEFORE_INSERT_PROP = &quot;hoodie.combine.before.insert&quot;;
+  private static final String DEFAULT_COMBINE_BEFORE_INSERT = &quot;false&quot;;
+  private static final String COMBINE_BEFORE_UPSERT_PROP = &quot;hoodie.combine.before.upsert&quot;;
+  private static final String DEFAULT_COMBINE_BEFORE_UPSERT = &quot;true&quot;;
+  private static final String COMBINE_BEFORE_DELETE_PROP = &quot;hoodie.combine.before.delete&quot;;
+  private static final String DEFAULT_COMBINE_BEFORE_DELETE = &quot;true&quot;;
+  private static final String WRITE_STATUS_STORAGE_LEVEL = &quot;hoodie.write.status.storage.level&quot;;
+  private static final String DEFAULT_WRITE_STATUS_STORAGE_LEVEL = &quot;MEMORY_AND_DISK_SER&quot;;
+  private static final String HOODIE_AUTO_COMMIT_PROP = &quot;hoodie.auto.commit&quot;;
+  private static final String DEFAULT_HOODIE_AUTO_COMMIT = &quot;true&quot;;
+  private static final String HOODIE_ASSUME_DATE_PARTITIONING_PROP = &quot;hoodie.assume.date.partitioning&quot;;
+  private static final String DEFAULT_ASSUME_DATE_PARTITIONING = &quot;false&quot;;
+  private static final String HOODIE_WRITE_STATUS_CLASS_PROP = &quot;hoodie.writestatus.class&quot;;
+<span class="nc" id="L77">  private static final String DEFAULT_HOODIE_WRITE_STATUS_CLASS = WriteStatus.class.getName();</span>
+  private static final String FINALIZE_WRITE_PARALLELISM = &quot;hoodie.finalize.write.parallelism&quot;;
+  private static final String DEFAULT_FINALIZE_WRITE_PARALLELISM = DEFAULT_PARALLELISM;
+
+  private static final String EMBEDDED_TIMELINE_SERVER_ENABLED = &quot;hoodie.embed.timeline.server&quot;;
+  private static final String DEFAULT_EMBEDDED_TIMELINE_SERVER_ENABLED = &quot;false&quot;;
+
+  private static final String FAIL_ON_TIMELINE_ARCHIVING_ENABLED_PROP = &quot;hoodie.fail.on.timeline.archiving&quot;;
+  private static final String DEFAULT_FAIL_ON_TIMELINE_ARCHIVING_ENABLED = &quot;true&quot;;
+  // time between successive attempts to ensure written data's metadata is consistent on storage
+  private static final String INITIAL_CONSISTENCY_CHECK_INTERVAL_MS_PROP =
+      &quot;hoodie.consistency.check.initial_interval_ms&quot;;
+<span class="nc" id="L89">  private static long DEFAULT_INITIAL_CONSISTENCY_CHECK_INTERVAL_MS = 2000L;</span>
+
+  // max interval time
+  private static final String MAX_CONSISTENCY_CHECK_INTERVAL_MS_PROP = &quot;hoodie.consistency.check.max_interval_ms&quot;;
+<span class="nc" id="L93">  private static long DEFAULT_MAX_CONSISTENCY_CHECK_INTERVAL_MS = 300000L;</span>
+
+  // maximum number of checks, for consistency of written data. Will wait upto 256 Secs
+  private static final String MAX_CONSISTENCY_CHECKS_PROP = &quot;hoodie.consistency.check.max_checks&quot;;
+<span class="nc" id="L97">  private static int DEFAULT_MAX_CONSISTENCY_CHECKS = 7;</span>
+
+
+  private ConsistencyGuardConfig consistencyGuardConfig;
+
+  // Hoodie Write Client transparently rewrites File System View config when embedded mode is enabled
+  // We keep track of original config and rewritten config
+  private final FileSystemViewStorageConfig clientSpecifiedViewStorageConfig;
+  private FileSystemViewStorageConfig viewStorageConfig;
+
+  private HoodieWriteConfig(Properties props) {
+<span class="nc" id="L108">    super(props);</span>
+<span class="nc" id="L109">    Properties newProps = new Properties();</span>
+<span class="nc" id="L110">    newProps.putAll(props);</span>
+<span class="nc" id="L111">    this.consistencyGuardConfig = ConsistencyGuardConfig.newBuilder().fromProperties(newProps).build();</span>
+<span class="nc" id="L112">    this.clientSpecifiedViewStorageConfig = FileSystemViewStorageConfig.newBuilder().fromProperties(newProps).build();</span>
+<span class="nc" id="L113">    this.viewStorageConfig = clientSpecifiedViewStorageConfig;</span>
+<span class="nc" id="L114">  }</span>
+
+  public static HoodieWriteConfig.Builder newBuilder() {
+<span class="nc" id="L117">    return new Builder();</span>
+  }
+
+  /**
+   * base properties.
+   */
+  public String getBasePath() {
+<span class="nc" id="L124">    return props.getProperty(BASE_PATH_PROP);</span>
+  }
+
+  public String getSchema() {
+<span class="nc" id="L128">    return props.getProperty(AVRO_SCHEMA);</span>
+  }
+
+  public void setSchema(String schemaStr) {
+<span class="nc" id="L132">    props.setProperty(AVRO_SCHEMA, schemaStr);</span>
+<span class="nc" id="L133">  }</span>
+
+  public String getTableName() {
+<span class="nc" id="L136">    return props.getProperty(TABLE_NAME);</span>
+  }
+
+  public Boolean shouldAutoCommit() {
+<span class="nc" id="L140">    return Boolean.parseBoolean(props.getProperty(HOODIE_AUTO_COMMIT_PROP));</span>
+  }
+
+  public Boolean shouldAssumeDatePartitioning() {
+<span class="nc" id="L144">    return Boolean.parseBoolean(props.getProperty(HOODIE_ASSUME_DATE_PARTITIONING_PROP));</span>
+  }
+
+  public Integer getTimelineLayoutVersion() {
+<span class="nc" id="L148">    return Integer.parseInt(props.getProperty(TIMELINE_LAYOUT_VERSION));</span>
+  }
+
+  public int getBulkInsertShuffleParallelism() {
+<span class="nc" id="L152">    return Integer.parseInt(props.getProperty(BULKINSERT_PARALLELISM));</span>
+  }
+
+  public int getInsertShuffleParallelism() {
+<span class="nc" id="L156">    return Integer.parseInt(props.getProperty(INSERT_PARALLELISM));</span>
+  }
+
+  public int getUpsertShuffleParallelism() {
+<span class="nc" id="L160">    return Integer.parseInt(props.getProperty(UPSERT_PARALLELISM));</span>
+  }
+
+  public int getDeleteShuffleParallelism() {
+<span class="nc" id="L164">    return Integer.parseInt(props.getProperty(DELETE_PARALLELISM));</span>
+  }
+
+  public int getRollbackParallelism() {
+<span class="nc" id="L168">    return Integer.parseInt(props.getProperty(ROLLBACK_PARALLELISM));</span>
+  }
+
+  public int getWriteBufferLimitBytes() {
+<span class="nc" id="L172">    return Integer.parseInt(props.getProperty(WRITE_BUFFER_LIMIT_BYTES, DEFAULT_WRITE_BUFFER_LIMIT_BYTES));</span>
+  }
+
+  public boolean shouldCombineBeforeInsert() {
+<span class="nc" id="L176">    return Boolean.parseBoolean(props.getProperty(COMBINE_BEFORE_INSERT_PROP));</span>
+  }
+
+  public boolean shouldCombineBeforeUpsert() {
+<span class="nc" id="L180">    return Boolean.parseBoolean(props.getProperty(COMBINE_BEFORE_UPSERT_PROP));</span>
+  }
+
+  public boolean shouldCombineBeforeDelete() {
+<span class="nc" id="L184">    return Boolean.parseBoolean(props.getProperty(COMBINE_BEFORE_DELETE_PROP));</span>
+  }
+
+  public StorageLevel getWriteStatusStorageLevel() {
+<span class="nc" id="L188">    return StorageLevel.fromString(props.getProperty(WRITE_STATUS_STORAGE_LEVEL));</span>
+  }
+
+  public String getWriteStatusClassName() {
+<span class="nc" id="L192">    return props.getProperty(HOODIE_WRITE_STATUS_CLASS_PROP);</span>
+  }
+
+  public int getFinalizeWriteParallelism() {
+<span class="nc" id="L196">    return Integer.parseInt(props.getProperty(FINALIZE_WRITE_PARALLELISM));</span>
+  }
+
+  public boolean isEmbeddedTimelineServerEnabled() {
+<span class="nc" id="L200">    return Boolean.parseBoolean(props.getProperty(EMBEDDED_TIMELINE_SERVER_ENABLED));</span>
+  }
+
+  public boolean isFailOnTimelineArchivingEnabled() {
+<span class="nc" id="L204">    return Boolean.parseBoolean(props.getProperty(FAIL_ON_TIMELINE_ARCHIVING_ENABLED_PROP));</span>
+  }
+
+  public int getMaxConsistencyChecks() {
+<span class="nc" id="L208">    return Integer.parseInt(props.getProperty(MAX_CONSISTENCY_CHECKS_PROP));</span>
+  }
+
+  public int getInitialConsistencyCheckIntervalMs() {
+<span class="nc" id="L212">    return Integer.parseInt(props.getProperty(INITIAL_CONSISTENCY_CHECK_INTERVAL_MS_PROP));</span>
+  }
+
+  public int getMaxConsistencyCheckIntervalMs() {
+<span class="nc" id="L216">    return Integer.parseInt(props.getProperty(MAX_CONSISTENCY_CHECK_INTERVAL_MS_PROP));</span>
+  }
+
+  /**
+   * compaction properties.
+   */
+  public HoodieCleaningPolicy getCleanerPolicy() {
+<span class="nc" id="L223">    return HoodieCleaningPolicy.valueOf(props.getProperty(HoodieCompactionConfig.CLEANER_POLICY_PROP));</span>
+  }
+
+  public int getCleanerFileVersionsRetained() {
+<span class="nc" id="L227">    return Integer.parseInt(props.getProperty(HoodieCompactionConfig.CLEANER_FILE_VERSIONS_RETAINED_PROP));</span>
+  }
+
+  public int getCleanerCommitsRetained() {
+<span class="nc" id="L231">    return Integer.parseInt(props.getProperty(HoodieCompactionConfig.CLEANER_COMMITS_RETAINED_PROP));</span>
+  }
+
+  public int getMaxCommitsToKeep() {
+<span class="nc" id="L235">    return Integer.parseInt(props.getProperty(HoodieCompactionConfig.MAX_COMMITS_TO_KEEP_PROP));</span>
+  }
+
+  public int getMinCommitsToKeep() {
+<span class="nc" id="L239">    return Integer.parseInt(props.getProperty(HoodieCompactionConfig.MIN_COMMITS_TO_KEEP_PROP));</span>
+  }
+
+  public int getParquetSmallFileLimit() {
+<span class="nc" id="L243">    return Integer.parseInt(props.getProperty(HoodieCompactionConfig.PARQUET_SMALL_FILE_LIMIT_BYTES));</span>
+  }
+
+  public int getCopyOnWriteInsertSplitSize() {
+<span class="nc" id="L247">    return Integer.parseInt(props.getProperty(HoodieCompactionConfig.COPY_ON_WRITE_TABLE_INSERT_SPLIT_SIZE));</span>
+  }
+
+  public int getCopyOnWriteRecordSizeEstimate() {
+<span class="nc" id="L251">    return Integer.parseInt(props.getProperty(HoodieCompactionConfig.COPY_ON_WRITE_TABLE_RECORD_SIZE_ESTIMATE));</span>
+  }
+
+  public boolean shouldAutoTuneInsertSplits() {
+<span class="nc" id="L255">    return Boolean.parseBoolean(props.getProperty(HoodieCompactionConfig.COPY_ON_WRITE_TABLE_AUTO_SPLIT_INSERTS));</span>
+  }
+
+  public int getCleanerParallelism() {
+<span class="nc" id="L259">    return Integer.parseInt(props.getProperty(HoodieCompactionConfig.CLEANER_PARALLELISM));</span>
+  }
+
+  public boolean isAutoClean() {
+<span class="nc" id="L263">    return Boolean.parseBoolean(props.getProperty(HoodieCompactionConfig.AUTO_CLEAN_PROP));</span>
+  }
+
+  public boolean incrementalCleanerModeEnabled() {
+<span class="nc" id="L267">    return Boolean.parseBoolean(props.getProperty(HoodieCompactionConfig.CLEANER_INCREMENTAL_MODE));</span>
+  }
+
+  public boolean isInlineCompaction() {
+<span class="nc" id="L271">    return Boolean.parseBoolean(props.getProperty(HoodieCompactionConfig.INLINE_COMPACT_PROP));</span>
+  }
+
+  public int getInlineCompactDeltaCommitMax() {
+<span class="nc" id="L275">    return Integer.parseInt(props.getProperty(HoodieCompactionConfig.INLINE_COMPACT_NUM_DELTA_COMMITS_PROP));</span>
+  }
+
+  public CompactionStrategy getCompactionStrategy() {
+<span class="nc" id="L279">    return ReflectionUtils.loadClass(props.getProperty(HoodieCompactionConfig.COMPACTION_STRATEGY_PROP));</span>
+  }
+
+  public Long getTargetIOPerCompactionInMB() {
+<span class="nc" id="L283">    return Long.parseLong(props.getProperty(HoodieCompactionConfig.TARGET_IO_PER_COMPACTION_IN_MB_PROP));</span>
+  }
+
+  public Boolean getCompactionLazyBlockReadEnabled() {
+<span class="nc" id="L287">    return Boolean.valueOf(props.getProperty(HoodieCompactionConfig.COMPACTION_LAZY_BLOCK_READ_ENABLED_PROP));</span>
+  }
+
+  public Boolean getCompactionReverseLogReadEnabled() {
+<span class="nc" id="L291">    return Boolean.valueOf(props.getProperty(HoodieCompactionConfig.COMPACTION_REVERSE_LOG_READ_ENABLED_PROP));</span>
+  }
+
+  public String getPayloadClass() {
+<span class="nc" id="L295">    return props.getProperty(HoodieCompactionConfig.PAYLOAD_CLASS_PROP);</span>
+  }
+
+  public int getTargetPartitionsPerDayBasedCompaction() {
+<span class="nc" id="L299">    return Integer.parseInt(props.getProperty(HoodieCompactionConfig.TARGET_PARTITIONS_PER_DAYBASED_COMPACTION_PROP));</span>
+  }
+
+  public int getCommitArchivalBatchSize() {
+<span class="nc" id="L303">    return Integer.parseInt(props.getProperty(HoodieCompactionConfig.COMMITS_ARCHIVAL_BATCH_SIZE_PROP));</span>
+  }
+
+  /**
+   * index properties.
+   */
+  public HoodieIndex.IndexType getIndexType() {
+<span class="nc" id="L310">    return HoodieIndex.IndexType.valueOf(props.getProperty(HoodieIndexConfig.INDEX_TYPE_PROP));</span>
+  }
+
+  public int getBloomFilterNumEntries() {
+<span class="nc" id="L314">    return Integer.parseInt(props.getProperty(HoodieIndexConfig.BLOOM_FILTER_NUM_ENTRIES));</span>
+  }
+
+  public double getBloomFilterFPP() {
+<span class="nc" id="L318">    return Double.parseDouble(props.getProperty(HoodieIndexConfig.BLOOM_FILTER_FPP));</span>
+  }
+
+  public String getHbaseZkQuorum() {
+<span class="nc" id="L322">    return props.getProperty(HoodieHBaseIndexConfig.HBASE_ZKQUORUM_PROP);</span>
+  }
+
+  public int getHbaseZkPort() {
+<span class="nc" id="L326">    return Integer.parseInt(props.getProperty(HoodieHBaseIndexConfig.HBASE_ZKPORT_PROP));</span>
+  }
+
+  public String getHBaseZkZnodeParent() {
+<span class="nc" id="L330">    return props.getProperty(HoodieIndexConfig.HBASE_ZK_ZNODEPARENT);</span>
+  }
+
+  public String getHbaseTableName() {
+<span class="nc" id="L334">    return props.getProperty(HoodieHBaseIndexConfig.HBASE_TABLENAME_PROP);</span>
+  }
+
+  public int getHbaseIndexGetBatchSize() {
+<span class="nc" id="L338">    return Integer.parseInt(props.getProperty(HoodieHBaseIndexConfig.HBASE_GET_BATCH_SIZE_PROP));</span>
+  }
+
+  public int getHbaseIndexPutBatchSize() {
+<span class="nc" id="L342">    return Integer.parseInt(props.getProperty(HoodieHBaseIndexConfig.HBASE_PUT_BATCH_SIZE_PROP));</span>
+  }
+
+  public Boolean getHbaseIndexPutBatchSizeAutoCompute() {
+<span class="nc" id="L346">    return Boolean.valueOf(props.getProperty(HoodieHBaseIndexConfig.HBASE_PUT_BATCH_SIZE_AUTO_COMPUTE_PROP));</span>
+  }
+
+  public String getHBaseQPSResourceAllocatorClass() {
+<span class="nc" id="L350">    return props.getProperty(HoodieHBaseIndexConfig.HBASE_INDEX_QPS_ALLOCATOR_CLASS);</span>
+  }
+
+  public String getHBaseQPSZKnodePath() {
+<span class="nc" id="L354">    return props.getProperty(HoodieHBaseIndexConfig.HBASE_ZK_PATH_QPS_ROOT);</span>
+  }
+
+  public String getHBaseZkZnodeSessionTimeout() {
+<span class="nc" id="L358">    return props.getProperty(HoodieHBaseIndexConfig.HOODIE_INDEX_HBASE_ZK_SESSION_TIMEOUT_MS);</span>
+  }
+
+  public String getHBaseZkZnodeConnectionTimeout() {
+<span class="nc" id="L362">    return props.getProperty(HoodieHBaseIndexConfig.HOODIE_INDEX_HBASE_ZK_CONNECTION_TIMEOUT_MS);</span>
+  }
+
+  public boolean getHBaseIndexShouldComputeQPSDynamically() {
+<span class="nc" id="L366">    return Boolean.parseBoolean(props.getProperty(HoodieHBaseIndexConfig.HOODIE_INDEX_COMPUTE_QPS_DYNAMICALLY));</span>
+  }
+
+  public int getHBaseIndexDesiredPutsTime() {
+<span class="nc" id="L370">    return Integer.parseInt(props.getProperty(HoodieHBaseIndexConfig.HOODIE_INDEX_DESIRED_PUTS_TIME_IN_SECS));</span>
+  }
+
+  public String getBloomFilterType() {
+<span class="nc" id="L374">    return props.getProperty(HoodieIndexConfig.BLOOM_INDEX_FILTER_TYPE);</span>
+  }
+
+  public int getDynamicBloomFilterMaxNumEntries() {
+<span class="nc" id="L378">    return Integer.parseInt(props.getProperty(HoodieIndexConfig.HOODIE_BLOOM_INDEX_FILTER_DYNAMIC_MAX_ENTRIES));</span>
+  }
+
+  /**
+   * Fraction of the global share of QPS that should be allocated to this job. Let's say there are 3 jobs which have
+   * input size in terms of number of rows required for HbaseIndexing as x, 2x, 3x respectively. Then this fraction for
+   * the jobs would be (0.17) 1/6, 0.33 (2/6) and 0.5 (3/6) respectively.
+   */
+  public float getHbaseIndexQPSFraction() {
+<span class="nc" id="L387">    return Float.parseFloat(props.getProperty(HoodieHBaseIndexConfig.HBASE_QPS_FRACTION_PROP));</span>
+  }
+
+  public float getHBaseIndexMinQPSFraction() {
+<span class="nc" id="L391">    return Float.parseFloat(props.getProperty(HoodieHBaseIndexConfig.HBASE_MIN_QPS_FRACTION_PROP));</span>
+  }
+
+  public float getHBaseIndexMaxQPSFraction() {
+<span class="nc" id="L395">    return Float.parseFloat(props.getProperty(HoodieHBaseIndexConfig.HBASE_MAX_QPS_FRACTION_PROP));</span>
+  }
+
+  /**
+   * This should be same across various jobs. This is intended to limit the aggregate QPS generated across various
+   * Hoodie jobs to an Hbase Region Server
+   */
+  public int getHbaseIndexMaxQPSPerRegionServer() {
+<span class="nc" id="L403">    return Integer.parseInt(props.getProperty(HoodieHBaseIndexConfig.HBASE_MAX_QPS_PER_REGION_SERVER_PROP));</span>
+  }
+
+  public int getBloomIndexParallelism() {
+<span class="nc" id="L407">    return Integer.parseInt(props.getProperty(HoodieIndexConfig.BLOOM_INDEX_PARALLELISM_PROP));</span>
+  }
+
+  public boolean getBloomIndexPruneByRanges() {
+<span class="nc" id="L411">    return Boolean.parseBoolean(props.getProperty(HoodieIndexConfig.BLOOM_INDEX_PRUNE_BY_RANGES_PROP));</span>
+  }
+
+  public boolean getBloomIndexUseCaching() {
+<span class="nc" id="L415">    return Boolean.parseBoolean(props.getProperty(HoodieIndexConfig.BLOOM_INDEX_USE_CACHING_PROP));</span>
+  }
+
+  public boolean useBloomIndexTreebasedFilter() {
+<span class="nc" id="L419">    return Boolean.parseBoolean(props.getProperty(HoodieIndexConfig.BLOOM_INDEX_TREE_BASED_FILTER_PROP));</span>
+  }
+
+  public boolean useBloomIndexBucketizedChecking() {
+<span class="nc" id="L423">    return Boolean.parseBoolean(props.getProperty(HoodieIndexConfig.BLOOM_INDEX_BUCKETIZED_CHECKING_PROP));</span>
+  }
+
+  public int getBloomIndexKeysPerBucket() {
+<span class="nc" id="L427">    return Integer.parseInt(props.getProperty(HoodieIndexConfig.BLOOM_INDEX_KEYS_PER_BUCKET_PROP));</span>
+  }
+
+  public StorageLevel getBloomIndexInputStorageLevel() {
+<span class="nc" id="L431">    return StorageLevel.fromString(props.getProperty(HoodieIndexConfig.BLOOM_INDEX_INPUT_STORAGE_LEVEL));</span>
+  }
+
+  public boolean getBloomIndexUpdatePartitionPath() {
+<span class="nc" id="L435">    return Boolean.parseBoolean(props.getProperty(HoodieIndexConfig.BLOOM_INDEX_UPDATE_PARTITION_PATH));</span>
+  }
+
+  /**
+   * storage properties.
+   */
+  public long getParquetMaxFileSize() {
+<span class="nc" id="L442">    return Long.parseLong(props.getProperty(HoodieStorageConfig.PARQUET_FILE_MAX_BYTES));</span>
+  }
+
+  public int getParquetBlockSize() {
+<span class="nc" id="L446">    return Integer.parseInt(props.getProperty(HoodieStorageConfig.PARQUET_BLOCK_SIZE_BYTES));</span>
+  }
+
+  public int getParquetPageSize() {
+<span class="nc" id="L450">    return Integer.parseInt(props.getProperty(HoodieStorageConfig.PARQUET_PAGE_SIZE_BYTES));</span>
+  }
+
+  public int getLogFileDataBlockMaxSize() {
+<span class="nc" id="L454">    return Integer.parseInt(props.getProperty(HoodieStorageConfig.LOGFILE_DATA_BLOCK_SIZE_MAX_BYTES));</span>
+  }
+
+  public int getLogFileMaxSize() {
+<span class="nc" id="L458">    return Integer.parseInt(props.getProperty(HoodieStorageConfig.LOGFILE_SIZE_MAX_BYTES));</span>
+  }
+
+  public double getParquetCompressionRatio() {
+<span class="nc" id="L462">    return Double.parseDouble(props.getProperty(HoodieStorageConfig.PARQUET_COMPRESSION_RATIO));</span>
+  }
+
+  public CompressionCodecName getParquetCompressionCodec() {
+<span class="nc" id="L466">    return CompressionCodecName.fromConf(props.getProperty(HoodieStorageConfig.PARQUET_COMPRESSION_CODEC));</span>
+  }
+
+  public double getLogFileToParquetCompressionRatio() {
+<span class="nc" id="L470">    return Double.parseDouble(props.getProperty(HoodieStorageConfig.LOGFILE_TO_PARQUET_COMPRESSION_RATIO));</span>
+  }
+
+  /**
+   * metrics properties.
+   */
+  public boolean isMetricsOn() {
+<span class="nc" id="L477">    return Boolean.parseBoolean(props.getProperty(HoodieMetricsConfig.METRICS_ON));</span>
+  }
+
+  public MetricsReporterType getMetricsReporterType() {
+<span class="nc" id="L481">    return MetricsReporterType.valueOf(props.getProperty(HoodieMetricsConfig.METRICS_REPORTER_TYPE));</span>
+  }
+
+  public String getGraphiteServerHost() {
+<span class="nc" id="L485">    return props.getProperty(HoodieMetricsConfig.GRAPHITE_SERVER_HOST);</span>
+  }
+
+  public int getGraphiteServerPort() {
+<span class="nc" id="L489">    return Integer.parseInt(props.getProperty(HoodieMetricsConfig.GRAPHITE_SERVER_PORT));</span>
+  }
+
+  public String getGraphiteMetricPrefix() {
+<span class="nc" id="L493">    return props.getProperty(HoodieMetricsConfig.GRAPHITE_METRIC_PREFIX);</span>
+  }
+
+  public String getJmxHost() {
+<span class="nc" id="L497">    return props.getProperty(HoodieMetricsConfig.JMX_HOST);</span>
+  }
+
+  public int getJmxPort() {
+<span class="nc" id="L501">    return Integer.parseInt(props.getProperty(HoodieMetricsConfig.JMX_PORT));</span>
+  }
+
+  /**
+   * memory configs.
+   */
+  public Double getMaxMemoryFractionPerPartitionMerge() {
+<span class="nc" id="L508">    return Double.valueOf(props.getProperty(HoodieMemoryConfig.MAX_MEMORY_FRACTION_FOR_MERGE_PROP));</span>
+  }
+
+  public Double getMaxMemoryFractionPerCompaction() {
+<span class="nc" id="L512">    return Double.valueOf(props.getProperty(HoodieMemoryConfig.MAX_MEMORY_FRACTION_FOR_COMPACTION_PROP));</span>
+  }
+
+  public Long getMaxMemoryPerPartitionMerge() {
+<span class="nc" id="L516">    return Long.valueOf(props.getProperty(HoodieMemoryConfig.MAX_MEMORY_FOR_MERGE_PROP));</span>
+  }
+
+  public Long getMaxMemoryPerCompaction() {
+<span class="nc" id="L520">    return Long.valueOf(props.getProperty(HoodieMemoryConfig.MAX_MEMORY_FOR_COMPACTION_PROP));</span>
+  }
+
+  public int getMaxDFSStreamBufferSize() {
+<span class="nc" id="L524">    return Integer.parseInt(props.getProperty(HoodieMemoryConfig.MAX_DFS_STREAM_BUFFER_SIZE_PROP));</span>
+  }
+
+  public String getSpillableMapBasePath() {
+<span class="nc" id="L528">    return props.getProperty(HoodieMemoryConfig.SPILLABLE_MAP_BASE_PATH_PROP);</span>
+  }
+
+  public double getWriteStatusFailureFraction() {
+<span class="nc" id="L532">    return Double.parseDouble(props.getProperty(HoodieMemoryConfig.WRITESTATUS_FAILURE_FRACTION_PROP));</span>
+  }
+
+  public ConsistencyGuardConfig getConsistencyGuardConfig() {
+<span class="nc" id="L536">    return consistencyGuardConfig;</span>
+  }
+
+  public void setConsistencyGuardConfig(ConsistencyGuardConfig consistencyGuardConfig) {
+<span class="nc" id="L540">    this.consistencyGuardConfig = consistencyGuardConfig;</span>
+<span class="nc" id="L541">  }</span>
+
+  public FileSystemViewStorageConfig getViewStorageConfig() {
+<span class="nc" id="L544">    return viewStorageConfig;</span>
+  }
+
+  public void setViewStorageConfig(FileSystemViewStorageConfig viewStorageConfig) {
+<span class="nc" id="L548">    this.viewStorageConfig = viewStorageConfig;</span>
+<span class="nc" id="L549">  }</span>
+
+  public void resetViewStorageConfig() {
+<span class="nc" id="L552">    this.setViewStorageConfig(getClientSpecifiedViewStorageConfig());</span>
+<span class="nc" id="L553">  }</span>
+
+  public FileSystemViewStorageConfig getClientSpecifiedViewStorageConfig() {
+<span class="nc" id="L556">    return clientSpecifiedViewStorageConfig;</span>
+  }
+
+<span class="nc" id="L559">  public static class Builder {</span>
+
+<span class="nc" id="L561">    private final Properties props = new Properties();</span>
+<span class="nc" id="L562">    private boolean isIndexConfigSet = false;</span>
+<span class="nc" id="L563">    private boolean isStorageConfigSet = false;</span>
+<span class="nc" id="L564">    private boolean isCompactionConfigSet = false;</span>
+<span class="nc" id="L565">    private boolean isMetricsConfigSet = false;</span>
+<span class="nc" id="L566">    private boolean isMemoryConfigSet = false;</span>
+<span class="nc" id="L567">    private boolean isViewConfigSet = false;</span>
+<span class="nc" id="L568">    private boolean isConsistencyGuardSet = false;</span>
+
+    public Builder fromFile(File propertiesFile) throws IOException {
+<span class="nc" id="L571">      try (FileReader reader = new FileReader(propertiesFile)) {</span>
+<span class="nc" id="L572">        this.props.load(reader);</span>
+<span class="nc" id="L573">        return this;</span>
+      }
+    }
+
+    public Builder fromInputStream(InputStream inputStream) throws IOException {
+      try {
+<span class="nc" id="L579">        this.props.load(inputStream);</span>
+<span class="nc" id="L580">        return this;</span>
+      } finally {
+<span class="nc" id="L582">        inputStream.close();</span>
+      }
+    }
+
+    public Builder withProps(Map kvprops) {
+<span class="nc" id="L587">      props.putAll(kvprops);</span>
+<span class="nc" id="L588">      return this;</span>
+    }
+
+    public Builder withPath(String basePath) {
+<span class="nc" id="L592">      props.setProperty(BASE_PATH_PROP, basePath);</span>
+<span class="nc" id="L593">      return this;</span>
+    }
+
+    public Builder withSchema(String schemaStr) {
+<span class="nc" id="L597">      props.setProperty(AVRO_SCHEMA, schemaStr);</span>
+<span class="nc" id="L598">      return this;</span>
+    }
+
+    public Builder forTable(String tableName) {
+<span class="nc" id="L602">      props.setProperty(TABLE_NAME, tableName);</span>
+<span class="nc" id="L603">      return this;</span>
+    }
+
+    public Builder withTimelineLayoutVersion(int version) {
+<span class="nc" id="L607">      props.setProperty(TIMELINE_LAYOUT_VERSION, String.valueOf(version));</span>
+<span class="nc" id="L608">      return this;</span>
+    }
+
+    public Builder withBulkInsertParallelism(int bulkInsertParallelism) {
+<span class="nc" id="L612">      props.setProperty(BULKINSERT_PARALLELISM, String.valueOf(bulkInsertParallelism));</span>
+<span class="nc" id="L613">      return this;</span>
+    }
+
+    public Builder withParallelism(int insertShuffleParallelism, int upsertShuffleParallelism) {
+<span class="nc" id="L617">      props.setProperty(INSERT_PARALLELISM, String.valueOf(insertShuffleParallelism));</span>
+<span class="nc" id="L618">      props.setProperty(UPSERT_PARALLELISM, String.valueOf(upsertShuffleParallelism));</span>
+<span class="nc" id="L619">      return this;</span>
+    }
+
+    public Builder withRollbackParallelism(int rollbackParallelism) {
+<span class="nc" id="L623">      props.setProperty(ROLLBACK_PARALLELISM, String.valueOf(rollbackParallelism));</span>
+<span class="nc" id="L624">      return this;</span>
+    }
+
+    public Builder withWriteBufferLimitBytes(int writeBufferLimit) {
+<span class="nc" id="L628">      props.setProperty(WRITE_BUFFER_LIMIT_BYTES, String.valueOf(writeBufferLimit));</span>
+<span class="nc" id="L629">      return this;</span>
+    }
+
+    public Builder combineInput(boolean onInsert, boolean onUpsert) {
+<span class="nc" id="L633">      props.setProperty(COMBINE_BEFORE_INSERT_PROP, String.valueOf(onInsert));</span>
+<span class="nc" id="L634">      props.setProperty(COMBINE_BEFORE_UPSERT_PROP, String.valueOf(onUpsert));</span>
+<span class="nc" id="L635">      return this;</span>
+    }
+
+    public Builder withWriteStatusStorageLevel(String level) {
+<span class="nc" id="L639">      props.setProperty(WRITE_STATUS_STORAGE_LEVEL, level);</span>
+<span class="nc" id="L640">      return this;</span>
+    }
+
+    public Builder withIndexConfig(HoodieIndexConfig indexConfig) {
+<span class="nc" id="L644">      props.putAll(indexConfig.getProps());</span>
+<span class="nc" id="L645">      isIndexConfigSet = true;</span>
+<span class="nc" id="L646">      return this;</span>
+    }
+
+    public Builder withStorageConfig(HoodieStorageConfig storageConfig) {
+<span class="nc" id="L650">      props.putAll(storageConfig.getProps());</span>
+<span class="nc" id="L651">      isStorageConfigSet = true;</span>
+<span class="nc" id="L652">      return this;</span>
+    }
+
+    public Builder withCompactionConfig(HoodieCompactionConfig compactionConfig) {
+<span class="nc" id="L656">      props.putAll(compactionConfig.getProps());</span>
+<span class="nc" id="L657">      isCompactionConfigSet = true;</span>
+<span class="nc" id="L658">      return this;</span>
+    }
+
+    public Builder withMetricsConfig(HoodieMetricsConfig metricsConfig) {
+<span class="nc" id="L662">      props.putAll(metricsConfig.getProps());</span>
+<span class="nc" id="L663">      isMetricsConfigSet = true;</span>
+<span class="nc" id="L664">      return this;</span>
+    }
+
+    public Builder withMemoryConfig(HoodieMemoryConfig memoryConfig) {
+<span class="nc" id="L668">      props.putAll(memoryConfig.getProps());</span>
+<span class="nc" id="L669">      isMemoryConfigSet = true;</span>
+<span class="nc" id="L670">      return this;</span>
+    }
+
+    public Builder withAutoCommit(boolean autoCommit) {
+<span class="nc" id="L674">      props.setProperty(HOODIE_AUTO_COMMIT_PROP, String.valueOf(autoCommit));</span>
+<span class="nc" id="L675">      return this;</span>
+    }
+
+    public Builder withAssumeDatePartitioning(boolean assumeDatePartitioning) {
+<span class="nc" id="L679">      props.setProperty(HOODIE_ASSUME_DATE_PARTITIONING_PROP, String.valueOf(assumeDatePartitioning));</span>
+<span class="nc" id="L680">      return this;</span>
+    }
+
+    public Builder withWriteStatusClass(Class&lt;? extends WriteStatus&gt; writeStatusClass) {
+<span class="nc" id="L684">      props.setProperty(HOODIE_WRITE_STATUS_CLASS_PROP, writeStatusClass.getName());</span>
+<span class="nc" id="L685">      return this;</span>
+    }
+
+    public Builder withFileSystemViewConfig(FileSystemViewStorageConfig viewStorageConfig) {
+<span class="nc" id="L689">      props.putAll(viewStorageConfig.getProps());</span>
+<span class="nc" id="L690">      isViewConfigSet = true;</span>
+<span class="nc" id="L691">      return this;</span>
+    }
+
+    public Builder withConsistencyGuardConfig(ConsistencyGuardConfig consistencyGuardConfig) {
+<span class="nc" id="L695">      props.putAll(consistencyGuardConfig.getProps());</span>
+<span class="nc" id="L696">      isConsistencyGuardSet = true;</span>
+<span class="nc" id="L697">      return this;</span>
+    }
+
+    public Builder withFinalizeWriteParallelism(int parallelism) {
+<span class="nc" id="L701">      props.setProperty(FINALIZE_WRITE_PARALLELISM, String.valueOf(parallelism));</span>
+<span class="nc" id="L702">      return this;</span>
+    }
+
+    public Builder withEmbeddedTimelineServerEnabled(boolean enabled) {
+<span class="nc" id="L706">      props.setProperty(EMBEDDED_TIMELINE_SERVER_ENABLED, String.valueOf(enabled));</span>
+<span class="nc" id="L707">      return this;</span>
+    }
+
+    public HoodieWriteConfig build() {
+      // Check for mandatory properties
+<span class="nc bnc" id="L712" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(INSERT_PARALLELISM), INSERT_PARALLELISM, DEFAULT_PARALLELISM);</span>
+<span class="nc bnc" id="L713" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(BULKINSERT_PARALLELISM), BULKINSERT_PARALLELISM,</span>
+          DEFAULT_PARALLELISM);
+<span class="nc bnc" id="L715" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(UPSERT_PARALLELISM), UPSERT_PARALLELISM, DEFAULT_PARALLELISM);</span>
+<span class="nc bnc" id="L716" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(DELETE_PARALLELISM), DELETE_PARALLELISM, DEFAULT_PARALLELISM);</span>
+<span class="nc bnc" id="L717" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(ROLLBACK_PARALLELISM), ROLLBACK_PARALLELISM,</span>
+          DEFAULT_ROLLBACK_PARALLELISM);
+<span class="nc bnc" id="L719" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(COMBINE_BEFORE_INSERT_PROP), COMBINE_BEFORE_INSERT_PROP,</span>
+          DEFAULT_COMBINE_BEFORE_INSERT);
+<span class="nc bnc" id="L721" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(COMBINE_BEFORE_UPSERT_PROP), COMBINE_BEFORE_UPSERT_PROP,</span>
+          DEFAULT_COMBINE_BEFORE_UPSERT);
+<span class="nc bnc" id="L723" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(COMBINE_BEFORE_DELETE_PROP), COMBINE_BEFORE_DELETE_PROP,</span>
+          DEFAULT_COMBINE_BEFORE_DELETE);
+<span class="nc bnc" id="L725" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(WRITE_STATUS_STORAGE_LEVEL), WRITE_STATUS_STORAGE_LEVEL,</span>
+          DEFAULT_WRITE_STATUS_STORAGE_LEVEL);
+<span class="nc bnc" id="L727" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(HOODIE_AUTO_COMMIT_PROP), HOODIE_AUTO_COMMIT_PROP,</span>
+          DEFAULT_HOODIE_AUTO_COMMIT);
+<span class="nc bnc" id="L729" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(HOODIE_ASSUME_DATE_PARTITIONING_PROP),</span>
+          HOODIE_ASSUME_DATE_PARTITIONING_PROP, DEFAULT_ASSUME_DATE_PARTITIONING);
+<span class="nc bnc" id="L731" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(HOODIE_WRITE_STATUS_CLASS_PROP), HOODIE_WRITE_STATUS_CLASS_PROP,</span>
+<span class="nc" id="L732">          DEFAULT_HOODIE_WRITE_STATUS_CLASS);</span>
+<span class="nc bnc" id="L733" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(FINALIZE_WRITE_PARALLELISM), FINALIZE_WRITE_PARALLELISM,</span>
+          DEFAULT_FINALIZE_WRITE_PARALLELISM);
+<span class="nc bnc" id="L735" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(EMBEDDED_TIMELINE_SERVER_ENABLED),</span>
+          EMBEDDED_TIMELINE_SERVER_ENABLED, DEFAULT_EMBEDDED_TIMELINE_SERVER_ENABLED);
+<span class="nc bnc" id="L737" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(INITIAL_CONSISTENCY_CHECK_INTERVAL_MS_PROP),</span>
+<span class="nc" id="L738">          INITIAL_CONSISTENCY_CHECK_INTERVAL_MS_PROP, String.valueOf(DEFAULT_INITIAL_CONSISTENCY_CHECK_INTERVAL_MS));</span>
+<span class="nc bnc" id="L739" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(MAX_CONSISTENCY_CHECK_INTERVAL_MS_PROP),</span>
+<span class="nc" id="L740">          MAX_CONSISTENCY_CHECK_INTERVAL_MS_PROP, String.valueOf(DEFAULT_MAX_CONSISTENCY_CHECK_INTERVAL_MS));</span>
+<span class="nc bnc" id="L741" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(MAX_CONSISTENCY_CHECKS_PROP), MAX_CONSISTENCY_CHECKS_PROP,</span>
+<span class="nc" id="L742">          String.valueOf(DEFAULT_MAX_CONSISTENCY_CHECKS));</span>
+<span class="nc bnc" id="L743" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(FAIL_ON_TIMELINE_ARCHIVING_ENABLED_PROP),</span>
+          FAIL_ON_TIMELINE_ARCHIVING_ENABLED_PROP, DEFAULT_FAIL_ON_TIMELINE_ARCHIVING_ENABLED);
+
+      // Make sure the props is propagated
+<span class="nc bnc" id="L747" title="All 2 branches missed.">      setDefaultOnCondition(props, !isIndexConfigSet, HoodieIndexConfig.newBuilder().fromProperties(props).build());</span>
+<span class="nc bnc" id="L748" title="All 2 branches missed.">      setDefaultOnCondition(props, !isStorageConfigSet, HoodieStorageConfig.newBuilder().fromProperties(props).build());</span>
+<span class="nc bnc" id="L749" title="All 2 branches missed.">      setDefaultOnCondition(props, !isCompactionConfigSet,</span>
+<span class="nc" id="L750">          HoodieCompactionConfig.newBuilder().fromProperties(props).build());</span>
+<span class="nc bnc" id="L751" title="All 2 branches missed.">      setDefaultOnCondition(props, !isMetricsConfigSet, HoodieMetricsConfig.newBuilder().fromProperties(props).build());</span>
+<span class="nc bnc" id="L752" title="All 2 branches missed.">      setDefaultOnCondition(props, !isMemoryConfigSet, HoodieMemoryConfig.newBuilder().fromProperties(props).build());</span>
+<span class="nc bnc" id="L753" title="All 2 branches missed.">      setDefaultOnCondition(props, !isViewConfigSet,</span>
+<span class="nc" id="L754">          FileSystemViewStorageConfig.newBuilder().fromProperties(props).build());</span>
+<span class="nc bnc" id="L755" title="All 2 branches missed.">      setDefaultOnCondition(props, !isConsistencyGuardSet,</span>
+<span class="nc" id="L756">          ConsistencyGuardConfig.newBuilder().fromProperties(props).build());</span>
+
+<span class="nc bnc" id="L758" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(TIMELINE_LAYOUT_VERSION), TIMELINE_LAYOUT_VERSION,</span>
+<span class="nc" id="L759">          String.valueOf(TimelineLayoutVersion.CURR_VERSION));</span>
+<span class="nc" id="L760">      String layoutVersion = props.getProperty(TIMELINE_LAYOUT_VERSION);</span>
+      // Ensure Layout Version is good
+<span class="nc" id="L762">      new TimelineLayoutVersion(Integer.parseInt(layoutVersion));</span>
+
+
+      // Build WriteConfig at the end
+<span class="nc" id="L766">      HoodieWriteConfig config = new HoodieWriteConfig(props);</span>
+<span class="nc" id="L767">      Objects.requireNonNull(config.getBasePath());</span>
+<span class="nc" id="L768">      return config;</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

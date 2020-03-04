@@ -1,0 +1,45 @@
+
+*****************************************************
+Summary
+-------
+Generated at: 2020-03-04T21:53:14+01:00
+
+Notes: 0
+Binaries: 0
+Archives: 0
+Standards: 19
+
+Apache Licensed: 0
+Generated Documents: 0
+
+JavaDocs are generated, thus a license header is optional.
+Generated files do not require license headers.
+
+0 Unknown Licenses
+
+*****************************************************
+  Files with Apache License headers will be marked AL
+  Binary files (which do not require any license headers) will be marked B
+  Compressed archives will be marked A
+  Notices, licenses etc. will be marked N
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hive/pom.xml
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hive/run_sync_tool.sh
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hive/src/assembly/src.xml
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hive/src/main/java/org/apache/hudi/hive/HiveSyncConfig.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hive/src/main/java/org/apache/hudi/hive/HiveSyncTool.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hive/src/main/java/org/apache/hudi/hive/HoodieHiveClient.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hive/src/main/java/org/apache/hudi/hive/HoodieHiveSyncException.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hive/src/main/java/org/apache/hudi/hive/MultiPartKeysValueExtractor.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hive/src/main/java/org/apache/hudi/hive/NonPartitionedExtractor.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hive/src/main/java/org/apache/hudi/hive/PartitionValueExtractor.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hive/src/main/java/org/apache/hudi/hive/SchemaDifference.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hive/src/main/java/org/apache/hudi/hive/SlashEncodedDayPartitionValueExtractor.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hive/src/main/java/org/apache/hudi/hive/util/ColumnNameXLator.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hive/src/main/java/org/apache/hudi/hive/util/SchemaUtil.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hive/src/test/java/org/apache/hudi/hive/TestHiveSyncTool.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hive/src/test/java/org/apache/hudi/hive/TestUtil.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hive/src/test/java/org/apache/hudi/hive/util/HiveTestService.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hive/src/test/resources/log4j-surefire-quiet.properties
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-hive/src/test/resources/log4j-surefire.properties
+ 
+*****************************************************

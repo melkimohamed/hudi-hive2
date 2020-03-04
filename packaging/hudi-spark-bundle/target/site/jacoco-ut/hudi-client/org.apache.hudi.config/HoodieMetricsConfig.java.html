@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieMetricsConfig.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-client</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.config</a> &gt; <span class="el_source">HoodieMetricsConfig.java</span></div><h1>HoodieMetricsConfig.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.config;
+
+import org.apache.hudi.metrics.MetricsReporterType;
+
+import javax.annotation.concurrent.Immutable;
+
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.Properties;
+
+/**
+ * Fetch the configurations used by the Metrics system.
+ */
+@Immutable
+public class HoodieMetricsConfig extends DefaultHoodieConfig {
+
+  public static final String METRIC_PREFIX = &quot;hoodie.metrics&quot;;
+  public static final String METRICS_ON = METRIC_PREFIX + &quot;.on&quot;;
+  public static final boolean DEFAULT_METRICS_ON = false;
+  public static final String METRICS_REPORTER_TYPE = METRIC_PREFIX + &quot;.reporter.type&quot;;
+<span class="nc" id="L40">  public static final MetricsReporterType DEFAULT_METRICS_REPORTER_TYPE = MetricsReporterType.GRAPHITE;</span>
+
+  // Graphite
+  public static final String GRAPHITE_PREFIX = METRIC_PREFIX + &quot;.graphite&quot;;
+  public static final String GRAPHITE_SERVER_HOST = GRAPHITE_PREFIX + &quot;.host&quot;;
+  public static final String DEFAULT_GRAPHITE_SERVER_HOST = &quot;localhost&quot;;
+
+  public static final String GRAPHITE_SERVER_PORT = GRAPHITE_PREFIX + &quot;.port&quot;;
+  public static final int DEFAULT_GRAPHITE_SERVER_PORT = 4756;
+
+  // Jmx
+  public static final String JMX_PREFIX = METRIC_PREFIX + &quot;.jmx&quot;;
+  public static final String JMX_HOST = JMX_PREFIX + &quot;.host&quot;;
+  public static final String DEFAULT_JMX_HOST = &quot;localhost&quot;;
+
+  public static final String JMX_PORT = JMX_PREFIX + &quot;.port&quot;;
+  public static final int DEFAULT_JMX_PORT = 9889;
+
+  public static final String GRAPHITE_METRIC_PREFIX = GRAPHITE_PREFIX + &quot;.metric.prefix&quot;;
+
+  private HoodieMetricsConfig(Properties props) {
+<span class="nc" id="L61">    super(props);</span>
+<span class="nc" id="L62">  }</span>
+
+  public static HoodieMetricsConfig.Builder newBuilder() {
+<span class="nc" id="L65">    return new Builder();</span>
+  }
+
+<span class="nc" id="L68">  public static class Builder {</span>
+
+<span class="nc" id="L70">    private final Properties props = new Properties();</span>
+
+    public Builder fromFile(File propertiesFile) throws IOException {
+<span class="nc" id="L73">      try (FileReader reader = new FileReader(propertiesFile)) {</span>
+<span class="nc" id="L74">        this.props.load(reader);</span>
+<span class="nc" id="L75">        return this;</span>
+      }
+    }
+
+    public Builder fromProperties(Properties props) {
+<span class="nc" id="L80">      this.props.putAll(props);</span>
+<span class="nc" id="L81">      return this;</span>
+    }
+
+    public Builder on(boolean metricsOn) {
+<span class="nc" id="L85">      props.setProperty(METRICS_ON, String.valueOf(metricsOn));</span>
+<span class="nc" id="L86">      return this;</span>
+    }
+
+    public Builder withReporterType(String reporterType) {
+<span class="nc" id="L90">      props.setProperty(METRICS_REPORTER_TYPE, reporterType);</span>
+<span class="nc" id="L91">      return this;</span>
+    }
+
+    public Builder toGraphiteHost(String host) {
+<span class="nc" id="L95">      props.setProperty(GRAPHITE_SERVER_HOST, host);</span>
+<span class="nc" id="L96">      return this;</span>
+    }
+
+    public Builder onGraphitePort(int port) {
+<span class="nc" id="L100">      props.setProperty(GRAPHITE_SERVER_PORT, String.valueOf(port));</span>
+<span class="nc" id="L101">      return this;</span>
+    }
+
+    public Builder usePrefix(String prefix) {
+<span class="nc" id="L105">      props.setProperty(GRAPHITE_METRIC_PREFIX, prefix);</span>
+<span class="nc" id="L106">      return this;</span>
+    }
+
+    public HoodieMetricsConfig build() {
+<span class="nc" id="L110">      HoodieMetricsConfig config = new HoodieMetricsConfig(props);</span>
+<span class="nc bnc" id="L111" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(METRICS_ON), METRICS_ON, String.valueOf(DEFAULT_METRICS_ON));</span>
+<span class="nc bnc" id="L112" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(METRICS_REPORTER_TYPE), METRICS_REPORTER_TYPE,</span>
+<span class="nc" id="L113">          DEFAULT_METRICS_REPORTER_TYPE.name());</span>
+<span class="nc bnc" id="L114" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(GRAPHITE_SERVER_HOST), GRAPHITE_SERVER_HOST,</span>
+          DEFAULT_GRAPHITE_SERVER_HOST);
+<span class="nc bnc" id="L116" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(GRAPHITE_SERVER_PORT), GRAPHITE_SERVER_PORT,</span>
+<span class="nc" id="L117">          String.valueOf(DEFAULT_GRAPHITE_SERVER_PORT));</span>
+<span class="nc bnc" id="L118" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(GRAPHITE_SERVER_PORT), GRAPHITE_SERVER_PORT,</span>
+<span class="nc" id="L119">          String.valueOf(DEFAULT_GRAPHITE_SERVER_PORT));</span>
+<span class="nc" id="L120">      return config;</span>
+    }
+  }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

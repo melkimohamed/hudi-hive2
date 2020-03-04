@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>KeyRangeLookupTree.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-client</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.index.bloom</a> &gt; <span class="el_source">KeyRangeLookupTree.java</span></div><h1>KeyRangeLookupTree.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.index.bloom;
+
+import java.io.Serializable;
+import java.util.HashSet;
+import java.util.Set;
+
+/**
+ * Look up tree implemented as interval trees to search for any given key in (N logN) time complexity.
+ */
+<span class="nc" id="L28">class KeyRangeLookupTree implements Serializable {</span>
+
+  private KeyRangeNode root;
+
+  /**
+   * @return the root of the tree. Could be {@code null}
+   */
+  public KeyRangeNode getRoot() {
+<span class="nc" id="L36">    return root;</span>
+  }
+
+  /**
+   * Inserts a new {@link KeyRangeNode} to this look up tree.
+   *
+   * @param newNode the new {@link KeyRangeNode} to be inserted
+   */
+  void insert(KeyRangeNode newNode) {
+<span class="nc" id="L45">    root = insert(getRoot(), newNode);</span>
+<span class="nc" id="L46">  }</span>
+
+  /**
+   * Inserts a new {@link KeyRangeNode} to this look up tree.
+   *
+   * If no root exists, make {@code newNode} as the root and return the new root.
+   *
+   * If current root and newNode matches with min record key and max record key, merge two nodes. In other words, add
+   * files from {@code newNode} to current root. Return current root.
+   *
+   * If current root is &lt; newNode if current root has no right sub tree update current root's right sub tree max and min
+   * set newNode as right sub tree else update root's right sub tree min and max with newNode's min and max record key
+   * as applicable recursively call insert() with root's right subtree as new root
+   *
+   * else // current root is &gt;= newNode if current root has no left sub tree update current root's left sub tree max and
+   * min set newNode as left sub tree else update root's left sub tree min and max with newNode's min and max record key
+   * as applicable recursively call insert() with root's left subtree as new root
+   *
+   * @param root refers to the current root of the look up tree
+   * @param newNode newNode the new {@link KeyRangeNode} to be inserted
+   */
+  private KeyRangeNode insert(KeyRangeNode root, KeyRangeNode newNode) {
+<span class="nc bnc" id="L68" title="All 2 branches missed.">    if (root == null) {</span>
+<span class="nc" id="L69">      root = newNode;</span>
+<span class="nc" id="L70">      return root;</span>
+    }
+
+<span class="nc bnc" id="L73" title="All 2 branches missed.">    if (root.compareTo(newNode) == 0) {</span>
+<span class="nc" id="L74">      root.addFiles(newNode.getFileNameList());</span>
+<span class="nc" id="L75">      return root;</span>
+    }
+
+<span class="nc bnc" id="L78" title="All 2 branches missed.">    if (root.compareTo(newNode) &lt; 0) {</span>
+<span class="nc bnc" id="L79" title="All 2 branches missed.">      if (root.getRight() == null) {</span>
+<span class="nc" id="L80">        root.setRightSubTreeMax(newNode.getMaxRecordKey());</span>
+<span class="nc" id="L81">        root.setRightSubTreeMin(newNode.getMinRecordKey());</span>
+<span class="nc" id="L82">        root.setRight(newNode);</span>
+      } else {
+<span class="nc bnc" id="L84" title="All 2 branches missed.">        if (root.getRightSubTreeMax().compareTo(newNode.getMaxRecordKey()) &lt; 0) {</span>
+<span class="nc" id="L85">          root.setRightSubTreeMax(newNode.getMaxRecordKey());</span>
+        }
+<span class="nc bnc" id="L87" title="All 2 branches missed.">        if (root.getRightSubTreeMin().compareTo(newNode.getMinRecordKey()) &gt; 0) {</span>
+<span class="nc" id="L88">          root.setRightSubTreeMin(newNode.getMinRecordKey());</span>
+        }
+<span class="nc" id="L90">        insert(root.getRight(), newNode);</span>
+      }
+    } else {
+<span class="nc bnc" id="L93" title="All 2 branches missed.">      if (root.getLeft() == null) {</span>
+<span class="nc" id="L94">        root.setLeftSubTreeMax(newNode.getMaxRecordKey());</span>
+<span class="nc" id="L95">        root.setLeftSubTreeMin(newNode.getMinRecordKey());</span>
+<span class="nc" id="L96">        root.setLeft(newNode);</span>
+      } else {
+<span class="nc bnc" id="L98" title="All 2 branches missed.">        if (root.getLeftSubTreeMax().compareTo(newNode.getMaxRecordKey()) &lt; 0) {</span>
+<span class="nc" id="L99">          root.setLeftSubTreeMax(newNode.getMaxRecordKey());</span>
+        }
+<span class="nc bnc" id="L101" title="All 2 branches missed.">        if (root.getLeftSubTreeMin().compareTo(newNode.getMinRecordKey()) &gt; 0) {</span>
+<span class="nc" id="L102">          root.setLeftSubTreeMin(newNode.getMinRecordKey());</span>
+        }
+<span class="nc" id="L104">        insert(root.getLeft(), newNode);</span>
+      }
+    }
+<span class="nc" id="L107">    return root;</span>
+  }
+
+  /**
+   * Fetches all the matching index files where the key could possibly be present.
+   *
+   * @param lookupKey the key to be searched for
+   * @return the {@link Set} of matching index file names
+   */
+  Set&lt;String&gt; getMatchingIndexFiles(String lookupKey) {
+<span class="nc" id="L117">    Set&lt;String&gt; matchingFileNameSet = new HashSet&lt;&gt;();</span>
+<span class="nc" id="L118">    getMatchingIndexFiles(getRoot(), lookupKey, matchingFileNameSet);</span>
+<span class="nc" id="L119">    return matchingFileNameSet;</span>
+  }
+
+  /**
+   * Fetches all the matching index files where the key could possibly be present.
+   *
+   * @param root refers to the current root of the look up tree
+   * @param lookupKey the key to be searched for
+   */
+  private void getMatchingIndexFiles(KeyRangeNode root, String lookupKey, Set&lt;String&gt; matchingFileNameSet) {
+<span class="nc bnc" id="L129" title="All 2 branches missed.">    if (root == null) {</span>
+<span class="nc" id="L130">      return;</span>
+    }
+
+<span class="nc bnc" id="L133" title="All 4 branches missed.">    if (root.getMinRecordKey().compareTo(lookupKey) &lt;= 0 &amp;&amp; lookupKey.compareTo(root.getMaxRecordKey()) &lt;= 0) {</span>
+<span class="nc" id="L134">      matchingFileNameSet.addAll(root.getFileNameList());</span>
+    }
+
+<span class="nc bnc" id="L137" title="All 4 branches missed.">    if (root.getLeftSubTreeMax() != null &amp;&amp; root.getLeftSubTreeMin().compareTo(lookupKey) &lt;= 0</span>
+<span class="nc bnc" id="L138" title="All 2 branches missed.">        &amp;&amp; lookupKey.compareTo(root.getLeftSubTreeMax()) &lt;= 0) {</span>
+<span class="nc" id="L139">      getMatchingIndexFiles(root.getLeft(), lookupKey, matchingFileNameSet);</span>
+    }
+
+<span class="nc bnc" id="L142" title="All 4 branches missed.">    if (root.getRightSubTreeMax() != null &amp;&amp; root.getRightSubTreeMin().compareTo(lookupKey) &lt;= 0</span>
+<span class="nc bnc" id="L143" title="All 2 branches missed.">        &amp;&amp; lookupKey.compareTo(root.getRightSubTreeMax()) &lt;= 0) {</span>
+<span class="nc" id="L144">      getMatchingIndexFiles(root.getRight(), lookupKey, matchingFileNameSet);</span>
+    }
+<span class="nc" id="L146">  }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

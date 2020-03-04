@@ -1,0 +1,266 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieHBaseIndexConfig.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-client</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.config</a> &gt; <span class="el_source">HoodieHBaseIndexConfig.java</span></div><h1>HoodieHBaseIndexConfig.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.config;
+
+import org.apache.hudi.index.hbase.DefaultHBaseQPSResourceAllocator;
+
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.Properties;
+
+public class HoodieHBaseIndexConfig extends DefaultHoodieConfig {
+
+  public static final String HBASE_ZKQUORUM_PROP = &quot;hoodie.index.hbase.zkquorum&quot;;
+  public static final String HBASE_ZKPORT_PROP = &quot;hoodie.index.hbase.zkport&quot;;
+  public static final String HBASE_TABLENAME_PROP = &quot;hoodie.index.hbase.table&quot;;
+  public static final String HBASE_GET_BATCH_SIZE_PROP = &quot;hoodie.index.hbase.get.batch.size&quot;;
+  public static final String HBASE_ZK_ZNODEPARENT = &quot;hoodie.index.hbase.zknode.path&quot;;
+  /**
+   * Note that if HBASE_PUT_BATCH_SIZE_AUTO_COMPUTE_PROP is set to true, this batch size will not be honored for HBase
+   * Puts.
+   */
+  public static final String HBASE_PUT_BATCH_SIZE_PROP = &quot;hoodie.index.hbase.put.batch.size&quot;;
+
+  /**
+   * Property to set which implementation of HBase QPS resource allocator to be used.
+   */
+  public static final String HBASE_INDEX_QPS_ALLOCATOR_CLASS = &quot;hoodie.index.hbase.qps.allocator.class&quot;;
+<span class="nc" id="L45">  public static final String DEFAULT_HBASE_INDEX_QPS_ALLOCATOR_CLASS = DefaultHBaseQPSResourceAllocator.class.getName();</span>
+  /**
+   * Property to set to enable auto computation of put batch size.
+   */
+  public static final String HBASE_PUT_BATCH_SIZE_AUTO_COMPUTE_PROP = &quot;hoodie.index.hbase.put.batch.size.autocompute&quot;;
+  public static final String DEFAULT_HBASE_PUT_BATCH_SIZE_AUTO_COMPUTE = &quot;false&quot;;
+  /**
+   * Property to set the fraction of the global share of QPS that should be allocated to this job. Let's say there are 3
+   * jobs which have input size in terms of number of rows required for HbaseIndexing as x, 2x, 3x respectively. Then
+   * this fraction for the jobs would be (0.17) 1/6, 0.33 (2/6) and 0.5 (3/6) respectively.
+   */
+  public static final String HBASE_QPS_FRACTION_PROP = &quot;hoodie.index.hbase.qps.fraction&quot;;
+  /**
+   * Property to set maximum QPS allowed per Region Server. This should be same across various jobs. This is intended to
+   * limit the aggregate QPS generated across various jobs to an Hbase Region Server. It is recommended to set this
+   * value based on global indexing throughput needs and most importantly, how much the HBase installation in use is
+   * able to tolerate without Region Servers going down.
+   */
+<span class="nc" id="L63">  public static String HBASE_MAX_QPS_PER_REGION_SERVER_PROP = &quot;hoodie.index.hbase.max.qps.per.region.server&quot;;</span>
+  /**
+   * Default batch size, used only for Get, but computed for Put.
+   */
+  public static final int DEFAULT_HBASE_BATCH_SIZE = 100;
+  /**
+   * A low default value.
+   */
+  public static final int DEFAULT_HBASE_MAX_QPS_PER_REGION_SERVER = 1000;
+  /**
+   * Default is 50%, which means a total of 2 jobs can run using HbaseIndex without overwhelming Region Servers.
+   */
+  public static final float DEFAULT_HBASE_QPS_FRACTION = 0.5f;
+
+  /**
+   * Property to decide if HBASE_QPS_FRACTION_PROP is dynamically calculated based on volume.
+   */
+  public static final String HOODIE_INDEX_COMPUTE_QPS_DYNAMICALLY = &quot;hoodie.index.hbase.dynamic_qps&quot;;
+  public static final boolean DEFAULT_HOODIE_INDEX_COMPUTE_QPS_DYNAMICALLY = false;
+  /**
+   * Min and Max for HBASE_QPS_FRACTION_PROP to stabilize skewed volume workloads.
+   */
+  public static final String HBASE_MIN_QPS_FRACTION_PROP = &quot;hoodie.index.hbase.min.qps.fraction&quot;;
+
+  public static final String HBASE_MAX_QPS_FRACTION_PROP = &quot;hoodie.index.hbase.max.qps.fraction&quot;;
+
+  /**
+   * Hoodie index desired puts operation time in seconds.
+   */
+  public static final String HOODIE_INDEX_DESIRED_PUTS_TIME_IN_SECS = &quot;hoodie.index.hbase.desired_puts_time_in_secs&quot;;
+  public static final int DEFAULT_HOODIE_INDEX_DESIRED_PUTS_TIME_IN_SECS = 600;
+  public static final String HBASE_SLEEP_MS_PUT_BATCH_PROP = &quot;hoodie.index.hbase.sleep.ms.for.put.batch&quot;;
+  public static final String HBASE_SLEEP_MS_GET_BATCH_PROP = &quot;hoodie.index.hbase.sleep.ms.for.get.batch&quot;;
+  public static final String HOODIE_INDEX_HBASE_ZK_SESSION_TIMEOUT_MS = &quot;hoodie.index.hbase.zk.session_timeout_ms&quot;;
+  public static final int DEFAULT_ZK_SESSION_TIMEOUT_MS = 60 * 1000;
+  public static final String HOODIE_INDEX_HBASE_ZK_CONNECTION_TIMEOUT_MS =
+      &quot;hoodie.index.hbase.zk.connection_timeout_ms&quot;;
+  public static final int DEFAULT_ZK_CONNECTION_TIMEOUT_MS = 15 * 1000;
+  public static final String HBASE_ZK_PATH_QPS_ROOT = &quot;hoodie.index.hbase.zkpath.qps_root&quot;;
+  public static final String DEFAULT_HBASE_ZK_PATH_QPS_ROOT = &quot;/QPS_ROOT&quot;;
+
+  public HoodieHBaseIndexConfig(final Properties props) {
+<span class="nc" id="L105">    super(props);</span>
+<span class="nc" id="L106">  }</span>
+
+  public static HoodieHBaseIndexConfig.Builder newBuilder() {
+<span class="nc" id="L109">    return new HoodieHBaseIndexConfig.Builder();</span>
+  }
+
+<span class="nc" id="L112">  public static class Builder {</span>
+
+<span class="nc" id="L114">    private final Properties props = new Properties();</span>
+
+    public HoodieHBaseIndexConfig.Builder fromFile(File propertiesFile) throws IOException {
+<span class="nc" id="L117">      try (FileReader reader = new FileReader(propertiesFile)) {</span>
+<span class="nc" id="L118">        this.props.load(reader);</span>
+<span class="nc" id="L119">        return this;</span>
+      }
+    }
+
+    public HoodieHBaseIndexConfig.Builder fromProperties(Properties props) {
+<span class="nc" id="L124">      this.props.putAll(props);</span>
+<span class="nc" id="L125">      return this;</span>
+    }
+
+    public HoodieHBaseIndexConfig.Builder hbaseZkQuorum(String zkString) {
+<span class="nc" id="L129">      props.setProperty(HBASE_ZKQUORUM_PROP, zkString);</span>
+<span class="nc" id="L130">      return this;</span>
+    }
+
+    public HoodieHBaseIndexConfig.Builder hbaseZkPort(int port) {
+<span class="nc" id="L134">      props.setProperty(HBASE_ZKPORT_PROP, String.valueOf(port));</span>
+<span class="nc" id="L135">      return this;</span>
+    }
+
+    public HoodieHBaseIndexConfig.Builder hbaseTableName(String tableName) {
+<span class="nc" id="L139">      props.setProperty(HBASE_TABLENAME_PROP, tableName);</span>
+<span class="nc" id="L140">      return this;</span>
+    }
+
+    public Builder hbaseZkZnodeQPSPath(String zkZnodeQPSPath) {
+<span class="nc" id="L144">      props.setProperty(HBASE_ZK_PATH_QPS_ROOT, zkZnodeQPSPath);</span>
+<span class="nc" id="L145">      return this;</span>
+    }
+
+    public Builder hbaseIndexGetBatchSize(int getBatchSize) {
+<span class="nc" id="L149">      props.setProperty(HBASE_GET_BATCH_SIZE_PROP, String.valueOf(getBatchSize));</span>
+<span class="nc" id="L150">      return this;</span>
+    }
+
+    public Builder hbaseIndexPutBatchSize(int putBatchSize) {
+<span class="nc" id="L154">      props.setProperty(HBASE_PUT_BATCH_SIZE_PROP, String.valueOf(putBatchSize));</span>
+<span class="nc" id="L155">      return this;</span>
+    }
+
+    public Builder hbaseIndexPutBatchSizeAutoCompute(boolean putBatchSizeAutoCompute) {
+<span class="nc" id="L159">      props.setProperty(HBASE_PUT_BATCH_SIZE_AUTO_COMPUTE_PROP, String.valueOf(putBatchSizeAutoCompute));</span>
+<span class="nc" id="L160">      return this;</span>
+    }
+
+    public Builder hbaseIndexDesiredPutsTime(int desiredPutsTime) {
+<span class="nc" id="L164">      props.setProperty(HOODIE_INDEX_DESIRED_PUTS_TIME_IN_SECS, String.valueOf(desiredPutsTime));</span>
+<span class="nc" id="L165">      return this;</span>
+    }
+
+    public Builder hbaseIndexShouldComputeQPSDynamically(boolean shouldComputeQPsDynamically) {
+<span class="nc" id="L169">      props.setProperty(HOODIE_INDEX_COMPUTE_QPS_DYNAMICALLY, String.valueOf(shouldComputeQPsDynamically));</span>
+<span class="nc" id="L170">      return this;</span>
+    }
+
+    public Builder hbaseIndexQPSFraction(float qpsFraction) {
+<span class="nc" id="L174">      props.setProperty(HBASE_QPS_FRACTION_PROP, String.valueOf(qpsFraction));</span>
+<span class="nc" id="L175">      return this;</span>
+    }
+
+    public Builder hbaseIndexMinQPSFraction(float minQPSFraction) {
+<span class="nc" id="L179">      props.setProperty(HBASE_MIN_QPS_FRACTION_PROP, String.valueOf(minQPSFraction));</span>
+<span class="nc" id="L180">      return this;</span>
+    }
+
+    public Builder hbaseIndexMaxQPSFraction(float maxQPSFraction) {
+<span class="nc" id="L184">      props.setProperty(HBASE_MAX_QPS_FRACTION_PROP, String.valueOf(maxQPSFraction));</span>
+<span class="nc" id="L185">      return this;</span>
+    }
+
+    public Builder hbaseIndexSleepMsBetweenPutBatch(int sleepMsBetweenPutBatch) {
+<span class="nc" id="L189">      props.setProperty(HBASE_SLEEP_MS_PUT_BATCH_PROP, String.valueOf(sleepMsBetweenPutBatch));</span>
+<span class="nc" id="L190">      return this;</span>
+    }
+
+    public Builder hbaseIndexSleepMsBetweenGetBatch(int sleepMsBetweenGetBatch) {
+<span class="nc" id="L194">      props.setProperty(HBASE_SLEEP_MS_GET_BATCH_PROP, String.valueOf(sleepMsBetweenGetBatch));</span>
+<span class="nc" id="L195">      return this;</span>
+    }
+
+    public Builder withQPSResourceAllocatorType(String qpsResourceAllocatorClass) {
+<span class="nc" id="L199">      props.setProperty(HBASE_INDEX_QPS_ALLOCATOR_CLASS, qpsResourceAllocatorClass);</span>
+<span class="nc" id="L200">      return this;</span>
+    }
+
+    public Builder hbaseIndexZkSessionTimeout(int zkSessionTimeout) {
+<span class="nc" id="L204">      props.setProperty(HOODIE_INDEX_HBASE_ZK_SESSION_TIMEOUT_MS, String.valueOf(zkSessionTimeout));</span>
+<span class="nc" id="L205">      return this;</span>
+    }
+
+    public Builder hbaseIndexZkConnectionTimeout(int zkConnectionTimeout) {
+<span class="nc" id="L209">      props.setProperty(HOODIE_INDEX_HBASE_ZK_CONNECTION_TIMEOUT_MS, String.valueOf(zkConnectionTimeout));</span>
+<span class="nc" id="L210">      return this;</span>
+    }
+
+    public Builder hbaseZkZnodeParent(String zkZnodeParent) {
+<span class="nc" id="L214">      props.setProperty(HBASE_ZK_ZNODEPARENT, zkZnodeParent);</span>
+<span class="nc" id="L215">      return this;</span>
+    }
+
+    /**
+     * &lt;p&gt;
+     * Method to set maximum QPS allowed per Region Server. This should be same across various jobs. This is intended to
+     * limit the aggregate QPS generated across various jobs to an HBase Region Server.
+     * &lt;/p&gt;
+     * &lt;p&gt;
+     * It is recommended to set this value based on your global indexing throughput needs and most importantly, how much
+     * your HBase installation is able to tolerate without Region Servers going down.
+     * &lt;/p&gt;
+     */
+    public HoodieHBaseIndexConfig.Builder hbaseIndexMaxQPSPerRegionServer(int maxQPSPerRegionServer) {
+      // This should be same across various jobs
+<span class="nc" id="L230">      props.setProperty(HoodieHBaseIndexConfig.HBASE_MAX_QPS_PER_REGION_SERVER_PROP,</span>
+<span class="nc" id="L231">          String.valueOf(maxQPSPerRegionServer));</span>
+<span class="nc" id="L232">      return this;</span>
+    }
+
+    public HoodieHBaseIndexConfig build() {
+<span class="nc" id="L236">      HoodieHBaseIndexConfig config = new HoodieHBaseIndexConfig(props);</span>
+<span class="nc bnc" id="L237" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(HBASE_GET_BATCH_SIZE_PROP), HBASE_GET_BATCH_SIZE_PROP,</span>
+<span class="nc" id="L238">          String.valueOf(DEFAULT_HBASE_BATCH_SIZE));</span>
+<span class="nc bnc" id="L239" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(HBASE_PUT_BATCH_SIZE_PROP), HBASE_PUT_BATCH_SIZE_PROP,</span>
+<span class="nc" id="L240">          String.valueOf(DEFAULT_HBASE_BATCH_SIZE));</span>
+<span class="nc bnc" id="L241" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(HBASE_PUT_BATCH_SIZE_AUTO_COMPUTE_PROP),</span>
+          HBASE_PUT_BATCH_SIZE_AUTO_COMPUTE_PROP, DEFAULT_HBASE_PUT_BATCH_SIZE_AUTO_COMPUTE);
+<span class="nc bnc" id="L243" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(HBASE_QPS_FRACTION_PROP), HBASE_QPS_FRACTION_PROP,</span>
+<span class="nc" id="L244">          String.valueOf(DEFAULT_HBASE_QPS_FRACTION));</span>
+<span class="nc bnc" id="L245" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(HBASE_MAX_QPS_PER_REGION_SERVER_PROP),</span>
+<span class="nc" id="L246">          HBASE_MAX_QPS_PER_REGION_SERVER_PROP, String.valueOf(DEFAULT_HBASE_MAX_QPS_PER_REGION_SERVER));</span>
+<span class="nc bnc" id="L247" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(HOODIE_INDEX_COMPUTE_QPS_DYNAMICALLY),</span>
+<span class="nc" id="L248">          HOODIE_INDEX_COMPUTE_QPS_DYNAMICALLY, String.valueOf(DEFAULT_HOODIE_INDEX_COMPUTE_QPS_DYNAMICALLY));</span>
+<span class="nc bnc" id="L249" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(HBASE_INDEX_QPS_ALLOCATOR_CLASS), HBASE_INDEX_QPS_ALLOCATOR_CLASS,</span>
+<span class="nc" id="L250">          String.valueOf(DEFAULT_HBASE_INDEX_QPS_ALLOCATOR_CLASS));</span>
+<span class="nc bnc" id="L251" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(HOODIE_INDEX_DESIRED_PUTS_TIME_IN_SECS),</span>
+<span class="nc" id="L252">          HOODIE_INDEX_DESIRED_PUTS_TIME_IN_SECS, String.valueOf(DEFAULT_HOODIE_INDEX_DESIRED_PUTS_TIME_IN_SECS));</span>
+<span class="nc bnc" id="L253" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(HBASE_ZK_PATH_QPS_ROOT), HBASE_ZK_PATH_QPS_ROOT,</span>
+          DEFAULT_HBASE_ZK_PATH_QPS_ROOT);
+<span class="nc bnc" id="L255" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(HOODIE_INDEX_HBASE_ZK_SESSION_TIMEOUT_MS),</span>
+<span class="nc" id="L256">          HOODIE_INDEX_HBASE_ZK_SESSION_TIMEOUT_MS, String.valueOf(DEFAULT_ZK_SESSION_TIMEOUT_MS));</span>
+<span class="nc bnc" id="L257" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(HOODIE_INDEX_HBASE_ZK_CONNECTION_TIMEOUT_MS),</span>
+<span class="nc" id="L258">          HOODIE_INDEX_HBASE_ZK_CONNECTION_TIMEOUT_MS, String.valueOf(DEFAULT_ZK_CONNECTION_TIMEOUT_MS));</span>
+<span class="nc bnc" id="L259" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(HBASE_INDEX_QPS_ALLOCATOR_CLASS), HBASE_INDEX_QPS_ALLOCATOR_CLASS,</span>
+<span class="nc" id="L260">          String.valueOf(DEFAULT_HBASE_INDEX_QPS_ALLOCATOR_CLASS));</span>
+<span class="nc" id="L261">      return config;</span>
+    }
+
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

@@ -1,0 +1,303 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieSparkSqlWriter.scala</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-spark_2.11</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi</a> &gt; <span class="el_source">HoodieSparkSqlWriter.scala</span></div><h1>HoodieSparkSqlWriter.scala</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi
+
+import java.util
+
+import org.apache.avro.Schema
+import org.apache.avro.generic.GenericRecord
+import org.apache.hadoop.fs.{FileSystem, Path}
+import org.apache.hadoop.hive.conf.HiveConf
+import org.apache.hudi.DataSourceWriteOptions._
+import org.apache.hudi.client.{HoodieWriteClient, WriteStatus}
+import org.apache.hudi.common.model.HoodieRecordPayload
+import org.apache.hudi.common.table.HoodieTableMetaClient
+import org.apache.hudi.common.table.timeline.HoodieActiveTimeline
+import org.apache.hudi.common.util.{FSUtils, TypedProperties}
+import org.apache.hudi.config.HoodieWriteConfig
+import org.apache.hudi.exception.HoodieException
+import org.apache.hudi.hive.{HiveSyncConfig, HiveSyncTool}
+import org.apache.log4j.LogManager
+import org.apache.spark.api.java.{JavaRDD, JavaSparkContext}
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.{DataFrame, SQLContext, SaveMode}
+
+import scala.collection.JavaConversions._
+import scala.collection.mutable.ListBuffer
+
+private[hudi] object HoodieSparkSqlWriter {
+
+<span class="nc" id="L45">  private val log = LogManager.getLogger(getClass)</span>
+
+  def write(sqlContext: SQLContext,
+            mode: SaveMode,
+            parameters: Map[String, String],
+            df: DataFrame): (Boolean, common.util.Option[String]) = {
+
+<span class="nc" id="L52">    val sparkContext = sqlContext.sparkContext</span>
+<span class="nc" id="L53">    val path = parameters.get(&quot;path&quot;)</span>
+<span class="nc" id="L54">    val tblName = parameters.get(HoodieWriteConfig.TABLE_NAME)</span>
+<span class="nc bnc" id="L55" title="All 4 branches missed.">    if (path.isEmpty || tblName.isEmpty) {</span>
+<span class="nc" id="L56">      throw new HoodieException(s&quot;'${HoodieWriteConfig.TABLE_NAME}', 'path' must be set.&quot;)</span>
+    }
+<span class="nc" id="L58">    sparkContext.getConf.getOption(&quot;spark.serializer&quot;) match {</span>
+<span class="nc bnc" id="L59" title="All 4 branches missed.">      case Some(ser) if ser.equals(&quot;org.apache.spark.serializer.KryoSerializer&quot;) =&gt;</span>
+<span class="nc" id="L60">      case _ =&gt; throw new HoodieException(&quot;hoodie only support org.apache.spark.serializer.KryoSerializer as spark.serializer&quot;)</span>
+    }
+<span class="nc" id="L62">    val tableType = parameters(TABLE_TYPE_OPT_KEY)</span>
+<span class="nc" id="L63">    val operation =</span>
+    // It does not make sense to allow upsert() operation if INSERT_DROP_DUPS_OPT_KEY is true
+    // Auto-correct the operation to &quot;insert&quot; if OPERATION_OPT_KEY is set to &quot;upsert&quot; wrongly
+    // or not set (in which case it will be set as &quot;upsert&quot; by parametersWithWriteDefaults()) .
+<span class="nc bnc" id="L67" title="All 2 branches missed.">      if (parameters(INSERT_DROP_DUPS_OPT_KEY).toBoolean &amp;&amp;</span>
+<span class="nc bnc" id="L68" title="All 6 branches missed.">        parameters(OPERATION_OPT_KEY) == UPSERT_OPERATION_OPT_VAL) {</span>
+
+<span class="nc" id="L70">        log.warn(s&quot;$UPSERT_OPERATION_OPT_VAL is not applicable &quot; +</span>
+<span class="nc" id="L71">          s&quot;when $INSERT_DROP_DUPS_OPT_KEY is set to be true, &quot; +</span>
+<span class="nc" id="L72">          s&quot;overriding the $OPERATION_OPT_KEY to be $INSERT_OPERATION_OPT_VAL&quot;)</span>
+
+<span class="nc" id="L74">        INSERT_OPERATION_OPT_VAL</span>
+      } else {
+<span class="nc" id="L76">        parameters(OPERATION_OPT_KEY)</span>
+      }
+
+<span class="nc" id="L79">    val jsc = new JavaSparkContext(sparkContext)</span>
+<span class="nc" id="L80">    val basePath = new Path(parameters(&quot;path&quot;))</span>
+<span class="nc" id="L81">    val commitTime = HoodieActiveTimeline.createNewInstantTime()</span>
+<span class="nc" id="L82">    val fs = basePath.getFileSystem(sparkContext.hadoopConfiguration)</span>
+<span class="nc" id="L83">    var exists = fs.exists(new Path(basePath, HoodieTableMetaClient.METAFOLDER_NAME))</span>
+
+<span class="nc bnc" id="L85" title="All 2 branches missed.">    val (writeStatuses, writeClient: HoodieWriteClient[HoodieRecordPayload[Nothing]]) =</span>
+<span class="nc bnc" id="L86" title="All 4 branches missed.">      if (!operation.equalsIgnoreCase(DELETE_OPERATION_OPT_VAL)) {</span>
+      // register classes &amp; schemas
+<span class="nc" id="L88">      val structName = s&quot;${tblName.get}_record&quot;</span>
+<span class="nc" id="L89">      val nameSpace = s&quot;hoodie.${tblName.get}&quot;</span>
+<span class="nc" id="L90">      sparkContext.getConf.registerKryoClasses(</span>
+<span class="nc" id="L91">        Array(classOf[org.apache.avro.generic.GenericData],</span>
+<span class="nc" id="L92">          classOf[org.apache.avro.Schema]))</span>
+<span class="nc" id="L93">      val schema = AvroConversionUtils.convertStructTypeToAvroSchema(df.schema, structName, nameSpace)</span>
+<span class="nc" id="L94">      sparkContext.getConf.registerAvroSchemas(schema)</span>
+<span class="nc" id="L95">      log.info(s&quot;Registered avro schema : ${schema.toString(true)}&quot;)</span>
+
+      // Convert to RDD[HoodieRecord]
+<span class="nc" id="L98">      val keyGenerator = DataSourceUtils.createKeyGenerator(toProperties(parameters))</span>
+<span class="nc" id="L99">      val genericRecords: RDD[GenericRecord] = AvroConversionUtils.createRdd(df, structName, nameSpace)</span>
+<span class="nc" id="L100">      val hoodieAllIncomingRecords = genericRecords.map(gr =&gt; {</span>
+<span class="nc" id="L101">        val orderingVal = DataSourceUtils.getNestedFieldValAsString(</span>
+<span class="nc" id="L102">          gr, parameters(PRECOMBINE_FIELD_OPT_KEY), false).asInstanceOf[Comparable[_]]</span>
+<span class="nc" id="L103">        DataSourceUtils.createHoodieRecord(gr,</span>
+<span class="nc" id="L104">          orderingVal, keyGenerator.getKey(gr), parameters(PAYLOAD_CLASS_OPT_KEY))</span>
+<span class="nc" id="L105">      }).toJavaRDD()</span>
+
+      // Handle various save modes
+<span class="nc bnc" id="L108" title="All 8 branches missed.">      if (mode == SaveMode.ErrorIfExists &amp;&amp; exists) {</span>
+<span class="nc" id="L109">        throw new HoodieException(s&quot;hoodie table at $basePath already exists.&quot;)</span>
+      }
+<span class="nc bnc" id="L111" title="All 8 branches missed.">      if (mode == SaveMode.Ignore &amp;&amp; exists) {</span>
+<span class="nc" id="L112">        log.warn(s&quot;hoodie table at $basePath already exists. Ignoring &amp; not performing actual writes.&quot;)</span>
+<span class="nc" id="L113">        (true, common.util.Option.empty())</span>
+      }
+<span class="nc bnc" id="L115" title="All 8 branches missed.">      if (mode == SaveMode.Overwrite &amp;&amp; exists) {</span>
+<span class="nc" id="L116">        log.warn(s&quot;hoodie table at $basePath already exists. Deleting existing data &amp; overwriting with new data.&quot;)</span>
+<span class="nc" id="L117">        fs.delete(basePath, true)</span>
+<span class="nc" id="L118">        exists = false</span>
+      }
+
+      // Create the table if not present
+<span class="nc bnc" id="L122" title="All 2 branches missed.">      if (!exists) {</span>
+<span class="nc" id="L123">        HoodieTableMetaClient.initTableType(sparkContext.hadoopConfiguration, path.get, tableType,</span>
+<span class="nc" id="L124">          tblName.get, &quot;archived&quot;, parameters(PAYLOAD_CLASS_OPT_KEY))</span>
+      }
+
+      // Create a HoodieWriteClient &amp; issue the write.
+<span class="nc" id="L128">      val client = DataSourceUtils.createHoodieClient(jsc, schema.toString, path.get, tblName.get,</span>
+<span class="nc" id="L129">        mapAsJavaMap(parameters)</span>
+      )
+
+<span class="nc" id="L132">      val hoodieRecords =</span>
+<span class="nc bnc" id="L133" title="All 2 branches missed.">        if (parameters(INSERT_DROP_DUPS_OPT_KEY).toBoolean) {</span>
+<span class="nc" id="L134">          DataSourceUtils.dropDuplicates(</span>
+<span class="nc" id="L135">            jsc,</span>
+<span class="nc" id="L136">            hoodieAllIncomingRecords,</span>
+<span class="nc" id="L137">            mapAsJavaMap(parameters), client.getTimelineServer)</span>
+        } else {
+<span class="nc" id="L139">          hoodieAllIncomingRecords</span>
+        }
+
+<span class="nc bnc" id="L142" title="All 2 branches missed.">      if (hoodieRecords.isEmpty()) {</span>
+<span class="nc" id="L143">        log.info(&quot;new batch has no new records, skipping...&quot;)</span>
+<span class="nc" id="L144">        (true, common.util.Option.empty())</span>
+      }
+<span class="nc" id="L146">      client.startCommitWithTime(commitTime)</span>
+<span class="nc" id="L147">      val writeStatuses = DataSourceUtils.doWriteOperation(client, hoodieRecords, commitTime, operation)</span>
+<span class="nc" id="L148">      (writeStatuses, client)</span>
+    } else {
+
+      // Handle save modes
+<span class="nc bnc" id="L152" title="All 6 branches missed.">      if (mode != SaveMode.Append) {</span>
+<span class="nc" id="L153">        throw new HoodieException(s&quot;Append is the only save mode applicable for $operation operation&quot;)</span>
+      }
+
+<span class="nc" id="L156">      val structName = s&quot;${tblName.get}_record&quot;</span>
+<span class="nc" id="L157">      val nameSpace = s&quot;hoodie.${tblName.get}&quot;</span>
+<span class="nc" id="L158">      sparkContext.getConf.registerKryoClasses(</span>
+<span class="nc" id="L159">        Array(classOf[org.apache.avro.generic.GenericData],</span>
+<span class="nc" id="L160">          classOf[org.apache.avro.Schema]))</span>
+
+      // Convert to RDD[HoodieKey]
+<span class="nc" id="L163">      val keyGenerator = DataSourceUtils.createKeyGenerator(toProperties(parameters))</span>
+<span class="nc" id="L164">      val genericRecords: RDD[GenericRecord] = AvroConversionUtils.createRdd(df, structName, nameSpace)</span>
+<span class="nc" id="L165">      val hoodieKeysToDelete = genericRecords.map(gr =&gt; keyGenerator.getKey(gr)).toJavaRDD()</span>
+
+<span class="nc bnc" id="L167" title="All 2 branches missed.">      if (!exists) {</span>
+<span class="nc" id="L168">        throw new HoodieException(s&quot;hoodie table at $basePath does not exist&quot;)</span>
+      }
+
+      // Create a HoodieWriteClient &amp; issue the delete.
+<span class="nc" id="L172">      val client = DataSourceUtils.createHoodieClient(jsc,</span>
+<span class="nc" id="L173">        Schema.create(Schema.Type.NULL).toString, path.get, tblName.get,</span>
+<span class="nc" id="L174">        mapAsJavaMap(parameters)</span>
+      )
+
+      // Issue deletes
+<span class="nc" id="L178">      client.startCommitWithTime(commitTime)</span>
+<span class="nc" id="L179">      val writeStatuses = DataSourceUtils.doDeleteOperation(client, hoodieKeysToDelete, commitTime)</span>
+<span class="nc" id="L180">      (writeStatuses, client)</span>
+    }
+
+    // Check for errors and commit the write.
+<span class="nc" id="L184">    val writeSuccessful = checkWriteStatus(writeStatuses, parameters, writeClient, commitTime, basePath, operation, jsc)</span>
+<span class="nc" id="L185">    (writeSuccessful, common.util.Option.ofNullable(commitTime))</span>
+  }
+
+  /**
+    * Add default options for unspecified write options keys.
+    *
+    * @param parameters
+    * @return
+    */
+  def parametersWithWriteDefaults(parameters: Map[String, String]): Map[String, String] = {
+<span class="nc" id="L195">    Map(OPERATION_OPT_KEY -&gt; DEFAULT_OPERATION_OPT_VAL,</span>
+<span class="nc" id="L196">      TABLE_TYPE_OPT_KEY -&gt; DEFAULT_TABLE_TYPE_OPT_VAL,</span>
+<span class="nc" id="L197">      PRECOMBINE_FIELD_OPT_KEY -&gt; DEFAULT_PRECOMBINE_FIELD_OPT_VAL,</span>
+<span class="nc" id="L198">      PAYLOAD_CLASS_OPT_KEY -&gt; DEFAULT_PAYLOAD_OPT_VAL,</span>
+<span class="nc" id="L199">      RECORDKEY_FIELD_OPT_KEY -&gt; DEFAULT_RECORDKEY_FIELD_OPT_VAL,</span>
+<span class="nc" id="L200">      PARTITIONPATH_FIELD_OPT_KEY -&gt; DEFAULT_PARTITIONPATH_FIELD_OPT_VAL,</span>
+<span class="nc" id="L201">      KEYGENERATOR_CLASS_OPT_KEY -&gt; DEFAULT_KEYGENERATOR_CLASS_OPT_VAL,</span>
+<span class="nc" id="L202">      COMMIT_METADATA_KEYPREFIX_OPT_KEY -&gt; DEFAULT_COMMIT_METADATA_KEYPREFIX_OPT_VAL,</span>
+<span class="nc" id="L203">      INSERT_DROP_DUPS_OPT_KEY -&gt; DEFAULT_INSERT_DROP_DUPS_OPT_VAL,</span>
+<span class="nc" id="L204">      STREAMING_RETRY_CNT_OPT_KEY -&gt; DEFAULT_STREAMING_RETRY_CNT_OPT_VAL,</span>
+<span class="nc" id="L205">      STREAMING_RETRY_INTERVAL_MS_OPT_KEY -&gt; DEFAULT_STREAMING_RETRY_INTERVAL_MS_OPT_VAL,</span>
+<span class="nc" id="L206">      STREAMING_IGNORE_FAILED_BATCH_OPT_KEY -&gt; DEFAULT_STREAMING_IGNORE_FAILED_BATCH_OPT_VAL,</span>
+<span class="nc" id="L207">      HIVE_SYNC_ENABLED_OPT_KEY -&gt; DEFAULT_HIVE_SYNC_ENABLED_OPT_VAL,</span>
+<span class="nc" id="L208">      HIVE_DATABASE_OPT_KEY -&gt; DEFAULT_HIVE_DATABASE_OPT_VAL,</span>
+<span class="nc" id="L209">      HIVE_TABLE_OPT_KEY -&gt; DEFAULT_HIVE_TABLE_OPT_VAL,</span>
+<span class="nc" id="L210">      HIVE_USER_OPT_KEY -&gt; DEFAULT_HIVE_USER_OPT_VAL,</span>
+<span class="nc" id="L211">      HIVE_PASS_OPT_KEY -&gt; DEFAULT_HIVE_PASS_OPT_VAL,</span>
+<span class="nc" id="L212">      HIVE_URL_OPT_KEY -&gt; DEFAULT_HIVE_URL_OPT_VAL,</span>
+<span class="nc" id="L213">      HIVE_PARTITION_FIELDS_OPT_KEY -&gt; DEFAULT_HIVE_PARTITION_FIELDS_OPT_VAL,</span>
+<span class="nc" id="L214">      HIVE_PARTITION_EXTRACTOR_CLASS_OPT_KEY -&gt; DEFAULT_HIVE_PARTITION_EXTRACTOR_CLASS_OPT_VAL,</span>
+<span class="nc" id="L215">      HIVE_STYLE_PARTITIONING_OPT_KEY -&gt; DEFAULT_HIVE_STYLE_PARTITIONING_OPT_VAL</span>
+<span class="nc" id="L216">    ) ++ translateStorageTypeToTableType(parameters)</span>
+  }
+
+  def toProperties(params: Map[String, String]): TypedProperties = {
+<span class="nc" id="L220">    val props = new TypedProperties()</span>
+<span class="nc" id="L221">    params.foreach(kv =&gt; props.setProperty(kv._1, kv._2))</span>
+<span class="nc" id="L222">    props</span>
+  }
+
+  private def syncHive(basePath: Path, fs: FileSystem, parameters: Map[String, String]): Boolean = {
+<span class="nc" id="L226">    val hiveSyncConfig: HiveSyncConfig = buildSyncConfig(basePath, parameters)</span>
+<span class="nc" id="L227">    val hiveConf: HiveConf = new HiveConf()</span>
+<span class="nc" id="L228">    hiveConf.addResource(fs.getConf)</span>
+<span class="nc" id="L229">    new HiveSyncTool(hiveSyncConfig, hiveConf, fs).syncHoodieTable()</span>
+<span class="nc" id="L230">    true</span>
+  }
+
+  private def buildSyncConfig(basePath: Path, parameters: Map[String, String]): HiveSyncConfig = {
+<span class="nc" id="L234">    val hiveSyncConfig: HiveSyncConfig = new HiveSyncConfig()</span>
+<span class="nc" id="L235">    hiveSyncConfig.basePath = basePath.toString</span>
+<span class="nc" id="L236">    hiveSyncConfig.usePreApacheInputFormat =</span>
+<span class="nc" id="L237">      parameters.get(HIVE_USE_PRE_APACHE_INPUT_FORMAT_OPT_KEY).exists(r =&gt; r.toBoolean)</span>
+<span class="nc" id="L238">    hiveSyncConfig.databaseName = parameters(HIVE_DATABASE_OPT_KEY)</span>
+<span class="nc" id="L239">    hiveSyncConfig.tableName = parameters(HIVE_TABLE_OPT_KEY)</span>
+<span class="nc" id="L240">    hiveSyncConfig.hiveUser = parameters(HIVE_USER_OPT_KEY)</span>
+<span class="nc" id="L241">    hiveSyncConfig.hivePass = parameters(HIVE_PASS_OPT_KEY)</span>
+<span class="nc" id="L242">    hiveSyncConfig.jdbcUrl = parameters(HIVE_URL_OPT_KEY)</span>
+<span class="nc" id="L243">    hiveSyncConfig.partitionFields =</span>
+<span class="nc bnc" id="L244" title="All 2 branches missed.">      ListBuffer(parameters(HIVE_PARTITION_FIELDS_OPT_KEY).split(&quot;,&quot;).map(_.trim).filter(!_.isEmpty).toList: _*)</span>
+<span class="nc" id="L245">    hiveSyncConfig.partitionValueExtractorClass = parameters(HIVE_PARTITION_EXTRACTOR_CLASS_OPT_KEY)</span>
+<span class="nc" id="L246">    hiveSyncConfig</span>
+  }
+
+  private def checkWriteStatus(writeStatuses: JavaRDD[WriteStatus],
+                               parameters: Map[String, String],
+                               client: HoodieWriteClient[_],
+                               commitTime: String,
+                               basePath: Path,
+                               operation: String,
+<span class="nc" id="L255">                               jsc: JavaSparkContext): Boolean = {</span>
+<span class="nc" id="L256">    val errorCount = writeStatuses.rdd.filter(ws =&gt; ws.hasErrors).count()</span>
+<span class="nc bnc" id="L257" title="All 2 branches missed.">    if (errorCount == 0) {</span>
+<span class="nc" id="L258">      log.info(&quot;No errors. Proceeding to commit the write.&quot;)</span>
+<span class="nc" id="L259">      val metaMap = parameters.filter(kv =&gt;</span>
+<span class="nc" id="L260">        kv._1.startsWith(parameters(COMMIT_METADATA_KEYPREFIX_OPT_KEY)))</span>
+<span class="nc bnc" id="L261" title="All 2 branches missed.">      val commitSuccess = if (metaMap.isEmpty) {</span>
+<span class="nc" id="L262">        client.commit(commitTime, writeStatuses)</span>
+      } else {
+<span class="nc" id="L264">        client.commit(commitTime, writeStatuses,</span>
+<span class="nc" id="L265">          common.util.Option.of(new util.HashMap[String, String](mapAsJavaMap(metaMap))))</span>
+      }
+
+<span class="nc bnc" id="L268" title="All 2 branches missed.">      if (commitSuccess) {</span>
+<span class="nc" id="L269">        log.info(&quot;Commit &quot; + commitTime + &quot; successful!&quot;)</span>
+      }
+      else {
+<span class="nc" id="L272">        log.info(&quot;Commit &quot; + commitTime + &quot; failed!&quot;)</span>
+      }
+
+<span class="nc" id="L275">      val hiveSyncEnabled = parameters.get(HIVE_SYNC_ENABLED_OPT_KEY).exists(r =&gt; r.toBoolean)</span>
+<span class="nc bnc" id="L276" title="All 2 branches missed.">      val syncHiveSucess = if (hiveSyncEnabled) {</span>
+<span class="nc" id="L277">        log.info(&quot;Syncing to Hive Metastore (URL: &quot; + parameters(HIVE_URL_OPT_KEY) + &quot;)&quot;)</span>
+<span class="nc" id="L278">        val fs = FSUtils.getFs(basePath.toString, jsc.hadoopConfiguration)</span>
+<span class="nc" id="L279">        syncHive(basePath, fs, parameters)</span>
+      } else {
+<span class="nc" id="L281">        true</span>
+      }
+<span class="nc" id="L283">      client.close()</span>
+<span class="nc bnc" id="L284" title="All 4 branches missed.">      commitSuccess &amp;&amp; syncHiveSucess</span>
+    } else {
+<span class="nc" id="L286">      log.error(s&quot;$operation failed with $errorCount errors :&quot;)</span>
+<span class="nc bnc" id="L287" title="All 2 branches missed.">      if (log.isTraceEnabled) {</span>
+<span class="nc" id="L288">        log.trace(&quot;Printing out the top 100 errors&quot;)</span>
+<span class="nc" id="L289">        writeStatuses.rdd.filter(ws =&gt; ws.hasErrors)</span>
+<span class="nc" id="L290">          .take(100)</span>
+<span class="nc" id="L291">          .foreach(ws =&gt; {</span>
+<span class="nc" id="L292">            log.trace(&quot;Global error :&quot;, ws.getGlobalError)</span>
+<span class="nc bnc" id="L293" title="All 2 branches missed.">            if (ws.getErrors.size() &gt; 0) {</span>
+<span class="nc" id="L294">              ws.getErrors.foreach(kt =&gt;</span>
+<span class="nc" id="L295">                log.trace(s&quot;Error for key: ${kt._1}&quot;, kt._2))</span>
+            }
+          })
+      }
+<span class="nc" id="L299">      false</span>
+    }
+  }
+<span class="nc" id="L302">}</span>
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

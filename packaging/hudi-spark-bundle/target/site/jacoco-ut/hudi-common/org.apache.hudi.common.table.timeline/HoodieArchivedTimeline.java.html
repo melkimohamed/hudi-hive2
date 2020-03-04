@@ -1,0 +1,258 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieArchivedTimeline.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.table.timeline</a> &gt; <span class="el_source">HoodieArchivedTimeline.java</span></div><h1>HoodieArchivedTimeline.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.table.timeline;
+
+import org.apache.avro.generic.GenericRecord;
+import org.apache.avro.generic.IndexedRecord;
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.Path;
+import org.apache.hudi.avro.model.HoodieArchivedMetaEntry;
+import org.apache.hudi.common.model.HoodieLogFile;
+import org.apache.hudi.common.model.HoodiePartitionMetadata;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.common.table.HoodieTimeline;
+import org.apache.hudi.common.table.log.HoodieLogFormat;
+import org.apache.hudi.common.table.log.block.HoodieAvroDataBlock;
+import org.apache.hudi.common.util.Option;
+import org.apache.hudi.exception.HoodieIOException;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+import java.io.IOException;
+import java.io.Serializable;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+/**
+ * Represents the Archived Timeline for the Hoodie table. Instants for the last 12 hours (configurable) is in the
+ * ActiveTimeline and the rest are in ArchivedTimeline.
+ * &lt;p&gt;
+ * &lt;/p&gt;
+ * Instants are read from the archive file during initialization and never refreshed. To refresh, clients need to call
+ * reload()
+ * &lt;p&gt;
+ * &lt;/p&gt;
+ * This class can be serialized and de-serialized and on de-serialization the FileSystem is re-initialized.
+ */
+public class HoodieArchivedTimeline extends HoodieDefaultTimeline {
+<span class="nc" id="L64">  private static final Pattern ARCHIVE_FILE_PATTERN =</span>
+<span class="nc" id="L65">          Pattern.compile(&quot;^\\.commits_\\.archive\\.([0-9]*)$&quot;);</span>
+
+  private static final String HOODIE_COMMIT_ARCHIVE_LOG_FILE_PREFIX = &quot;commits&quot;;
+  private static final String ACTION_TYPE_KEY = &quot;actionType&quot;;
+  private HoodieTableMetaClient metaClient;
+<span class="nc" id="L70">  private Map&lt;String, byte[]&gt; readCommits = new HashMap&lt;&gt;();</span>
+
+<span class="nc" id="L72">  private static final Logger LOG = LogManager.getLogger(HoodieArchivedTimeline.class);</span>
+
+  /**
+   * Loads instants between (startTs, endTs].
+   * Note that there is no lazy loading, so this may not work if really long time range (endTs-startTs) is specified.
+   * TBD: Should we enforce maximum time range?
+   */
+<span class="nc" id="L79">  public HoodieArchivedTimeline(HoodieTableMetaClient metaClient) {</span>
+<span class="nc" id="L80">    this.metaClient = metaClient;</span>
+<span class="nc" id="L81">    setInstants(this.loadInstants(false));</span>
+    // multiple casts will make this lambda serializable -
+    // http://docs.oracle.com/javase/specs/jls/se8/html/jls-15.html#jls-15.16
+<span class="nc" id="L84">    this.details = (Function&lt;HoodieInstant, Option&lt;byte[]&gt;&gt; &amp; Serializable) this::getInstantDetails;</span>
+<span class="nc" id="L85">  }</span>
+
+  /**
+   * For serialization and de-serialization only.
+   *
+   * @deprecated
+   */
+<span class="nc" id="L92">  public HoodieArchivedTimeline() {}</span>
+
+  /**
+   * This method is only used when this object is deserialized in a spark executor.
+   *
+   * @deprecated
+   */
+  private void readObject(java.io.ObjectInputStream in) throws IOException, ClassNotFoundException {
+<span class="nc" id="L100">    in.defaultReadObject();</span>
+<span class="nc" id="L101">  }</span>
+
+  public static Path getArchiveLogPath(String archiveFolder) {
+<span class="nc" id="L104">    return new Path(archiveFolder, HOODIE_COMMIT_ARCHIVE_LOG_FILE_PREFIX);</span>
+  }
+
+  public void loadInstantDetailsInMemory(String startTs, String endTs) {
+<span class="nc" id="L108">    loadInstants(startTs, endTs);</span>
+<span class="nc" id="L109">  }</span>
+
+  public void clearInstantDetailsFromMemory(String startTs, String endTs) {
+<span class="nc" id="L112">    this.findInstantsInRange(startTs, endTs).getInstants().forEach(instant -&gt;</span>
+<span class="nc" id="L113">            this.readCommits.remove(instant.getTimestamp()));</span>
+<span class="nc" id="L114">  }</span>
+
+  @Override
+  public Option&lt;byte[]&gt; getInstantDetails(HoodieInstant instant) {
+<span class="nc" id="L118">    return Option.ofNullable(readCommits.get(instant.getTimestamp()));</span>
+  }
+
+  public HoodieArchivedTimeline reload() {
+<span class="nc" id="L122">    return new HoodieArchivedTimeline(metaClient);</span>
+  }
+
+  private HoodieInstant readCommit(GenericRecord record, boolean loadDetails) {
+<span class="nc" id="L126">    final String commitTime  = record.get(HoodiePartitionMetadata.COMMIT_TIME_KEY).toString();</span>
+<span class="nc" id="L127">    final String action = record.get(ACTION_TYPE_KEY).toString();</span>
+<span class="nc bnc" id="L128" title="All 2 branches missed.">    if (loadDetails) {</span>
+<span class="nc" id="L129">      Option.ofNullable(record.get(getMetadataKey(action))).map(actionData -&gt;</span>
+<span class="nc" id="L130">              this.readCommits.put(commitTime, actionData.toString().getBytes(StandardCharsets.UTF_8))</span>
+      );
+    }
+<span class="nc" id="L133">    return new HoodieInstant(false, action, commitTime);</span>
+  }
+
+  private String getMetadataKey(String action) {
+<span class="nc bnc" id="L137" title="All 6 branches missed.">    switch (action) {</span>
+      case HoodieTimeline.CLEAN_ACTION:
+<span class="nc" id="L139">        return &quot;hoodieCleanMetadata&quot;;</span>
+      case HoodieTimeline.COMMIT_ACTION:
+<span class="nc" id="L141">        return &quot;hoodieCommitMetadata&quot;;</span>
+      case HoodieTimeline.DELTA_COMMIT_ACTION:
+<span class="nc" id="L143">        return &quot;hoodieCommitMetadata&quot;;</span>
+      case HoodieTimeline.ROLLBACK_ACTION:
+<span class="nc" id="L145">        return &quot;hoodieRollbackMetadata&quot;;</span>
+      case HoodieTimeline.SAVEPOINT_ACTION:
+<span class="nc" id="L147">        return &quot;hoodieSavePointMetadata&quot;;</span>
+      default:
+<span class="nc" id="L149">        throw new HoodieIOException(&quot;Unknown action in metadata &quot; + action);</span>
+    }
+  }
+
+  private List&lt;HoodieInstant&gt; loadInstants(boolean loadInstantDetails) {
+<span class="nc" id="L154">    return loadInstants(null, loadInstantDetails);</span>
+  }
+
+  private List&lt;HoodieInstant&gt; loadInstants(String startTs, String endTs) {
+<span class="nc" id="L158">    return loadInstants(new TimeRangeFilter(startTs, endTs), true);</span>
+  }
+
+  /**
+   * This is method to read selected instants. Do NOT use this directly use one of the helper methods above
+   * If loadInstantDetails is set to true, this would also update 'readCommits' map with commit details
+   * If filter is specified, only the filtered instants are loaded
+   */
+  private List&lt;HoodieInstant&gt; loadInstants(TimeRangeFilter filter, boolean loadInstantDetails) {
+    try {
+      // list all files
+<span class="nc" id="L169">      FileStatus[] fsStatuses = metaClient.getFs().globStatus(</span>
+<span class="nc" id="L170">              new Path(metaClient.getArchivePath() + &quot;/.commits_.archive*&quot;));</span>
+
+      // sort files by version suffix in reverse (implies reverse chronological order)
+<span class="nc" id="L173">      Arrays.sort(fsStatuses, new ArchiveFileVersionComparator());</span>
+
+<span class="nc" id="L175">      List&lt;HoodieInstant&gt; instantsInRange = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L176" title="All 2 branches missed.">      for (FileStatus fs : fsStatuses) {</span>
+        //read the archived file
+<span class="nc" id="L178">        HoodieLogFormat.Reader reader = HoodieLogFormat.newReader(metaClient.getFs(),</span>
+<span class="nc" id="L179">                new HoodieLogFile(fs.getPath()), HoodieArchivedMetaEntry.getClassSchema());</span>
+        try {
+<span class="nc" id="L181">          int instantsInPreviousFile = instantsInRange.size();</span>
+          //read the avro blocks
+<span class="nc bnc" id="L183" title="All 2 branches missed.">          while (reader.hasNext()) {</span>
+<span class="nc" id="L184">            HoodieAvroDataBlock blk = (HoodieAvroDataBlock) reader.next();</span>
+            // TODO If we can store additional metadata in datablock, we can skip parsing records
+            // (such as startTime, endTime of records in the block)
+<span class="nc" id="L187">            List&lt;IndexedRecord&gt; records = blk.getRecords();</span>
+            // filter blocks in desired time window
+<span class="nc" id="L189">            Stream&lt;HoodieInstant&gt; instantsInBlkStream = records.stream()</span>
+<span class="nc" id="L190">                    .map(r -&gt; readCommit((GenericRecord) r, loadInstantDetails));</span>
+
+<span class="nc bnc" id="L192" title="All 2 branches missed.">            if (filter != null) {</span>
+<span class="nc" id="L193">              instantsInBlkStream = instantsInBlkStream.filter(filter::isInRange);</span>
+            }
+
+<span class="nc" id="L196">            instantsInRange.addAll(instantsInBlkStream.collect(Collectors.toList()));</span>
+<span class="nc" id="L197">          }</span>
+
+<span class="nc bnc" id="L199" title="All 2 branches missed.">          if (filter != null) {</span>
+<span class="nc" id="L200">            int instantsInCurrentFile = instantsInRange.size() - instantsInPreviousFile;</span>
+<span class="nc bnc" id="L201" title="All 4 branches missed.">            if (instantsInPreviousFile &gt; 0 &amp;&amp; instantsInCurrentFile == 0) {</span>
+              // Note that this is an optimization to skip reading unnecessary archived files
+              // This signals we crossed lower bound of desired time window.
+              break;
+            }
+          }
+        } finally {
+<span class="nc" id="L208">          reader.close();</span>
+        }
+      }
+
+<span class="nc" id="L212">      return instantsInRange;</span>
+<span class="nc" id="L213">    } catch (IOException e) {</span>
+<span class="nc" id="L214">      throw new HoodieIOException(</span>
+<span class="nc" id="L215">              &quot;Could not load archived commit timeline from path &quot; + metaClient.getArchivePath(), e);</span>
+    }
+  }
+
+  private static class TimeRangeFilter {
+    private final String startTs;
+    private final String endTs;
+
+<span class="nc" id="L223">    public TimeRangeFilter(String startTs, String endTs) {</span>
+<span class="nc" id="L224">      this.startTs = startTs;</span>
+<span class="nc" id="L225">      this.endTs = endTs;</span>
+<span class="nc" id="L226">    }</span>
+
+    public boolean isInRange(HoodieInstant instant) {
+<span class="nc" id="L229">      return HoodieTimeline.isInRange(instant.getTimestamp(), this.startTs, this.endTs);</span>
+    }
+  }
+
+  /**
+   * Sort files by reverse order of version suffix in file name.
+   */
+<span class="nc" id="L236">  public static class ArchiveFileVersionComparator implements Comparator&lt;FileStatus&gt;, Serializable {</span>
+    @Override
+    public int compare(FileStatus f1, FileStatus f2) {
+<span class="nc" id="L239">      return Integer.compare(getArchivedFileSuffix(f2), getArchivedFileSuffix(f1));</span>
+    }
+
+    private int getArchivedFileSuffix(FileStatus f) {
+      try {
+<span class="nc" id="L244">        Matcher fileMatcher = ARCHIVE_FILE_PATTERN.matcher(f.getPath().getName());</span>
+<span class="nc bnc" id="L245" title="All 2 branches missed.">        if (fileMatcher.matches()) {</span>
+<span class="nc" id="L246">          return Integer.parseInt(fileMatcher.group(1));</span>
+        }
+<span class="nc" id="L248">      } catch (NumberFormatException e) {</span>
+        // log and ignore any format warnings
+<span class="nc" id="L250">        LOG.warn(&quot;error getting suffix for archived file: &quot; + f.getPath());</span>
+<span class="nc" id="L251">      }</span>
+
+      // return default value in case of any errors
+<span class="nc" id="L254">      return 0;</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

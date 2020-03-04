@@ -1,0 +1,243 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>PriorityBasedFileSystemView.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.table.view</a> &gt; <span class="el_source">PriorityBasedFileSystemView.java</span></div><h1>PriorityBasedFileSystemView.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.table.view;
+
+import org.apache.hudi.common.model.CompactionOperation;
+import org.apache.hudi.common.model.FileSlice;
+import org.apache.hudi.common.model.HoodieBaseFile;
+import org.apache.hudi.common.model.HoodieFileGroup;
+import org.apache.hudi.common.table.HoodieTimeline;
+import org.apache.hudi.common.table.SyncableFileSystemView;
+import org.apache.hudi.common.table.timeline.HoodieInstant;
+import org.apache.hudi.common.util.Functions.Function0;
+import org.apache.hudi.common.util.Functions.Function1;
+import org.apache.hudi.common.util.Functions.Function2;
+import org.apache.hudi.common.util.Functions.Function3;
+import org.apache.hudi.common.util.Option;
+import org.apache.hudi.common.util.collection.Pair;
+
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+import java.io.Serializable;
+import java.util.List;
+import java.util.stream.Stream;
+
+/**
+ * A file system view which proxies request to a preferred File System View implementation. In case of error, flip all
+ * subsequent calls to a backup file-system view implementation.
+ */
+public class PriorityBasedFileSystemView implements SyncableFileSystemView, Serializable {
+
+<span class="nc" id="L48">  private static final Logger LOG = LogManager.getLogger(PriorityBasedFileSystemView.class);</span>
+
+  private final SyncableFileSystemView preferredView;
+  private final SyncableFileSystemView secondaryView;
+  private boolean errorOnPreferredView;
+
+<span class="nc" id="L54">  public PriorityBasedFileSystemView(SyncableFileSystemView preferredView, SyncableFileSystemView secondaryView) {</span>
+<span class="nc" id="L55">    this.preferredView = preferredView;</span>
+<span class="nc" id="L56">    this.secondaryView = secondaryView;</span>
+<span class="nc" id="L57">    this.errorOnPreferredView = false;</span>
+<span class="nc" id="L58">  }</span>
+
+  private &lt;R&gt; R execute(Function0&lt;R&gt; preferredFunction, Function0&lt;R&gt; secondaryFunction) {
+<span class="nc bnc" id="L61" title="All 2 branches missed.">    if (errorOnPreferredView) {</span>
+<span class="nc" id="L62">      LOG.warn(&quot;Routing request to secondary file-system view&quot;);</span>
+<span class="nc" id="L63">      return secondaryFunction.apply();</span>
+    } else {
+      try {
+<span class="nc" id="L66">        return preferredFunction.apply();</span>
+<span class="nc" id="L67">      } catch (RuntimeException re) {</span>
+<span class="nc" id="L68">        LOG.error(&quot;Got error running preferred function. Trying secondary&quot;, re);</span>
+<span class="nc" id="L69">        errorOnPreferredView = true;</span>
+<span class="nc" id="L70">        return secondaryFunction.apply();</span>
+      }
+    }
+  }
+
+  private &lt;T1, R&gt; R execute(T1 val, Function1&lt;T1, R&gt; preferredFunction, Function1&lt;T1, R&gt; secondaryFunction) {
+<span class="nc bnc" id="L76" title="All 2 branches missed.">    if (errorOnPreferredView) {</span>
+<span class="nc" id="L77">      LOG.warn(&quot;Routing request to secondary file-system view&quot;);</span>
+<span class="nc" id="L78">      return secondaryFunction.apply(val);</span>
+    } else {
+      try {
+<span class="nc" id="L81">        return preferredFunction.apply(val);</span>
+<span class="nc" id="L82">      } catch (RuntimeException re) {</span>
+<span class="nc" id="L83">        LOG.error(&quot;Got error running preferred function. Trying secondary&quot;, re);</span>
+<span class="nc" id="L84">        errorOnPreferredView = true;</span>
+<span class="nc" id="L85">        return secondaryFunction.apply(val);</span>
+      }
+    }
+  }
+
+  private &lt;T1, T2, R&gt; R execute(T1 val, T2 val2, Function2&lt;T1, T2, R&gt; preferredFunction,
+      Function2&lt;T1, T2, R&gt; secondaryFunction) {
+<span class="nc bnc" id="L92" title="All 2 branches missed.">    if (errorOnPreferredView) {</span>
+<span class="nc" id="L93">      LOG.warn(&quot;Routing request to secondary file-system view&quot;);</span>
+<span class="nc" id="L94">      return secondaryFunction.apply(val, val2);</span>
+    } else {
+      try {
+<span class="nc" id="L97">        return preferredFunction.apply(val, val2);</span>
+<span class="nc" id="L98">      } catch (RuntimeException re) {</span>
+<span class="nc" id="L99">        LOG.error(&quot;Got error running preferred function. Trying secondary&quot;, re);</span>
+<span class="nc" id="L100">        errorOnPreferredView = true;</span>
+<span class="nc" id="L101">        return secondaryFunction.apply(val, val2);</span>
+      }
+    }
+  }
+
+  private &lt;T1, T2, T3, R&gt; R execute(T1 val, T2 val2, T3 val3, Function3&lt;T1, T2, T3, R&gt; preferredFunction,
+      Function3&lt;T1, T2, T3, R&gt; secondaryFunction) {
+<span class="nc bnc" id="L108" title="All 2 branches missed.">    if (errorOnPreferredView) {</span>
+<span class="nc" id="L109">      LOG.warn(&quot;Routing request to secondary file-system view&quot;);</span>
+<span class="nc" id="L110">      return secondaryFunction.apply(val, val2, val3);</span>
+    } else {
+      try {
+<span class="nc" id="L113">        return preferredFunction.apply(val, val2, val3);</span>
+<span class="nc" id="L114">      } catch (RuntimeException re) {</span>
+<span class="nc" id="L115">        LOG.error(&quot;Got error running preferred function. Trying secondary&quot;, re);</span>
+<span class="nc" id="L116">        errorOnPreferredView = true;</span>
+<span class="nc" id="L117">        return secondaryFunction.apply(val, val2, val3);</span>
+      }
+    }
+  }
+
+  @Override
+  public Stream&lt;HoodieBaseFile&gt; getLatestBaseFiles(String partitionPath) {
+<span class="nc" id="L124">    return execute(partitionPath, preferredView::getLatestBaseFiles, secondaryView::getLatestBaseFiles);</span>
+  }
+
+  @Override
+  public Stream&lt;HoodieBaseFile&gt; getLatestBaseFiles() {
+<span class="nc" id="L129">    return execute(preferredView::getLatestBaseFiles, secondaryView::getLatestBaseFiles);</span>
+  }
+
+  @Override
+  public Stream&lt;HoodieBaseFile&gt; getLatestBaseFilesBeforeOrOn(String partitionPath, String maxCommitTime) {
+<span class="nc" id="L134">    return execute(partitionPath, maxCommitTime, preferredView::getLatestBaseFilesBeforeOrOn,</span>
+        secondaryView::getLatestBaseFilesBeforeOrOn);
+  }
+
+  @Override
+  public Option&lt;HoodieBaseFile&gt; getLatestBaseFile(String partitionPath, String fileId) {
+<span class="nc" id="L140">    return execute(partitionPath, fileId, preferredView::getLatestBaseFile, secondaryView::getLatestBaseFile);</span>
+  }
+
+  @Override
+  public Option&lt;HoodieBaseFile&gt; getBaseFileOn(String partitionPath, String instantTime, String fileId) {
+<span class="nc" id="L145">    return execute(partitionPath, instantTime, fileId, preferredView::getBaseFileOn, secondaryView::getBaseFileOn);</span>
+  }
+
+  @Override
+  public Stream&lt;HoodieBaseFile&gt; getLatestBaseFilesInRange(List&lt;String&gt; commitsToReturn) {
+<span class="nc" id="L150">    return execute(commitsToReturn, preferredView::getLatestBaseFilesInRange, secondaryView::getLatestBaseFilesInRange);</span>
+  }
+
+  @Override
+  public Stream&lt;HoodieBaseFile&gt; getAllBaseFiles(String partitionPath) {
+<span class="nc" id="L155">    return execute(partitionPath, preferredView::getAllBaseFiles, secondaryView::getAllBaseFiles);</span>
+  }
+
+  @Override
+  public Stream&lt;FileSlice&gt; getLatestFileSlices(String partitionPath) {
+<span class="nc" id="L160">    return execute(partitionPath, preferredView::getLatestFileSlices, secondaryView::getLatestFileSlices);</span>
+  }
+
+  @Override
+  public Stream&lt;FileSlice&gt; getLatestUnCompactedFileSlices(String partitionPath) {
+<span class="nc" id="L165">    return execute(partitionPath, preferredView::getLatestUnCompactedFileSlices,</span>
+        secondaryView::getLatestUnCompactedFileSlices);
+  }
+
+  @Override
+  public Stream&lt;FileSlice&gt; getLatestFileSlicesBeforeOrOn(String partitionPath, String maxCommitTime,
+      boolean includeFileSlicesInPendingCompaction) {
+<span class="nc" id="L172">    return execute(partitionPath, maxCommitTime, includeFileSlicesInPendingCompaction,</span>
+        preferredView::getLatestFileSlicesBeforeOrOn, secondaryView::getLatestFileSlicesBeforeOrOn);
+  }
+
+  @Override
+  public Stream&lt;FileSlice&gt; getLatestMergedFileSlicesBeforeOrOn(String partitionPath, String maxInstantTime) {
+<span class="nc" id="L178">    return execute(partitionPath, maxInstantTime, preferredView::getLatestMergedFileSlicesBeforeOrOn,</span>
+        secondaryView::getLatestMergedFileSlicesBeforeOrOn);
+  }
+
+  @Override
+  public Stream&lt;FileSlice&gt; getLatestFileSliceInRange(List&lt;String&gt; commitsToReturn) {
+<span class="nc" id="L184">    return execute(commitsToReturn, preferredView::getLatestFileSliceInRange, secondaryView::getLatestFileSliceInRange);</span>
+  }
+
+  @Override
+  public Stream&lt;FileSlice&gt; getAllFileSlices(String partitionPath) {
+<span class="nc" id="L189">    return execute(partitionPath, preferredView::getAllFileSlices, secondaryView::getAllFileSlices);</span>
+  }
+
+  @Override
+  public Stream&lt;HoodieFileGroup&gt; getAllFileGroups(String partitionPath) {
+<span class="nc" id="L194">    return execute(partitionPath, preferredView::getAllFileGroups, secondaryView::getAllFileGroups);</span>
+  }
+
+  @Override
+  public Stream&lt;Pair&lt;String, CompactionOperation&gt;&gt; getPendingCompactionOperations() {
+<span class="nc" id="L199">    return execute(preferredView::getPendingCompactionOperations, secondaryView::getPendingCompactionOperations);</span>
+  }
+
+  @Override
+  public void close() {
+<span class="nc" id="L204">    preferredView.close();</span>
+<span class="nc" id="L205">    secondaryView.close();</span>
+<span class="nc" id="L206">  }</span>
+
+  @Override
+  public void reset() {
+<span class="nc" id="L210">    preferredView.reset();</span>
+<span class="nc" id="L211">    secondaryView.reset();</span>
+<span class="nc" id="L212">  }</span>
+
+  @Override
+  public Option&lt;HoodieInstant&gt; getLastInstant() {
+<span class="nc" id="L216">    return execute(preferredView::getLastInstant, secondaryView::getLastInstant);</span>
+  }
+
+  @Override
+  public HoodieTimeline getTimeline() {
+<span class="nc" id="L221">    return execute(preferredView::getTimeline, secondaryView::getTimeline);</span>
+  }
+
+  @Override
+  public void sync() {
+<span class="nc" id="L226">    preferredView.reset();</span>
+<span class="nc" id="L227">    secondaryView.reset();</span>
+<span class="nc" id="L228">  }</span>
+
+  @Override
+  public Option&lt;FileSlice&gt; getLatestFileSlice(String partitionPath, String fileId) {
+<span class="nc" id="L232">    return execute(partitionPath, fileId, preferredView::getLatestFileSlice, secondaryView::getLatestFileSlice);</span>
+  }
+
+  public SyncableFileSystemView getPreferredView() {
+<span class="nc" id="L236">    return preferredView;</span>
+  }
+
+  public SyncableFileSystemView getSecondaryView() {
+<span class="nc" id="L240">    return secondaryView;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

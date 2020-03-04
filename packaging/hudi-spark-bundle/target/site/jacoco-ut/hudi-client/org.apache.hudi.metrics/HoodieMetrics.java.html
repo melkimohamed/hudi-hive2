@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieMetrics.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-client</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.metrics</a> &gt; <span class="el_source">HoodieMetrics.java</span></div><h1>HoodieMetrics.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.metrics;
+
+import org.apache.hudi.common.model.HoodieCommitMetadata;
+import org.apache.hudi.common.table.HoodieTimeline;
+import org.apache.hudi.config.HoodieWriteConfig;
+
+import com.codahale.metrics.Timer;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+/**
+ * Wrapper for metrics-related operations.
+ */
+public class HoodieMetrics {
+
+<span class="nc" id="L34">  private static final Logger LOG = LogManager.getLogger(HoodieMetrics.class);</span>
+  // Some timers
+<span class="nc" id="L36">  public String rollbackTimerName = null;</span>
+<span class="nc" id="L37">  public String cleanTimerName = null;</span>
+<span class="nc" id="L38">  public String commitTimerName = null;</span>
+<span class="nc" id="L39">  public String deltaCommitTimerName = null;</span>
+<span class="nc" id="L40">  public String finalizeTimerName = null;</span>
+<span class="nc" id="L41">  public String compactionTimerName = null;</span>
+<span class="nc" id="L42">  public String indexTimerName = null;</span>
+  private HoodieWriteConfig config;
+  private String tableName;
+<span class="nc" id="L45">  private Timer rollbackTimer = null;</span>
+<span class="nc" id="L46">  private Timer cleanTimer = null;</span>
+<span class="nc" id="L47">  private Timer commitTimer = null;</span>
+<span class="nc" id="L48">  private Timer deltaCommitTimer = null;</span>
+<span class="nc" id="L49">  private Timer finalizeTimer = null;</span>
+<span class="nc" id="L50">  private Timer compactionTimer = null;</span>
+<span class="nc" id="L51">  private Timer indexTimer = null;</span>
+
+<span class="nc" id="L53">  public HoodieMetrics(HoodieWriteConfig config, String tableName) {</span>
+<span class="nc" id="L54">    this.config = config;</span>
+<span class="nc" id="L55">    this.tableName = tableName;</span>
+<span class="nc bnc" id="L56" title="All 2 branches missed.">    if (config.isMetricsOn()) {</span>
+<span class="nc" id="L57">      Metrics.init(config);</span>
+<span class="nc" id="L58">      this.rollbackTimerName = getMetricsName(&quot;timer&quot;, HoodieTimeline.ROLLBACK_ACTION);</span>
+<span class="nc" id="L59">      this.cleanTimerName = getMetricsName(&quot;timer&quot;, HoodieTimeline.CLEAN_ACTION);</span>
+<span class="nc" id="L60">      this.commitTimerName = getMetricsName(&quot;timer&quot;, HoodieTimeline.COMMIT_ACTION);</span>
+<span class="nc" id="L61">      this.deltaCommitTimerName = getMetricsName(&quot;timer&quot;, HoodieTimeline.DELTA_COMMIT_ACTION);</span>
+<span class="nc" id="L62">      this.finalizeTimerName = getMetricsName(&quot;timer&quot;, &quot;finalize&quot;);</span>
+<span class="nc" id="L63">      this.compactionTimerName = getMetricsName(&quot;timer&quot;, HoodieTimeline.COMPACTION_ACTION);</span>
+<span class="nc" id="L64">      this.indexTimerName = getMetricsName(&quot;timer&quot;, &quot;index&quot;);</span>
+    }
+<span class="nc" id="L66">  }</span>
+
+  private Timer createTimer(String name) {
+<span class="nc bnc" id="L69" title="All 2 branches missed.">    return config.isMetricsOn() ? Metrics.getInstance().getRegistry().timer(name) : null;</span>
+  }
+
+  public Timer.Context getRollbackCtx() {
+<span class="nc bnc" id="L73" title="All 4 branches missed.">    if (config.isMetricsOn() &amp;&amp; rollbackTimer == null) {</span>
+<span class="nc" id="L74">      rollbackTimer = createTimer(rollbackTimerName);</span>
+    }
+<span class="nc bnc" id="L76" title="All 2 branches missed.">    return rollbackTimer == null ? null : rollbackTimer.time();</span>
+  }
+
+  public Timer.Context getCompactionCtx() {
+<span class="nc bnc" id="L80" title="All 4 branches missed.">    if (config.isMetricsOn() &amp;&amp; compactionTimer == null) {</span>
+<span class="nc" id="L81">      compactionTimer = createTimer(commitTimerName);</span>
+    }
+<span class="nc bnc" id="L83" title="All 2 branches missed.">    return compactionTimer == null ? null : compactionTimer.time();</span>
+  }
+
+  public Timer.Context getCleanCtx() {
+<span class="nc bnc" id="L87" title="All 4 branches missed.">    if (config.isMetricsOn() &amp;&amp; cleanTimer == null) {</span>
+<span class="nc" id="L88">      cleanTimer = createTimer(cleanTimerName);</span>
+    }
+<span class="nc bnc" id="L90" title="All 2 branches missed.">    return cleanTimer == null ? null : cleanTimer.time();</span>
+  }
+
+  public Timer.Context getCommitCtx() {
+<span class="nc bnc" id="L94" title="All 4 branches missed.">    if (config.isMetricsOn() &amp;&amp; commitTimer == null) {</span>
+<span class="nc" id="L95">      commitTimer = createTimer(commitTimerName);</span>
+    }
+<span class="nc bnc" id="L97" title="All 2 branches missed.">    return commitTimer == null ? null : commitTimer.time();</span>
+  }
+
+  public Timer.Context getFinalizeCtx() {
+<span class="nc bnc" id="L101" title="All 4 branches missed.">    if (config.isMetricsOn() &amp;&amp; finalizeTimer == null) {</span>
+<span class="nc" id="L102">      finalizeTimer = createTimer(finalizeTimerName);</span>
+    }
+<span class="nc bnc" id="L104" title="All 2 branches missed.">    return finalizeTimer == null ? null : finalizeTimer.time();</span>
+  }
+
+  public Timer.Context getDeltaCommitCtx() {
+<span class="nc bnc" id="L108" title="All 4 branches missed.">    if (config.isMetricsOn() &amp;&amp; deltaCommitTimer == null) {</span>
+<span class="nc" id="L109">      deltaCommitTimer = createTimer(deltaCommitTimerName);</span>
+    }
+<span class="nc bnc" id="L111" title="All 2 branches missed.">    return deltaCommitTimer == null ? null : deltaCommitTimer.time();</span>
+  }
+
+  public Timer.Context getIndexCtx() {
+<span class="nc bnc" id="L115" title="All 4 branches missed.">    if (config.isMetricsOn() &amp;&amp; indexTimer == null) {</span>
+<span class="nc" id="L116">      indexTimer = createTimer(indexTimerName);</span>
+    }
+<span class="nc bnc" id="L118" title="All 2 branches missed.">    return indexTimer == null ? null : indexTimer.time();</span>
+  }
+
+  public void updateCommitMetrics(long commitEpochTimeInMs, long durationInMs, HoodieCommitMetadata metadata,
+      String actionType) {
+<span class="nc bnc" id="L123" title="All 2 branches missed.">    if (config.isMetricsOn()) {</span>
+<span class="nc" id="L124">      long totalPartitionsWritten = metadata.fetchTotalPartitionsWritten();</span>
+<span class="nc" id="L125">      long totalFilesInsert = metadata.fetchTotalFilesInsert();</span>
+<span class="nc" id="L126">      long totalFilesUpdate = metadata.fetchTotalFilesUpdated();</span>
+<span class="nc" id="L127">      long totalRecordsWritten = metadata.fetchTotalRecordsWritten();</span>
+<span class="nc" id="L128">      long totalUpdateRecordsWritten = metadata.fetchTotalUpdateRecordsWritten();</span>
+<span class="nc" id="L129">      long totalInsertRecordsWritten = metadata.fetchTotalInsertRecordsWritten();</span>
+<span class="nc" id="L130">      long totalBytesWritten = metadata.fetchTotalBytesWritten();</span>
+<span class="nc" id="L131">      long totalTimeTakenByScanner = metadata.getTotalScanTime();</span>
+<span class="nc" id="L132">      long totalTimeTakenForInsert = metadata.getTotalCreateTime();</span>
+<span class="nc" id="L133">      long totalTimeTakenForUpsert = metadata.getTotalUpsertTime();</span>
+<span class="nc" id="L134">      long totalCompactedRecordsUpdated = metadata.getTotalCompactedRecordsUpdated();</span>
+<span class="nc" id="L135">      long totalLogFilesCompacted = metadata.getTotalLogFilesCompacted();</span>
+<span class="nc" id="L136">      long totalLogFilesSize = metadata.getTotalLogFilesSize();</span>
+<span class="nc" id="L137">      Metrics.registerGauge(getMetricsName(actionType, &quot;duration&quot;), durationInMs);</span>
+<span class="nc" id="L138">      Metrics.registerGauge(getMetricsName(actionType, &quot;totalPartitionsWritten&quot;), totalPartitionsWritten);</span>
+<span class="nc" id="L139">      Metrics.registerGauge(getMetricsName(actionType, &quot;totalFilesInsert&quot;), totalFilesInsert);</span>
+<span class="nc" id="L140">      Metrics.registerGauge(getMetricsName(actionType, &quot;totalFilesUpdate&quot;), totalFilesUpdate);</span>
+<span class="nc" id="L141">      Metrics.registerGauge(getMetricsName(actionType, &quot;totalRecordsWritten&quot;), totalRecordsWritten);</span>
+<span class="nc" id="L142">      Metrics.registerGauge(getMetricsName(actionType, &quot;totalUpdateRecordsWritten&quot;), totalUpdateRecordsWritten);</span>
+<span class="nc" id="L143">      Metrics.registerGauge(getMetricsName(actionType, &quot;totalInsertRecordsWritten&quot;), totalInsertRecordsWritten);</span>
+<span class="nc" id="L144">      Metrics.registerGauge(getMetricsName(actionType, &quot;totalBytesWritten&quot;), totalBytesWritten);</span>
+<span class="nc" id="L145">      Metrics.registerGauge(getMetricsName(actionType, &quot;commitTime&quot;), commitEpochTimeInMs);</span>
+<span class="nc" id="L146">      Metrics.registerGauge(getMetricsName(actionType, &quot;totalScanTime&quot;), totalTimeTakenByScanner);</span>
+<span class="nc" id="L147">      Metrics.registerGauge(getMetricsName(actionType, &quot;totalCreateTime&quot;), totalTimeTakenForInsert);</span>
+<span class="nc" id="L148">      Metrics.registerGauge(getMetricsName(actionType, &quot;totalUpsertTime&quot;), totalTimeTakenForUpsert);</span>
+<span class="nc" id="L149">      Metrics.registerGauge(getMetricsName(actionType, &quot;totalCompactedRecordsUpdated&quot;), totalCompactedRecordsUpdated);</span>
+<span class="nc" id="L150">      Metrics.registerGauge(getMetricsName(actionType, &quot;totalLogFilesCompacted&quot;), totalLogFilesCompacted);</span>
+<span class="nc" id="L151">      Metrics.registerGauge(getMetricsName(actionType, &quot;totalLogFilesSize&quot;), totalLogFilesSize);</span>
+    }
+<span class="nc" id="L153">  }</span>
+
+  public void updateRollbackMetrics(long durationInMs, long numFilesDeleted) {
+<span class="nc bnc" id="L156" title="All 2 branches missed.">    if (config.isMetricsOn()) {</span>
+<span class="nc" id="L157">      LOG.info(</span>
+<span class="nc" id="L158">          String.format(&quot;Sending rollback metrics (duration=%d, numFilesDeleted=%d)&quot;, durationInMs, numFilesDeleted));</span>
+<span class="nc" id="L159">      Metrics.registerGauge(getMetricsName(&quot;rollback&quot;, &quot;duration&quot;), durationInMs);</span>
+<span class="nc" id="L160">      Metrics.registerGauge(getMetricsName(&quot;rollback&quot;, &quot;numFilesDeleted&quot;), numFilesDeleted);</span>
+    }
+<span class="nc" id="L162">  }</span>
+
+  public void updateCleanMetrics(long durationInMs, int numFilesDeleted) {
+<span class="nc bnc" id="L165" title="All 2 branches missed.">    if (config.isMetricsOn()) {</span>
+<span class="nc" id="L166">      LOG.info(</span>
+<span class="nc" id="L167">          String.format(&quot;Sending clean metrics (duration=%d, numFilesDeleted=%d)&quot;, durationInMs, numFilesDeleted));</span>
+<span class="nc" id="L168">      Metrics.registerGauge(getMetricsName(&quot;clean&quot;, &quot;duration&quot;), durationInMs);</span>
+<span class="nc" id="L169">      Metrics.registerGauge(getMetricsName(&quot;clean&quot;, &quot;numFilesDeleted&quot;), numFilesDeleted);</span>
+    }
+<span class="nc" id="L171">  }</span>
+
+  public void updateFinalizeWriteMetrics(long durationInMs, long numFilesFinalized) {
+<span class="nc bnc" id="L174" title="All 2 branches missed.">    if (config.isMetricsOn()) {</span>
+<span class="nc" id="L175">      LOG.info(String.format(&quot;Sending finalize write metrics (duration=%d, numFilesFinalized=%d)&quot;, durationInMs,</span>
+<span class="nc" id="L176">          numFilesFinalized));</span>
+<span class="nc" id="L177">      Metrics.registerGauge(getMetricsName(&quot;finalize&quot;, &quot;duration&quot;), durationInMs);</span>
+<span class="nc" id="L178">      Metrics.registerGauge(getMetricsName(&quot;finalize&quot;, &quot;numFilesFinalized&quot;), numFilesFinalized);</span>
+    }
+<span class="nc" id="L180">  }</span>
+
+  public void updateIndexMetrics(final String action, final long durationInMs) {
+<span class="nc bnc" id="L183" title="All 2 branches missed.">    if (config.isMetricsOn()) {</span>
+<span class="nc" id="L184">      LOG.info(String.format(&quot;Sending index metrics (%s.duration, %d)&quot;, action, durationInMs));</span>
+<span class="nc" id="L185">      Metrics.registerGauge(getMetricsName(&quot;index&quot;, String.format(&quot;%s.duration&quot;, action)), durationInMs);</span>
+    }
+<span class="nc" id="L187">  }</span>
+
+  String getMetricsName(String action, String metric) {
+<span class="nc bnc" id="L190" title="All 2 branches missed.">    return config == null ? null : String.format(&quot;%s.%s.%s&quot;, tableName, action, metric);</span>
+  }
+
+  /**
+   * By default, the timer context returns duration with nano seconds. Convert it to millisecond.
+   */
+  public long getDurationInMs(long ctxDuration) {
+<span class="nc" id="L197">    return ctxDuration / 1000000;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

@@ -1,0 +1,539 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>FSUtils.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.util</a> &gt; <span class="el_source">FSUtils.java</span></div><h1>FSUtils.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.util;
+
+import org.apache.hudi.common.model.HoodieFileFormat;
+import org.apache.hudi.common.model.HoodieLogFile;
+import org.apache.hudi.common.model.HoodiePartitionMetadata;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.common.table.timeline.HoodieInstant;
+import org.apache.hudi.common.util.collection.Pair;
+import org.apache.hudi.exception.HoodieException;
+import org.apache.hudi.exception.HoodieIOException;
+import org.apache.hudi.exception.InvalidHoodiePathException;
+
+import com.google.common.base.Preconditions;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.LocatedFileStatus;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.PathFilter;
+import org.apache.hadoop.fs.RemoteIterator;
+import org.apache.hadoop.hdfs.DistributedFileSystem;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Objects;
+import java.util.Map.Entry;
+import java.util.UUID;
+import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
+
+/**
+ * Utility functions related to accessing the file storage.
+ */
+<span class="nc" id="L61">public class FSUtils {</span>
+
+<span class="nc" id="L63">  private static final Logger LOG = LogManager.getLogger(FSUtils.class);</span>
+  // Log files are of this pattern - .b5068208-e1a4-11e6-bf01-fe55135034f3_20170101134598.log.1
+<span class="nc" id="L65">  private static final Pattern LOG_FILE_PATTERN =</span>
+<span class="nc" id="L66">      Pattern.compile(&quot;\\.(.*)_(.*)\\.(.*)\\.([0-9]*)(_(([0-9]*)-([0-9]*)-([0-9]*)))?&quot;);</span>
+  private static final String LOG_FILE_PREFIX = &quot;.&quot;;
+  private static final int MAX_ATTEMPTS_RECOVER_LEASE = 10;
+  private static final long MIN_CLEAN_TO_KEEP = 10;
+  private static final long MIN_ROLLBACK_TO_KEEP = 10;
+  private static final String HOODIE_ENV_PROPS_PREFIX = &quot;HOODIE_ENV_&quot;;
+
+<span class="nc" id="L73">  private static final PathFilter ALLOW_ALL_FILTER = file -&gt; true;</span>
+
+  public static Configuration prepareHadoopConf(Configuration conf) {
+<span class="nc" id="L76">    conf.set(&quot;fs.hdfs.impl&quot;, org.apache.hadoop.hdfs.DistributedFileSystem.class.getName());</span>
+<span class="nc" id="L77">    conf.set(&quot;fs.file.impl&quot;, org.apache.hadoop.fs.LocalFileSystem.class.getName());</span>
+
+    // look for all properties, prefixed to be picked up
+<span class="nc bnc" id="L80" title="All 2 branches missed.">    for (Entry&lt;String, String&gt; prop : System.getenv().entrySet()) {</span>
+<span class="nc bnc" id="L81" title="All 2 branches missed.">      if (prop.getKey().startsWith(HOODIE_ENV_PROPS_PREFIX)) {</span>
+<span class="nc" id="L82">        LOG.info(&quot;Picking up value for hoodie env var :&quot; + prop.getKey());</span>
+<span class="nc" id="L83">        conf.set(prop.getKey().replace(HOODIE_ENV_PROPS_PREFIX, &quot;&quot;).replaceAll(&quot;_DOT_&quot;, &quot;.&quot;), prop.getValue());</span>
+      }
+<span class="nc" id="L85">    }</span>
+<span class="nc" id="L86">    return conf;</span>
+  }
+
+  public static FileSystem getFs(String path, Configuration conf) {
+    FileSystem fs;
+<span class="nc" id="L91">    prepareHadoopConf(conf);</span>
+    try {
+<span class="nc" id="L93">      fs = new Path(path).getFileSystem(conf);</span>
+<span class="nc" id="L94">    } catch (IOException e) {</span>
+<span class="nc" id="L95">      throw new HoodieIOException(&quot;Failed to get instance of &quot; + FileSystem.class.getName(), e);</span>
+<span class="nc" id="L96">    }</span>
+<span class="nc" id="L97">    LOG.info(String.format(&quot;Hadoop Configuration: fs.defaultFS: [%s], Config:[%s], FileSystem: [%s]&quot;,</span>
+<span class="nc" id="L98">        conf.getRaw(&quot;fs.defaultFS&quot;), conf.toString(), fs.toString()));</span>
+<span class="nc" id="L99">    return fs;</span>
+  }
+
+  /**
+   * A write token uniquely identifies an attempt at one of the IOHandle operations (Merge/Create/Append).
+   */
+  public static String makeWriteToken(int taskPartitionId, int stageId, long taskAttemptId) {
+<span class="nc" id="L106">    return String.format(&quot;%d-%d-%d&quot;, taskPartitionId, stageId, taskAttemptId);</span>
+  }
+
+  public static String makeDataFileName(String commitTime, String writeToken, String fileId) {
+<span class="nc" id="L110">    return String.format(&quot;%s_%s_%s.parquet&quot;, fileId, writeToken, commitTime);</span>
+  }
+
+  public static String makeMarkerFile(String commitTime, String writeToken, String fileId) {
+<span class="nc" id="L114">    return String.format(&quot;%s_%s_%s%s&quot;, fileId, writeToken, commitTime, HoodieTableMetaClient.MARKER_EXTN);</span>
+  }
+
+  public static String translateMarkerToDataPath(String basePath, String markerPath, String instantTs) {
+<span class="nc" id="L118">    Preconditions.checkArgument(markerPath.endsWith(HoodieTableMetaClient.MARKER_EXTN));</span>
+<span class="nc" id="L119">    String markerRootPath = Path.getPathWithoutSchemeAndAuthority(</span>
+<span class="nc" id="L120">        new Path(String.format(&quot;%s/%s/%s&quot;, basePath, HoodieTableMetaClient.TEMPFOLDER_NAME, instantTs))).toString();</span>
+<span class="nc" id="L121">    int begin = markerPath.indexOf(markerRootPath);</span>
+<span class="nc bnc" id="L122" title="All 2 branches missed.">    Preconditions.checkArgument(begin &gt;= 0,</span>
+        &quot;Not in marker dir. Marker Path=&quot; + markerPath + &quot;, Expected Marker Root=&quot; + markerRootPath);
+<span class="nc" id="L124">    String rPath = markerPath.substring(begin + markerRootPath.length() + 1);</span>
+<span class="nc" id="L125">    return String.format(&quot;%s/%s%s&quot;, basePath, rPath.replace(HoodieTableMetaClient.MARKER_EXTN, &quot;&quot;),</span>
+<span class="nc" id="L126">        HoodieFileFormat.PARQUET.getFileExtension());</span>
+  }
+
+  public static String maskWithoutFileId(String commitTime, int taskPartitionId) {
+<span class="nc" id="L130">    return String.format(&quot;*_%s_%s%s&quot;, taskPartitionId, commitTime, HoodieFileFormat.PARQUET.getFileExtension());</span>
+  }
+
+  public static String getCommitFromCommitFile(String commitFileName) {
+<span class="nc" id="L134">    return commitFileName.split(&quot;\\.&quot;)[0];</span>
+  }
+
+  public static String getCommitTime(String fullFileName) {
+<span class="nc" id="L138">    return fullFileName.split(&quot;_&quot;)[2].split(&quot;\\.&quot;)[0];</span>
+  }
+
+  public static long getFileSize(FileSystem fs, Path path) throws IOException {
+<span class="nc" id="L142">    return fs.getFileStatus(path).getLen();</span>
+  }
+
+  public static String getFileId(String fullFileName) {
+<span class="nc" id="L146">    return fullFileName.split(&quot;_&quot;)[0];</span>
+  }
+
+  /**
+   * Gets all partition paths assuming date partitioning (year, month, day) three levels down.
+   */
+  public static List&lt;String&gt; getAllPartitionFoldersThreeLevelsDown(FileSystem fs, String basePath) throws IOException {
+<span class="nc" id="L153">    List&lt;String&gt; datePartitions = new ArrayList&lt;&gt;();</span>
+    // Avoid listing and including any folders under the metafolder
+<span class="nc" id="L155">    PathFilter filter = getExcludeMetaPathFilter();</span>
+<span class="nc" id="L156">    FileStatus[] folders = fs.globStatus(new Path(basePath + &quot;/*/*/*&quot;), filter);</span>
+<span class="nc bnc" id="L157" title="All 2 branches missed.">    for (FileStatus status : folders) {</span>
+<span class="nc" id="L158">      Path path = status.getPath();</span>
+<span class="nc" id="L159">      datePartitions.add(String.format(&quot;%s/%s/%s&quot;, path.getParent().getParent().getName(), path.getParent().getName(),</span>
+<span class="nc" id="L160">          path.getName()));</span>
+    }
+<span class="nc" id="L162">    return datePartitions;</span>
+  }
+
+  /**
+   * Given a base partition and a partition path, return relative path of partition path to the base path.
+   */
+  public static String getRelativePartitionPath(Path basePath, Path partitionPath) {
+<span class="nc" id="L169">    basePath = Path.getPathWithoutSchemeAndAuthority(basePath);</span>
+<span class="nc" id="L170">    partitionPath = Path.getPathWithoutSchemeAndAuthority(partitionPath);</span>
+<span class="nc" id="L171">    String partitionFullPath = partitionPath.toString();</span>
+<span class="nc" id="L172">    int partitionStartIndex = partitionFullPath.indexOf(basePath.getName(),</span>
+<span class="nc bnc" id="L173" title="All 2 branches missed.">        basePath.getParent() == null ? 0 : basePath.getParent().toString().length());</span>
+    // Partition-Path could be empty for non-partitioned tables
+<span class="nc bnc" id="L175" title="All 2 branches missed.">    return partitionStartIndex + basePath.getName().length() == partitionFullPath.length() ? &quot;&quot;</span>
+<span class="nc" id="L176">        : partitionFullPath.substring(partitionStartIndex + basePath.getName().length() + 1);</span>
+  }
+
+  /**
+   * Obtain all the partition paths, that are present in this table, denoted by presence of
+   * {@link HoodiePartitionMetadata#HOODIE_PARTITION_METAFILE}.
+   */
+  public static List&lt;String&gt; getAllFoldersWithPartitionMetaFile(FileSystem fs, String basePathStr) throws IOException {
+<span class="nc" id="L184">    final Path basePath = new Path(basePathStr);</span>
+<span class="nc" id="L185">    final List&lt;String&gt; partitions = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L186">    processFiles(fs, basePathStr, (locatedFileStatus) -&gt; {</span>
+<span class="nc" id="L187">      Path filePath = locatedFileStatus.getPath();</span>
+<span class="nc bnc" id="L188" title="All 2 branches missed.">      if (filePath.getName().equals(HoodiePartitionMetadata.HOODIE_PARTITION_METAFILE)) {</span>
+<span class="nc" id="L189">        partitions.add(getRelativePartitionPath(basePath, filePath.getParent()));</span>
+      }
+<span class="nc" id="L191">      return true;</span>
+    }, true);
+<span class="nc" id="L193">    return partitions;</span>
+  }
+
+  public static List&lt;String&gt; getAllDataFilesForMarkers(FileSystem fs, String basePath, String instantTs,
+      String markerDir) throws IOException {
+<span class="nc" id="L198">    List&lt;String&gt; dataFiles = new LinkedList&lt;&gt;();</span>
+<span class="nc" id="L199">    processFiles(fs, markerDir, (status) -&gt; {</span>
+<span class="nc" id="L200">      String pathStr = status.getPath().toString();</span>
+<span class="nc bnc" id="L201" title="All 2 branches missed.">      if (pathStr.endsWith(HoodieTableMetaClient.MARKER_EXTN)) {</span>
+<span class="nc" id="L202">        dataFiles.add(FSUtils.translateMarkerToDataPath(basePath, pathStr, instantTs));</span>
+      }
+<span class="nc" id="L204">      return true;</span>
+    }, false);
+<span class="nc" id="L206">    return dataFiles;</span>
+  }
+
+  /**
+   * Recursively processes all files in the base-path. If excludeMetaFolder is set, the meta-folder and all its subdirs
+   * are skipped
+   * 
+   * @param fs File System
+   * @param basePathStr Base-Path
+   * @param consumer Callback for processing
+   * @param excludeMetaFolder Exclude .hoodie folder
+   * @throws IOException
+   */
+  static void processFiles(FileSystem fs, String basePathStr, Function&lt;FileStatus, Boolean&gt; consumer,
+      boolean excludeMetaFolder) throws IOException {
+<span class="nc bnc" id="L221" title="All 2 branches missed.">    PathFilter pathFilter = excludeMetaFolder ? getExcludeMetaPathFilter() : ALLOW_ALL_FILTER;</span>
+<span class="nc" id="L222">    FileStatus[] topLevelStatuses = fs.listStatus(new Path(basePathStr));</span>
+<span class="nc bnc" id="L223" title="All 2 branches missed.">    for (FileStatus child : topLevelStatuses) {</span>
+<span class="nc bnc" id="L224" title="All 2 branches missed.">      if (child.isFile()) {</span>
+<span class="nc" id="L225">        boolean success = consumer.apply(child);</span>
+<span class="nc bnc" id="L226" title="All 2 branches missed.">        if (!success) {</span>
+<span class="nc" id="L227">          throw new HoodieException(&quot;Failed to process file-status=&quot; + child);</span>
+        }
+<span class="nc bnc" id="L229" title="All 2 branches missed.">      } else if (pathFilter.accept(child.getPath())) {</span>
+<span class="nc" id="L230">        RemoteIterator&lt;LocatedFileStatus&gt; itr = fs.listFiles(child.getPath(), true);</span>
+<span class="nc bnc" id="L231" title="All 2 branches missed.">        while (itr.hasNext()) {</span>
+<span class="nc" id="L232">          FileStatus status = itr.next();</span>
+<span class="nc" id="L233">          boolean success = consumer.apply(status);</span>
+<span class="nc bnc" id="L234" title="All 2 branches missed.">          if (!success) {</span>
+<span class="nc" id="L235">            throw new HoodieException(&quot;Failed to process file-status=&quot; + status);</span>
+          }
+<span class="nc" id="L237">        }</span>
+      }
+    }
+<span class="nc" id="L240">  }</span>
+
+  public static List&lt;String&gt; getAllPartitionPaths(FileSystem fs, String basePathStr, boolean assumeDatePartitioning)
+      throws IOException {
+<span class="nc bnc" id="L244" title="All 2 branches missed.">    if (assumeDatePartitioning) {</span>
+<span class="nc" id="L245">      return getAllPartitionFoldersThreeLevelsDown(fs, basePathStr);</span>
+    } else {
+<span class="nc" id="L247">      return getAllFoldersWithPartitionMetaFile(fs, basePathStr);</span>
+    }
+  }
+
+  public static String getFileExtension(String fullName) {
+<span class="nc" id="L252">    Objects.requireNonNull(fullName);</span>
+<span class="nc" id="L253">    String fileName = (new File(fullName)).getName();</span>
+<span class="nc" id="L254">    int dotIndex = fileName.indexOf('.');</span>
+<span class="nc bnc" id="L255" title="All 2 branches missed.">    return dotIndex == -1 ? &quot;&quot; : fileName.substring(dotIndex);</span>
+  }
+
+  private static PathFilter getExcludeMetaPathFilter() {
+    // Avoid listing and including any folders under the metafolder
+<span class="nc bnc" id="L260" title="All 2 branches missed.">    return (path) -&gt; !path.toString().contains(HoodieTableMetaClient.METAFOLDER_NAME);</span>
+  }
+
+  public static String getInstantTime(String name) {
+<span class="nc" id="L264">    return name.replace(getFileExtension(name), &quot;&quot;);</span>
+  }
+
+  /**
+   * Returns a new unique prefix for creating a file group.
+   */
+  public static String createNewFileIdPfx() {
+<span class="nc" id="L271">    return UUID.randomUUID().toString();</span>
+  }
+
+  /**
+   * Get the file extension from the log file.
+   */
+  public static String getFileExtensionFromLog(Path logPath) {
+<span class="nc" id="L278">    Matcher matcher = LOG_FILE_PATTERN.matcher(logPath.getName());</span>
+<span class="nc bnc" id="L279" title="All 2 branches missed.">    if (!matcher.find()) {</span>
+<span class="nc" id="L280">      throw new InvalidHoodiePathException(logPath, &quot;LogFile&quot;);</span>
+    }
+<span class="nc" id="L282">    return matcher.group(3);</span>
+  }
+
+  /**
+   * Get the first part of the file name in the log file. That will be the fileId. Log file do not have commitTime in
+   * the file name.
+   */
+  public static String getFileIdFromLogPath(Path path) {
+<span class="nc" id="L290">    Matcher matcher = LOG_FILE_PATTERN.matcher(path.getName());</span>
+<span class="nc bnc" id="L291" title="All 2 branches missed.">    if (!matcher.find()) {</span>
+<span class="nc" id="L292">      throw new InvalidHoodiePathException(path, &quot;LogFile&quot;);</span>
+    }
+<span class="nc" id="L294">    return matcher.group(1);</span>
+  }
+
+  /**
+   * Check if the file is a parquet file of a log file. Then get the fileId appropriately.
+   */
+  public static String getFileIdFromFilePath(Path filePath) {
+<span class="nc bnc" id="L301" title="All 2 branches missed.">    if (FSUtils.isLogFile(filePath)) {</span>
+<span class="nc" id="L302">      return FSUtils.getFileIdFromLogPath(filePath);</span>
+    }
+<span class="nc" id="L304">    return FSUtils.getFileId(filePath.getName());</span>
+  }
+
+  /**
+   * Get the first part of the file name in the log file. That will be the fileId. Log file do not have commitTime in
+   * the file name.
+   */
+  public static String getBaseCommitTimeFromLogPath(Path path) {
+<span class="nc" id="L312">    Matcher matcher = LOG_FILE_PATTERN.matcher(path.getName());</span>
+<span class="nc bnc" id="L313" title="All 2 branches missed.">    if (!matcher.find()) {</span>
+<span class="nc" id="L314">      throw new InvalidHoodiePathException(path, &quot;LogFile&quot;);</span>
+    }
+<span class="nc" id="L316">    return matcher.group(2);</span>
+  }
+
+  /**
+   * Get TaskPartitionId used in log-path.
+   */
+  public static Integer getTaskPartitionIdFromLogPath(Path path) {
+<span class="nc" id="L323">    Matcher matcher = LOG_FILE_PATTERN.matcher(path.getName());</span>
+<span class="nc bnc" id="L324" title="All 2 branches missed.">    if (!matcher.find()) {</span>
+<span class="nc" id="L325">      throw new InvalidHoodiePathException(path, &quot;LogFile&quot;);</span>
+    }
+<span class="nc" id="L327">    String val = matcher.group(7);</span>
+<span class="nc bnc" id="L328" title="All 2 branches missed.">    return val == null ? null : Integer.parseInt(val);</span>
+  }
+
+  /**
+   * Get Write-Token used in log-path.
+   */
+  public static String getWriteTokenFromLogPath(Path path) {
+<span class="nc" id="L335">    Matcher matcher = LOG_FILE_PATTERN.matcher(path.getName());</span>
+<span class="nc bnc" id="L336" title="All 2 branches missed.">    if (!matcher.find()) {</span>
+<span class="nc" id="L337">      throw new InvalidHoodiePathException(path, &quot;LogFile&quot;);</span>
+    }
+<span class="nc" id="L339">    return matcher.group(6);</span>
+  }
+
+  /**
+   * Get StageId used in log-path.
+   */
+  public static Integer getStageIdFromLogPath(Path path) {
+<span class="nc" id="L346">    Matcher matcher = LOG_FILE_PATTERN.matcher(path.getName());</span>
+<span class="nc bnc" id="L347" title="All 2 branches missed.">    if (!matcher.find()) {</span>
+<span class="nc" id="L348">      throw new InvalidHoodiePathException(path, &quot;LogFile&quot;);</span>
+    }
+<span class="nc" id="L350">    String val = matcher.group(8);</span>
+<span class="nc bnc" id="L351" title="All 2 branches missed.">    return val == null ? null : Integer.parseInt(val);</span>
+  }
+
+  /**
+   * Get Task Attempt Id used in log-path.
+   */
+  public static Integer getTaskAttemptIdFromLogPath(Path path) {
+<span class="nc" id="L358">    Matcher matcher = LOG_FILE_PATTERN.matcher(path.getName());</span>
+<span class="nc bnc" id="L359" title="All 2 branches missed.">    if (!matcher.find()) {</span>
+<span class="nc" id="L360">      throw new InvalidHoodiePathException(path, &quot;LogFile&quot;);</span>
+    }
+<span class="nc" id="L362">    String val = matcher.group(9);</span>
+<span class="nc bnc" id="L363" title="All 2 branches missed.">    return val == null ? null : Integer.parseInt(val);</span>
+  }
+
+  /**
+   * Get the last part of the file name in the log file and convert to int.
+   */
+  public static int getFileVersionFromLog(Path logPath) {
+<span class="nc" id="L370">    Matcher matcher = LOG_FILE_PATTERN.matcher(logPath.getName());</span>
+<span class="nc bnc" id="L371" title="All 2 branches missed.">    if (!matcher.find()) {</span>
+<span class="nc" id="L372">      throw new InvalidHoodiePathException(logPath, &quot;LogFile&quot;);</span>
+    }
+<span class="nc" id="L374">    return Integer.parseInt(matcher.group(4));</span>
+  }
+
+  public static String makeLogFileName(String fileId, String logFileExtension, String baseCommitTime, int version,
+      String writeToken) {
+<span class="nc bnc" id="L379" title="All 2 branches missed.">    String suffix =</span>
+<span class="nc" id="L380">        (writeToken == null) ? String.format(&quot;%s_%s%s.%d&quot;, fileId, baseCommitTime, logFileExtension, version)</span>
+<span class="nc" id="L381">            : String.format(&quot;%s_%s%s.%d_%s&quot;, fileId, baseCommitTime, logFileExtension, version, writeToken);</span>
+<span class="nc" id="L382">    return LOG_FILE_PREFIX + suffix;</span>
+  }
+
+  public static boolean isLogFile(Path logPath) {
+<span class="nc" id="L386">    Matcher matcher = LOG_FILE_PATTERN.matcher(logPath.getName());</span>
+<span class="nc" id="L387">    return matcher.find();</span>
+  }
+
+  /**
+   * Get the latest log file written from the list of log files passed in.
+   */
+  public static Option&lt;HoodieLogFile&gt; getLatestLogFile(Stream&lt;HoodieLogFile&gt; logFiles) {
+<span class="nc" id="L394">    return Option.fromJavaOptional(logFiles.min(HoodieLogFile.getReverseLogFileComparator()));</span>
+  }
+
+  /**
+   * Get all the log files for the passed in FileId in the partition path.
+   */
+  public static Stream&lt;HoodieLogFile&gt; getAllLogFiles(FileSystem fs, Path partitionPath, final String fileId,
+      final String logFileExtension, final String baseCommitTime) throws IOException {
+<span class="nc" id="L402">    return Arrays</span>
+<span class="nc" id="L403">        .stream(fs.listStatus(partitionPath,</span>
+<span class="nc bnc" id="L404" title="All 4 branches missed.">            path -&gt; path.getName().startsWith(&quot;.&quot; + fileId) &amp;&amp; path.getName().contains(logFileExtension)))</span>
+<span class="nc" id="L405">        .map(HoodieLogFile::new).filter(s -&gt; s.getBaseCommitTime().equals(baseCommitTime));</span>
+  }
+
+  /**
+   * Get the latest log version for the fileId in the partition path.
+   */
+  public static Option&lt;Pair&lt;Integer, String&gt;&gt; getLatestLogVersion(FileSystem fs, Path partitionPath,
+      final String fileId, final String logFileExtension, final String baseCommitTime) throws IOException {
+<span class="nc" id="L413">    Option&lt;HoodieLogFile&gt; latestLogFile =</span>
+<span class="nc" id="L414">        getLatestLogFile(getAllLogFiles(fs, partitionPath, fileId, logFileExtension, baseCommitTime));</span>
+<span class="nc bnc" id="L415" title="All 2 branches missed.">    if (latestLogFile.isPresent()) {</span>
+<span class="nc" id="L416">      return Option</span>
+<span class="nc" id="L417">          .of(Pair.of(latestLogFile.get().getLogVersion(), getWriteTokenFromLogPath(latestLogFile.get().getPath())));</span>
+    }
+<span class="nc" id="L419">    return Option.empty();</span>
+  }
+
+  /**
+   * computes the next log version for the specified fileId in the partition path.
+   */
+  public static int computeNextLogVersion(FileSystem fs, Path partitionPath, final String fileId,
+      final String logFileExtension, final String baseCommitTime) throws IOException {
+<span class="nc" id="L427">    Option&lt;Pair&lt;Integer, String&gt;&gt; currentVersionWithWriteToken =</span>
+<span class="nc" id="L428">        getLatestLogVersion(fs, partitionPath, fileId, logFileExtension, baseCommitTime);</span>
+    // handle potential overflow
+<span class="nc bnc" id="L430" title="All 2 branches missed.">    return (currentVersionWithWriteToken.isPresent()) ? currentVersionWithWriteToken.get().getKey() + 1</span>
+<span class="nc" id="L431">        : HoodieLogFile.LOGFILE_BASE_VERSION;</span>
+  }
+
+  public static int getDefaultBufferSize(final FileSystem fs) {
+<span class="nc" id="L435">    return fs.getConf().getInt(&quot;io.file.buffer.size&quot;, 4096);</span>
+  }
+
+  public static Short getDefaultReplication(FileSystem fs, Path path) {
+<span class="nc" id="L439">    return fs.getDefaultReplication(path);</span>
+  }
+
+  /**
+   * When a file was opened and the task died without closing the stream, another task executor cannot open because the
+   * existing lease will be active. We will try to recover the lease, from HDFS. If a data node went down, it takes
+   * about 10 minutes for the lease to be rocovered. But if the client dies, this should be instant.
+   */
+  public static boolean recoverDFSFileLease(final DistributedFileSystem dfs, final Path p)
+      throws IOException, InterruptedException {
+<span class="nc" id="L449">    LOG.info(&quot;Recover lease on dfs file &quot; + p);</span>
+    // initiate the recovery
+<span class="nc" id="L451">    boolean recovered = false;</span>
+<span class="nc bnc" id="L452" title="All 2 branches missed.">    for (int nbAttempt = 0; nbAttempt &lt; MAX_ATTEMPTS_RECOVER_LEASE; nbAttempt++) {</span>
+<span class="nc" id="L453">      LOG.info(&quot;Attempt &quot; + nbAttempt + &quot; to recover lease on dfs file &quot; + p);</span>
+<span class="nc" id="L454">      recovered = dfs.recoverLease(p);</span>
+<span class="nc bnc" id="L455" title="All 2 branches missed.">      if (recovered) {</span>
+<span class="nc" id="L456">        break;</span>
+      }
+      // Sleep for 1 second before trying again. Typically it takes about 2-3 seconds to recover
+      // under default settings
+<span class="nc" id="L460">      Thread.sleep(1000);</span>
+    }
+<span class="nc" id="L462">    return recovered;</span>
+  }
+
+  public static void deleteOlderCleanMetaFiles(FileSystem fs, String metaPath, Stream&lt;HoodieInstant&gt; instants) {
+    // TODO - this should be archived when archival is made general for all meta-data
+    // skip MIN_CLEAN_TO_KEEP and delete rest
+<span class="nc" id="L468">    instants.skip(MIN_CLEAN_TO_KEEP).forEach(s -&gt; {</span>
+      try {
+<span class="nc" id="L470">        fs.delete(new Path(metaPath, s.getFileName()), false);</span>
+<span class="nc" id="L471">      } catch (IOException e) {</span>
+<span class="nc" id="L472">        throw new HoodieIOException(&quot;Could not delete clean meta files&quot; + s.getFileName(), e);</span>
+<span class="nc" id="L473">      }</span>
+<span class="nc" id="L474">    });</span>
+<span class="nc" id="L475">  }</span>
+
+  public static void deleteOlderRollbackMetaFiles(FileSystem fs, String metaPath, Stream&lt;HoodieInstant&gt; instants) {
+    // TODO - this should be archived when archival is made general for all meta-data
+    // skip MIN_ROLLBACK_TO_KEEP and delete rest
+<span class="nc" id="L480">    instants.skip(MIN_ROLLBACK_TO_KEEP).forEach(s -&gt; {</span>
+      try {
+<span class="nc" id="L482">        fs.delete(new Path(metaPath, s.getFileName()), false);</span>
+<span class="nc" id="L483">      } catch (IOException e) {</span>
+<span class="nc" id="L484">        throw new HoodieIOException(&quot;Could not delete rollback meta files &quot; + s.getFileName(), e);</span>
+<span class="nc" id="L485">      }</span>
+<span class="nc" id="L486">    });</span>
+<span class="nc" id="L487">  }</span>
+
+  public static void deleteOlderRestoreMetaFiles(FileSystem fs, String metaPath, Stream&lt;HoodieInstant&gt; instants) {
+    // TODO - this should be archived when archival is made general for all meta-data
+    // skip MIN_ROLLBACK_TO_KEEP and delete rest
+<span class="nc" id="L492">    instants.skip(MIN_ROLLBACK_TO_KEEP).map(s -&gt; {</span>
+      try {
+<span class="nc" id="L494">        return fs.delete(new Path(metaPath, s.getFileName()), false);</span>
+<span class="nc" id="L495">      } catch (IOException e) {</span>
+<span class="nc" id="L496">        throw new HoodieIOException(&quot;Could not delete restore meta files &quot; + s.getFileName(), e);</span>
+      }
+    });
+<span class="nc" id="L499">  }</span>
+
+  public static void createPathIfNotExists(FileSystem fs, Path partitionPath) throws IOException {
+<span class="nc bnc" id="L502" title="All 2 branches missed.">    if (!fs.exists(partitionPath)) {</span>
+<span class="nc" id="L503">      fs.mkdirs(partitionPath);</span>
+    }
+<span class="nc" id="L505">  }</span>
+
+  public static Long getSizeInMB(long sizeInBytes) {
+<span class="nc" id="L508">    return sizeInBytes / (1024 * 1024);</span>
+  }
+
+  public static Path getPartitionPath(String basePath, String partitionPath) {
+<span class="nc" id="L512">    return getPartitionPath(new Path(basePath), partitionPath);</span>
+  }
+
+  public static Path getPartitionPath(Path basePath, String partitionPath) {
+    // FOr non-partitioned table, return only base-path
+<span class="nc bnc" id="L517" title="All 4 branches missed.">    return ((partitionPath == null) || (partitionPath.isEmpty())) ? basePath : new Path(basePath, partitionPath);</span>
+  }
+
+  /**
+   * Get DFS full partition path (e.g. hdfs://ip-address:8020:/&lt;absolute path&gt;)
+   */
+  public static String getDFSFullPartitionPath(FileSystem fs, Path partitionPath) {
+<span class="nc" id="L524">    return fs.getUri() + partitionPath.toUri().getRawPath();</span>
+  }
+
+  /**
+   * This is due to HUDI-140 GCS has a different behavior for detecting EOF during seek().
+   * 
+   * @param inputStream FSDataInputStream
+   * @return true if the inputstream or the wrapped one is of type GoogleHadoopFSInputStream
+   */
+  public static boolean isGCSInputStream(FSDataInputStream inputStream) {
+<span class="nc bnc" id="L534" title="All 2 branches missed.">    return inputStream.getClass().getCanonicalName().equals(&quot;com.google.cloud.hadoop.fs.gcs.GoogleHadoopFSInputStream&quot;)</span>
+<span class="nc" id="L535">        || inputStream.getWrappedStream().getClass().getCanonicalName()</span>
+<span class="nc bnc" id="L536" title="All 2 branches missed.">            .equals(&quot;com.google.cloud.hadoop.fs.gcs.GoogleHadoopFSInputStream&quot;);</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>FileSlice.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.model</a> &gt; <span class="el_source">FileSlice.java</span></div><h1>FileSlice.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.model;
+
+import org.apache.hudi.common.util.Option;
+
+import java.io.Serializable;
+import java.util.Objects;
+import java.util.TreeSet;
+import java.util.stream.Stream;
+
+/**
+ * Within a file group, a slice is a combination of data file written at a commit time and list of log files, containing
+ * changes to the data file from that commit time.
+ */
+public class FileSlice implements Serializable {
+
+  /**
+   * File Group Id of the Slice.
+   */
+  private HoodieFileGroupId fileGroupId;
+
+  /**
+   * Point in the timeline, at which the slice was created.
+   */
+  private String baseInstantTime;
+
+  /**
+   * data file, with the compacted data, for this slice.
+   */
+  private HoodieBaseFile baseFile;
+
+  /**
+   * List of appendable log files with real time data - Sorted with greater log version first - Always empty for
+   * copy_on_write storage.
+   */
+  private final TreeSet&lt;HoodieLogFile&gt; logFiles;
+
+  public FileSlice(String partitionPath, String baseInstantTime, String fileId) {
+<span class="nc" id="L56">    this(new HoodieFileGroupId(partitionPath, fileId), baseInstantTime);</span>
+<span class="nc" id="L57">  }</span>
+
+<span class="nc" id="L59">  public FileSlice(HoodieFileGroupId fileGroupId, String baseInstantTime) {</span>
+<span class="nc" id="L60">    this.fileGroupId = fileGroupId;</span>
+<span class="nc" id="L61">    this.baseInstantTime = baseInstantTime;</span>
+<span class="nc" id="L62">    this.baseFile = null;</span>
+<span class="nc" id="L63">    this.logFiles = new TreeSet&lt;&gt;(HoodieLogFile.getReverseLogFileComparator());</span>
+<span class="nc" id="L64">  }</span>
+
+  public void setBaseFile(HoodieBaseFile baseFile) {
+<span class="nc" id="L67">    this.baseFile = baseFile;</span>
+<span class="nc" id="L68">  }</span>
+
+  public void addLogFile(HoodieLogFile logFile) {
+<span class="nc" id="L71">    this.logFiles.add(logFile);</span>
+<span class="nc" id="L72">  }</span>
+
+  public Stream&lt;HoodieLogFile&gt; getLogFiles() {
+<span class="nc" id="L75">    return logFiles.stream();</span>
+  }
+
+  public String getBaseInstantTime() {
+<span class="nc" id="L79">    return baseInstantTime;</span>
+  }
+
+  public String getPartitionPath() {
+<span class="nc" id="L83">    return fileGroupId.getPartitionPath();</span>
+  }
+
+  public String getFileId() {
+<span class="nc" id="L87">    return fileGroupId.getFileId();</span>
+  }
+
+  public HoodieFileGroupId getFileGroupId() {
+<span class="nc" id="L91">    return fileGroupId;</span>
+  }
+
+  public Option&lt;HoodieBaseFile&gt; getBaseFile() {
+<span class="nc" id="L95">    return Option.ofNullable(baseFile);</span>
+  }
+
+  public Option&lt;HoodieLogFile&gt; getLatestLogFile() {
+<span class="nc" id="L99">    return Option.fromJavaOptional(logFiles.stream().findFirst());</span>
+  }
+
+  /**
+   * Returns true if there is no data file and no log files. Happens as part of pending compaction
+   * 
+   * @return
+   */
+  public boolean isEmpty() {
+<span class="nc bnc" id="L108" title="All 4 branches missed.">    return (baseFile == null) &amp;&amp; (logFiles.isEmpty());</span>
+  }
+
+  @Override
+  public String toString() {
+<span class="nc" id="L113">    final StringBuilder sb = new StringBuilder(&quot;FileSlice {&quot;);</span>
+<span class="nc" id="L114">    sb.append(&quot;fileGroupId=&quot;).append(fileGroupId);</span>
+<span class="nc" id="L115">    sb.append(&quot;, baseCommitTime=&quot;).append(baseInstantTime);</span>
+<span class="nc" id="L116">    sb.append(&quot;, baseFile='&quot;).append(baseFile).append('\'');</span>
+<span class="nc" id="L117">    sb.append(&quot;, logFiles='&quot;).append(logFiles).append('\'');</span>
+<span class="nc" id="L118">    sb.append('}');</span>
+<span class="nc" id="L119">    return sb.toString();</span>
+  }
+
+  @Override
+  public boolean equals(Object o) {
+<span class="nc bnc" id="L124" title="All 2 branches missed.">    if (this == o) {</span>
+<span class="nc" id="L125">      return true;</span>
+    }
+<span class="nc bnc" id="L127" title="All 4 branches missed.">    if (o == null || getClass() != o.getClass()) {</span>
+<span class="nc" id="L128">      return false;</span>
+    }
+<span class="nc" id="L130">    FileSlice slice = (FileSlice) o;</span>
+<span class="nc bnc" id="L131" title="All 4 branches missed.">    return Objects.equals(fileGroupId, slice.fileGroupId) &amp;&amp; Objects.equals(baseInstantTime, slice.baseInstantTime)</span>
+<span class="nc bnc" id="L132" title="All 4 branches missed.">        &amp;&amp; Objects.equals(baseFile, slice.baseFile) &amp;&amp; Objects.equals(logFiles, slice.logFiles);</span>
+  }
+
+  @Override
+  public int hashCode() {
+<span class="nc" id="L137">    return Objects.hash(fileGroupId, baseInstantTime);</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

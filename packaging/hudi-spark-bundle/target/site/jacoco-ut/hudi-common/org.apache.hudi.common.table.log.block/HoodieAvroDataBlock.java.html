@@ -1,0 +1,307 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieAvroDataBlock.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.table.log.block</a> &gt; <span class="el_source">HoodieAvroDataBlock.java</span></div><h1>HoodieAvroDataBlock.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.table.log.block;
+
+import org.apache.hudi.common.model.HoodieLogFile;
+import org.apache.hudi.common.storage.SizeAwareDataInputStream;
+import org.apache.hudi.common.util.HoodieAvroUtils;
+import org.apache.hudi.common.util.Option;
+import org.apache.hudi.exception.HoodieIOException;
+
+import org.apache.avro.Schema;
+import org.apache.avro.generic.GenericDatumReader;
+import org.apache.avro.generic.GenericDatumWriter;
+import org.apache.avro.generic.IndexedRecord;
+import org.apache.avro.io.BinaryDecoder;
+import org.apache.avro.io.BinaryEncoder;
+import org.apache.avro.io.Decoder;
+import org.apache.avro.io.DecoderFactory;
+import org.apache.avro.io.Encoder;
+import org.apache.avro.io.EncoderFactory;
+import org.apache.hadoop.fs.FSDataInputStream;
+
+import javax.annotation.Nonnull;
+
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * DataBlock contains a list of records serialized using Avro. The Datablock contains 1. Data Block version 2. Total
+ * number of records in the block 3. Size of a record 4. Actual avro serialized content of the record
+ */
+public class HoodieAvroDataBlock extends HoodieLogBlock {
+
+  private List&lt;IndexedRecord&gt; records;
+  private Schema schema;
+<span class="nc" id="L60">  private ThreadLocal&lt;BinaryEncoder&gt; encoderCache = new ThreadLocal&lt;&gt;();</span>
+<span class="nc" id="L61">  private ThreadLocal&lt;BinaryDecoder&gt; decoderCache = new ThreadLocal&lt;&gt;();</span>
+
+  public HoodieAvroDataBlock(@Nonnull List&lt;IndexedRecord&gt; records, @Nonnull Map&lt;HeaderMetadataType, String&gt; header,
+      @Nonnull Map&lt;HeaderMetadataType, String&gt; footer) {
+<span class="nc" id="L65">    super(header, footer, Option.empty(), Option.empty(), null, false);</span>
+<span class="nc" id="L66">    this.records = records;</span>
+<span class="nc" id="L67">    this.schema = new Schema.Parser().parse(super.getLogBlockHeader().get(HeaderMetadataType.SCHEMA));</span>
+<span class="nc" id="L68">  }</span>
+
+  public HoodieAvroDataBlock(@Nonnull List&lt;IndexedRecord&gt; records, @Nonnull Map&lt;HeaderMetadataType, String&gt; header) {
+<span class="nc" id="L71">    this(records, header, new HashMap&lt;&gt;());</span>
+<span class="nc" id="L72">  }</span>
+
+  private HoodieAvroDataBlock(Option&lt;byte[]&gt; content, @Nonnull FSDataInputStream inputStream, boolean readBlockLazily,
+      Option&lt;HoodieLogBlockContentLocation&gt; blockContentLocation, Schema readerSchema,
+      @Nonnull Map&lt;HeaderMetadataType, String&gt; headers, @Nonnull Map&lt;HeaderMetadataType, String&gt; footer) {
+<span class="nc" id="L77">    super(headers, footer, blockContentLocation, content, inputStream, readBlockLazily);</span>
+<span class="nc" id="L78">    this.schema = readerSchema;</span>
+<span class="nc" id="L79">  }</span>
+
+  public static HoodieLogBlock getBlock(HoodieLogFile logFile, FSDataInputStream inputStream, Option&lt;byte[]&gt; content,
+      boolean readBlockLazily, long position, long blockSize, long blockEndpos, Schema readerSchema,
+      Map&lt;HeaderMetadataType, String&gt; header, Map&lt;HeaderMetadataType, String&gt; footer) {
+
+<span class="nc" id="L85">    return new HoodieAvroDataBlock(content, inputStream, readBlockLazily,</span>
+<span class="nc" id="L86">        Option.of(new HoodieLogBlockContentLocation(logFile, position, blockSize, blockEndpos)), readerSchema, header,</span>
+        footer);
+
+  }
+
+  @Override
+  public byte[] getContentBytes() throws IOException {
+
+    // In case this method is called before realizing records from content
+<span class="nc bnc" id="L95" title="All 2 branches missed.">    if (getContent().isPresent()) {</span>
+<span class="nc" id="L96">      return getContent().get();</span>
+<span class="nc bnc" id="L97" title="All 6 branches missed.">    } else if (readBlockLazily &amp;&amp; !getContent().isPresent() &amp;&amp; records == null) {</span>
+      // read block lazily
+<span class="nc" id="L99">      createRecordsFromContentBytes();</span>
+    }
+
+<span class="nc" id="L102">    Schema schema = new Schema.Parser().parse(super.getLogBlockHeader().get(HeaderMetadataType.SCHEMA));</span>
+<span class="nc" id="L103">    GenericDatumWriter&lt;IndexedRecord&gt; writer = new GenericDatumWriter&lt;&gt;(schema);</span>
+<span class="nc" id="L104">    ByteArrayOutputStream baos = new ByteArrayOutputStream();</span>
+<span class="nc" id="L105">    DataOutputStream output = new DataOutputStream(baos);</span>
+
+    // 1. Write out the log block version
+<span class="nc" id="L108">    output.writeInt(HoodieLogBlock.version);</span>
+
+    // 2. Write total number of records
+<span class="nc" id="L111">    output.writeInt(records.size());</span>
+
+    // 3. Write the records
+<span class="nc" id="L114">    Iterator&lt;IndexedRecord&gt; itr = records.iterator();</span>
+<span class="nc bnc" id="L115" title="All 2 branches missed.">    while (itr.hasNext()) {</span>
+<span class="nc" id="L116">      IndexedRecord s = itr.next();</span>
+<span class="nc" id="L117">      ByteArrayOutputStream temp = new ByteArrayOutputStream();</span>
+<span class="nc" id="L118">      BinaryEncoder encoder = EncoderFactory.get().binaryEncoder(temp, encoderCache.get());</span>
+<span class="nc" id="L119">      encoderCache.set(encoder);</span>
+      try {
+        // Encode the record into bytes
+<span class="nc" id="L122">        writer.write(s, encoder);</span>
+<span class="nc" id="L123">        encoder.flush();</span>
+
+        // Get the size of the bytes
+<span class="nc" id="L126">        int size = temp.toByteArray().length;</span>
+        // Write the record size
+<span class="nc" id="L128">        output.writeInt(size);</span>
+        // Write the content
+<span class="nc" id="L130">        output.write(temp.toByteArray());</span>
+<span class="nc" id="L131">        itr.remove();</span>
+<span class="nc" id="L132">      } catch (IOException e) {</span>
+<span class="nc" id="L133">        throw new HoodieIOException(&quot;IOException converting HoodieAvroDataBlock to bytes&quot;, e);</span>
+<span class="nc" id="L134">      }</span>
+<span class="nc" id="L135">    }</span>
+<span class="nc" id="L136">    output.close();</span>
+<span class="nc" id="L137">    return baos.toByteArray();</span>
+  }
+
+  @Override
+  public HoodieLogBlockType getBlockType() {
+<span class="nc" id="L142">    return HoodieLogBlockType.AVRO_DATA_BLOCK;</span>
+  }
+
+  public List&lt;IndexedRecord&gt; getRecords() {
+<span class="nc bnc" id="L146" title="All 2 branches missed.">    if (records == null) {</span>
+      try {
+        // in case records are absent, read content lazily and then convert to IndexedRecords
+<span class="nc" id="L149">        createRecordsFromContentBytes();</span>
+<span class="nc" id="L150">      } catch (IOException io) {</span>
+<span class="nc" id="L151">        throw new HoodieIOException(&quot;Unable to convert content bytes to records&quot;, io);</span>
+<span class="nc" id="L152">      }</span>
+    }
+<span class="nc" id="L154">    return records;</span>
+  }
+
+  public Schema getSchema() {
+    // if getSchema was invoked before converting byte [] to records
+<span class="nc bnc" id="L159" title="All 2 branches missed.">    if (records == null) {</span>
+<span class="nc" id="L160">      getRecords();</span>
+    }
+<span class="nc" id="L162">    return schema;</span>
+  }
+
+  // TODO (na) - Break down content into smaller chunks of byte [] to be GC as they are used
+  // TODO (na) - Implement a recordItr instead of recordList
+  private void createRecordsFromContentBytes() throws IOException {
+
+<span class="nc bnc" id="L169" title="All 4 branches missed.">    if (readBlockLazily &amp;&amp; !getContent().isPresent()) {</span>
+      // read log block contents from disk
+<span class="nc" id="L171">      inflate();</span>
+    }
+
+<span class="nc" id="L174">    SizeAwareDataInputStream dis =</span>
+<span class="nc" id="L175">        new SizeAwareDataInputStream(new DataInputStream(new ByteArrayInputStream(getContent().get())));</span>
+
+    // 1. Read version for this data block
+<span class="nc" id="L178">    int version = dis.readInt();</span>
+<span class="nc" id="L179">    HoodieAvroDataBlockVersion logBlockVersion = new HoodieAvroDataBlockVersion(version);</span>
+
+    // Get schema from the header
+<span class="nc" id="L182">    Schema writerSchema = new Schema.Parser().parse(super.getLogBlockHeader().get(HeaderMetadataType.SCHEMA));</span>
+
+    // If readerSchema was not present, use writerSchema
+<span class="nc bnc" id="L185" title="All 2 branches missed.">    if (schema == null) {</span>
+<span class="nc" id="L186">      schema = writerSchema;</span>
+    }
+
+<span class="nc" id="L189">    GenericDatumReader&lt;IndexedRecord&gt; reader = new GenericDatumReader&lt;&gt;(writerSchema, schema);</span>
+    // 2. Get the total records
+<span class="nc" id="L191">    int totalRecords = 0;</span>
+<span class="nc bnc" id="L192" title="All 2 branches missed.">    if (logBlockVersion.hasRecordCount()) {</span>
+<span class="nc" id="L193">      totalRecords = dis.readInt();</span>
+    }
+<span class="nc" id="L195">    List&lt;IndexedRecord&gt; records = new ArrayList&lt;&gt;(totalRecords);</span>
+
+    // 3. Read the content
+<span class="nc bnc" id="L198" title="All 2 branches missed.">    for (int i = 0; i &lt; totalRecords; i++) {</span>
+<span class="nc" id="L199">      int recordLength = dis.readInt();</span>
+<span class="nc" id="L200">      BinaryDecoder decoder = DecoderFactory.get().binaryDecoder(getContent().get(), dis.getNumberOfBytesRead(),</span>
+<span class="nc" id="L201">          recordLength, decoderCache.get());</span>
+<span class="nc" id="L202">      decoderCache.set(decoder);</span>
+<span class="nc" id="L203">      IndexedRecord record = reader.read(null, decoder);</span>
+<span class="nc" id="L204">      records.add(record);</span>
+<span class="nc" id="L205">      dis.skipBytes(recordLength);</span>
+    }
+<span class="nc" id="L207">    dis.close();</span>
+<span class="nc" id="L208">    this.records = records;</span>
+    // Free up content to be GC'd, deflate
+<span class="nc" id="L210">    deflate();</span>
+<span class="nc" id="L211">  }</span>
+
+  //----------------------------------------------------------------------------------------
+  //                                  DEPRECATED METHODS
+  //----------------------------------------------------------------------------------------
+
+  /**
+   * This constructor is retained to provide backwards compatibility to HoodieArchivedLogs which were written using
+   * HoodieLogFormat V1.
+   */
+  @Deprecated
+  public HoodieAvroDataBlock(List&lt;IndexedRecord&gt; records, Schema schema) {
+<span class="nc" id="L223">    super(new HashMap&lt;&gt;(), new HashMap&lt;&gt;(), Option.empty(), Option.empty(), null, false);</span>
+<span class="nc" id="L224">    this.records = records;</span>
+<span class="nc" id="L225">    this.schema = schema;</span>
+<span class="nc" id="L226">  }</span>
+
+  /**
+   * This method is retained to provide backwards compatibility to HoodieArchivedLogs which were written using
+   * HoodieLogFormat V1.
+   */
+  @Deprecated
+  public static HoodieLogBlock getBlock(byte[] content, Schema readerSchema) throws IOException {
+
+<span class="nc" id="L235">    SizeAwareDataInputStream dis = new SizeAwareDataInputStream(new DataInputStream(new ByteArrayInputStream(content)));</span>
+
+    // 1. Read the schema written out
+<span class="nc" id="L238">    int schemaLength = dis.readInt();</span>
+<span class="nc" id="L239">    byte[] compressedSchema = new byte[schemaLength];</span>
+<span class="nc" id="L240">    dis.readFully(compressedSchema, 0, schemaLength);</span>
+<span class="nc" id="L241">    Schema writerSchema = new Schema.Parser().parse(HoodieAvroUtils.decompress(compressedSchema));</span>
+
+<span class="nc bnc" id="L243" title="All 2 branches missed.">    if (readerSchema == null) {</span>
+<span class="nc" id="L244">      readerSchema = writerSchema;</span>
+    }
+
+<span class="nc" id="L247">    GenericDatumReader&lt;IndexedRecord&gt; reader = new GenericDatumReader&lt;&gt;(writerSchema, readerSchema);</span>
+    // 2. Get the total records
+<span class="nc" id="L249">    int totalRecords = dis.readInt();</span>
+<span class="nc" id="L250">    List&lt;IndexedRecord&gt; records = new ArrayList&lt;&gt;(totalRecords);</span>
+
+    // 3. Read the content
+<span class="nc bnc" id="L253" title="All 2 branches missed.">    for (int i = 0; i &lt; totalRecords; i++) {</span>
+<span class="nc" id="L254">      int recordLength = dis.readInt();</span>
+<span class="nc" id="L255">      Decoder decoder = DecoderFactory.get().binaryDecoder(content, dis.getNumberOfBytesRead(), recordLength, null);</span>
+<span class="nc" id="L256">      IndexedRecord record = reader.read(null, decoder);</span>
+<span class="nc" id="L257">      records.add(record);</span>
+<span class="nc" id="L258">      dis.skipBytes(recordLength);</span>
+    }
+<span class="nc" id="L260">    dis.close();</span>
+<span class="nc" id="L261">    return new HoodieAvroDataBlock(records, readerSchema);</span>
+  }
+
+  @Deprecated
+  public byte[] getBytes(Schema schema) throws IOException {
+
+<span class="nc" id="L267">    GenericDatumWriter&lt;IndexedRecord&gt; writer = new GenericDatumWriter&lt;&gt;(schema);</span>
+<span class="nc" id="L268">    ByteArrayOutputStream baos = new ByteArrayOutputStream();</span>
+<span class="nc" id="L269">    DataOutputStream output = new DataOutputStream(baos);</span>
+
+    // 2. Compress and Write schema out
+<span class="nc" id="L272">    byte[] schemaContent = HoodieAvroUtils.compress(schema.toString());</span>
+<span class="nc" id="L273">    output.writeInt(schemaContent.length);</span>
+<span class="nc" id="L274">    output.write(schemaContent);</span>
+
+    // 3. Write total number of records
+<span class="nc" id="L277">    output.writeInt(records.size());</span>
+
+    // 4. Write the records
+<span class="nc" id="L280">    Iterator&lt;IndexedRecord&gt; itr = records.iterator();</span>
+<span class="nc bnc" id="L281" title="All 2 branches missed.">    while (itr.hasNext()) {</span>
+<span class="nc" id="L282">      IndexedRecord s = itr.next();</span>
+<span class="nc" id="L283">      ByteArrayOutputStream temp = new ByteArrayOutputStream();</span>
+<span class="nc" id="L284">      Encoder encoder = EncoderFactory.get().binaryEncoder(temp, null);</span>
+      try {
+        // Encode the record into bytes
+<span class="nc" id="L287">        writer.write(s, encoder);</span>
+<span class="nc" id="L288">        encoder.flush();</span>
+
+        // Get the size of the bytes
+<span class="nc" id="L291">        int size = temp.toByteArray().length;</span>
+        // Write the record size
+<span class="nc" id="L293">        output.writeInt(size);</span>
+        // Write the content
+<span class="nc" id="L295">        output.write(temp.toByteArray());</span>
+<span class="nc" id="L296">        itr.remove();</span>
+<span class="nc" id="L297">      } catch (IOException e) {</span>
+<span class="nc" id="L298">        throw new HoodieIOException(&quot;IOException converting HoodieAvroDataBlock to bytes&quot;, e);</span>
+<span class="nc" id="L299">      }</span>
+<span class="nc" id="L300">    }</span>
+
+<span class="nc" id="L302">    output.close();</span>
+<span class="nc" id="L303">    return baos.toByteArray();</span>
+  }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

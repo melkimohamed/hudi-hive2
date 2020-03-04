@@ -1,0 +1,268 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>DataSourceUtils.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-spark_2.11</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi</a> &gt; <span class="el_source">DataSourceUtils.java</span></div><h1>DataSourceUtils.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi;
+
+import org.apache.avro.LogicalTypes;
+import org.apache.avro.Schema;
+import org.apache.hudi.client.HoodieReadClient;
+import org.apache.hudi.client.HoodieWriteClient;
+import org.apache.hudi.client.WriteStatus;
+import org.apache.hudi.client.embedded.EmbeddedTimelineService;
+import org.apache.hudi.common.model.HoodieKey;
+import org.apache.hudi.common.model.HoodieRecord;
+import org.apache.hudi.common.model.HoodieRecordPayload;
+import org.apache.hudi.common.util.Option;
+import org.apache.hudi.common.util.ReflectionUtils;
+import org.apache.hudi.common.util.TypedProperties;
+import org.apache.hudi.config.HoodieCompactionConfig;
+import org.apache.hudi.config.HoodieIndexConfig;
+import org.apache.hudi.config.HoodieWriteConfig;
+import org.apache.hudi.exception.TableNotFoundException;
+import org.apache.hudi.exception.HoodieException;
+import org.apache.hudi.exception.HoodieNotSupportedException;
+import org.apache.hudi.hive.HiveSyncConfig;
+import org.apache.hudi.hive.SlashEncodedDayPartitionValueExtractor;
+import org.apache.hudi.index.HoodieIndex;
+
+import org.apache.avro.Schema.Field;
+import org.apache.avro.generic.GenericRecord;
+import org.apache.hudi.keygen.KeyGenerator;
+import org.apache.spark.api.java.JavaRDD;
+import org.apache.spark.api.java.JavaSparkContext;
+
+import java.io.IOException;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+/**
+ * Utilities used throughout the data source.
+ */
+<span class="nc" id="L60">public class DataSourceUtils {</span>
+
+  /**
+   * Obtain value of the provided field as string, denoted by dot notation. e.g: a.b.c
+   */
+  public static String getNestedFieldValAsString(GenericRecord record, String fieldName, boolean returnNullIfNotFound) {
+<span class="nc" id="L66">    Object obj = getNestedFieldVal(record, fieldName, returnNullIfNotFound);</span>
+<span class="nc bnc" id="L67" title="All 2 branches missed.">    return (obj == null) ? null : obj.toString();</span>
+  }
+
+  /**
+   * Obtain value of the provided field, denoted by dot notation. e.g: a.b.c
+   */
+  public static Object getNestedFieldVal(GenericRecord record, String fieldName, boolean returnNullIfNotFound) {
+<span class="nc" id="L74">    String[] parts = fieldName.split(&quot;\\.&quot;);</span>
+<span class="nc" id="L75">    GenericRecord valueNode = record;</span>
+<span class="nc" id="L76">    int i = 0;</span>
+<span class="nc bnc" id="L77" title="All 2 branches missed.">    for (; i &lt; parts.length; i++) {</span>
+<span class="nc" id="L78">      String part = parts[i];</span>
+<span class="nc" id="L79">      Object val = valueNode.get(part);</span>
+<span class="nc bnc" id="L80" title="All 2 branches missed.">      if (val == null) {</span>
+<span class="nc" id="L81">        break;</span>
+      }
+
+      // return, if last part of name
+<span class="nc bnc" id="L85" title="All 2 branches missed.">      if (i == parts.length - 1) {</span>
+<span class="nc" id="L86">        Schema fieldSchema = valueNode.getSchema().getField(part).schema();</span>
+<span class="nc" id="L87">        return convertValueForSpecificDataTypes(fieldSchema, val);</span>
+      } else {
+        // VC: Need a test here
+<span class="nc bnc" id="L90" title="All 2 branches missed.">        if (!(val instanceof GenericRecord)) {</span>
+<span class="nc" id="L91">          throw new HoodieException(&quot;Cannot find a record at part value :&quot; + part);</span>
+        }
+<span class="nc" id="L93">        valueNode = (GenericRecord) val;</span>
+      }
+    }
+
+<span class="nc bnc" id="L97" title="All 2 branches missed.">    if (returnNullIfNotFound) {</span>
+<span class="nc" id="L98">      return null;</span>
+    } else {
+<span class="nc" id="L100">      throw new HoodieException(</span>
+        fieldName + &quot;(Part -&quot; + parts[i] + &quot;) field not found in record. Acceptable fields were :&quot;
+<span class="nc" id="L102">          + valueNode.getSchema().getFields().stream().map(Field::name).collect(Collectors.toList()));</span>
+    }
+  }
+
+  /**
+   * This method converts values for fields with certain Avro/Parquet data types that require special handling.
+   *
+   * Logical Date Type is converted to actual Date value instead of Epoch Integer which is how it is
+   * represented/stored in parquet.
+   *
+   * @param fieldSchema avro field schema
+   * @param fieldValue avro field value
+   * @return field value either converted (for certain data types) or as it is.
+   */
+  private static Object convertValueForSpecificDataTypes(Schema fieldSchema, Object fieldValue) {
+<span class="nc bnc" id="L117" title="All 2 branches missed.">    if (fieldSchema == null) {</span>
+<span class="nc" id="L118">      return fieldValue;</span>
+    }
+
+<span class="nc bnc" id="L121" title="All 2 branches missed.">    if (isLogicalTypeDate(fieldSchema)) {</span>
+<span class="nc" id="L122">      return LocalDate.ofEpochDay(Long.parseLong(fieldValue.toString()));</span>
+    }
+<span class="nc" id="L124">    return fieldValue;</span>
+  }
+
+  /**
+   * Given an Avro field schema checks whether the field is of Logical Date Type or not.
+   *
+   * @param fieldSchema avro field schema
+   * @return boolean indicating whether fieldSchema is of Avro's Date Logical Type
+   */
+  private static boolean isLogicalTypeDate(Schema fieldSchema) {
+<span class="nc bnc" id="L134" title="All 2 branches missed.">    if (fieldSchema.getType() == Schema.Type.UNION) {</span>
+<span class="nc bnc" id="L135" title="All 2 branches missed.">      return fieldSchema.getTypes().stream().anyMatch(schema -&gt; schema.getLogicalType() == LogicalTypes.date());</span>
+    }
+<span class="nc bnc" id="L137" title="All 2 branches missed.">    return fieldSchema.getLogicalType() == LogicalTypes.date();</span>
+  }
+
+  /**
+   * Create a key generator class via reflection, passing in any configs needed.
+   * &lt;p&gt;
+   * If the class name of key generator is configured through the properties file, i.e., {@code props}, use the
+   * corresponding key generator class; otherwise, use the default key generator class specified in {@code
+   * DataSourceWriteOptions}.
+   */
+  public static KeyGenerator createKeyGenerator(TypedProperties props) throws IOException {
+<span class="nc" id="L148">    String keyGeneratorClass = props.getString(DataSourceWriteOptions.KEYGENERATOR_CLASS_OPT_KEY(),</span>
+<span class="nc" id="L149">        DataSourceWriteOptions.DEFAULT_KEYGENERATOR_CLASS_OPT_VAL());</span>
+    try {
+<span class="nc" id="L151">      return (KeyGenerator) ReflectionUtils.loadClass(keyGeneratorClass, props);</span>
+<span class="nc" id="L152">    } catch (Throwable e) {</span>
+<span class="nc" id="L153">      throw new IOException(&quot;Could not load key generator class &quot; + keyGeneratorClass, e);</span>
+    }
+  }
+
+  /**
+   * Create a payload class via reflection, passing in an ordering/precombine value.
+   */
+  public static HoodieRecordPayload createPayload(String payloadClass, GenericRecord record, Comparable orderingVal)
+      throws IOException {
+    try {
+<span class="nc" id="L163">      return (HoodieRecordPayload) ReflectionUtils.loadClass(payloadClass,</span>
+          new Class&lt;?&gt;[] {GenericRecord.class, Comparable.class}, record, orderingVal);
+<span class="nc" id="L165">    } catch (Throwable e) {</span>
+<span class="nc" id="L166">      throw new IOException(&quot;Could not create payload for class: &quot; + payloadClass, e);</span>
+    }
+  }
+
+  public static void checkRequiredProperties(TypedProperties props, List&lt;String&gt; checkPropNames) {
+<span class="nc" id="L171">    checkPropNames.forEach(prop -&gt; {</span>
+<span class="nc bnc" id="L172" title="All 2 branches missed.">      if (!props.containsKey(prop)) {</span>
+<span class="nc" id="L173">        throw new HoodieNotSupportedException(&quot;Required property &quot; + prop + &quot; is missing&quot;);</span>
+      }
+<span class="nc" id="L175">    });</span>
+<span class="nc" id="L176">  }</span>
+
+  public static HoodieWriteClient createHoodieClient(JavaSparkContext jssc, String schemaStr, String basePath,
+                                                     String tblName, Map&lt;String, String&gt; parameters) {
+
+    // inline compaction is on by default for MOR
+<span class="nc" id="L182">    boolean inlineCompact = parameters.get(DataSourceWriteOptions.TABLE_TYPE_OPT_KEY())</span>
+<span class="nc" id="L183">        .equals(DataSourceWriteOptions.MOR_TABLE_TYPE_OPT_VAL());</span>
+
+    // insert/bulk-insert combining to be true, if filtering for duplicates
+<span class="nc" id="L186">    boolean combineInserts = Boolean.parseBoolean(parameters.get(DataSourceWriteOptions.INSERT_DROP_DUPS_OPT_KEY()));</span>
+
+<span class="nc" id="L188">    HoodieWriteConfig writeConfig = HoodieWriteConfig.newBuilder().withPath(basePath).withAutoCommit(false)</span>
+<span class="nc" id="L189">        .combineInput(combineInserts, true).withSchema(schemaStr).forTable(tblName)</span>
+<span class="nc" id="L190">        .withIndexConfig(HoodieIndexConfig.newBuilder().withIndexType(HoodieIndex.IndexType.BLOOM).build())</span>
+<span class="nc" id="L191">        .withCompactionConfig(HoodieCompactionConfig.newBuilder()</span>
+<span class="nc" id="L192">            .withPayloadClass(parameters.get(DataSourceWriteOptions.PAYLOAD_CLASS_OPT_KEY()))</span>
+<span class="nc" id="L193">            .withInlineCompaction(inlineCompact).build())</span>
+        // override above with Hoodie configs specified as options.
+<span class="nc" id="L195">        .withProps(parameters).build();</span>
+
+<span class="nc" id="L197">    return new HoodieWriteClient&lt;&gt;(jssc, writeConfig, true);</span>
+  }
+
+  public static JavaRDD&lt;WriteStatus&gt; doWriteOperation(HoodieWriteClient client, JavaRDD&lt;HoodieRecord&gt; hoodieRecords,
+                                                      String commitTime, String operation) {
+<span class="nc bnc" id="L202" title="All 2 branches missed.">    if (operation.equals(DataSourceWriteOptions.BULK_INSERT_OPERATION_OPT_VAL())) {</span>
+<span class="nc" id="L203">      return client.bulkInsert(hoodieRecords, commitTime);</span>
+<span class="nc bnc" id="L204" title="All 2 branches missed.">    } else if (operation.equals(DataSourceWriteOptions.INSERT_OPERATION_OPT_VAL())) {</span>
+<span class="nc" id="L205">      return client.insert(hoodieRecords, commitTime);</span>
+    } else {
+      // default is upsert
+<span class="nc" id="L208">      return client.upsert(hoodieRecords, commitTime);</span>
+    }
+  }
+
+  public static JavaRDD&lt;WriteStatus&gt; doDeleteOperation(HoodieWriteClient client, JavaRDD&lt;HoodieKey&gt; hoodieKeys,
+                                                       String commitTime) {
+<span class="nc" id="L214">    return client.delete(hoodieKeys, commitTime);</span>
+  }
+
+  public static HoodieRecord createHoodieRecord(GenericRecord gr, Comparable orderingVal, HoodieKey hKey,
+                                                String payloadClass) throws IOException {
+<span class="nc" id="L219">    HoodieRecordPayload payload = DataSourceUtils.createPayload(payloadClass, gr, orderingVal);</span>
+<span class="nc" id="L220">    return new HoodieRecord&lt;&gt;(hKey, payload);</span>
+  }
+
+  @SuppressWarnings(&quot;unchecked&quot;)
+  public static JavaRDD&lt;HoodieRecord&gt; dropDuplicates(JavaSparkContext jssc, JavaRDD&lt;HoodieRecord&gt; incomingHoodieRecords,
+                                                     HoodieWriteConfig writeConfig, Option&lt;EmbeddedTimelineService&gt; timelineService) {
+<span class="nc" id="L226">    try (HoodieReadClient client = new HoodieReadClient&lt;&gt;(jssc, writeConfig, timelineService)) {</span>
+<span class="nc" id="L227">      return client.tagLocation(incomingHoodieRecords)</span>
+<span class="nc bnc" id="L228" title="All 2 branches missed.">          .filter(r -&gt; !((HoodieRecord&lt;HoodieRecordPayload&gt;) r).isCurrentLocationKnown());</span>
+<span class="nc" id="L229">    } catch (TableNotFoundException e) {</span>
+      // this will be executed when there is no hoodie table yet
+      // so no dups to drop
+<span class="nc" id="L232">      return incomingHoodieRecords;</span>
+    }
+  }
+
+  @SuppressWarnings(&quot;unchecked&quot;)
+  public static JavaRDD&lt;HoodieRecord&gt; dropDuplicates(JavaSparkContext jssc, JavaRDD&lt;HoodieRecord&gt; incomingHoodieRecords,
+                                                     Map&lt;String, String&gt; parameters, Option&lt;EmbeddedTimelineService&gt; timelineService) {
+    HoodieWriteConfig writeConfig =
+<span class="nc" id="L240">        HoodieWriteConfig.newBuilder().withPath(parameters.get(&quot;path&quot;)).withProps(parameters).build();</span>
+<span class="nc" id="L241">    return dropDuplicates(jssc, incomingHoodieRecords, writeConfig, timelineService);</span>
+  }
+
+  public static HiveSyncConfig buildHiveSyncConfig(TypedProperties props, String basePath) {
+<span class="nc" id="L245">    checkRequiredProperties(props, Collections.singletonList(DataSourceWriteOptions.HIVE_TABLE_OPT_KEY()));</span>
+<span class="nc" id="L246">    HiveSyncConfig hiveSyncConfig = new HiveSyncConfig();</span>
+<span class="nc" id="L247">    hiveSyncConfig.basePath = basePath;</span>
+<span class="nc" id="L248">    hiveSyncConfig.usePreApacheInputFormat =</span>
+<span class="nc" id="L249">        props.getBoolean(DataSourceWriteOptions.HIVE_USE_PRE_APACHE_INPUT_FORMAT_OPT_KEY(),</span>
+<span class="nc" id="L250">            Boolean.parseBoolean(DataSourceWriteOptions.DEFAULT_USE_PRE_APACHE_INPUT_FORMAT_OPT_VAL()));</span>
+<span class="nc" id="L251">    hiveSyncConfig.databaseName = props.getString(DataSourceWriteOptions.HIVE_DATABASE_OPT_KEY(),</span>
+<span class="nc" id="L252">        DataSourceWriteOptions.DEFAULT_HIVE_DATABASE_OPT_VAL());</span>
+<span class="nc" id="L253">    hiveSyncConfig.tableName = props.getString(DataSourceWriteOptions.HIVE_TABLE_OPT_KEY());</span>
+<span class="nc" id="L254">    hiveSyncConfig.hiveUser =</span>
+<span class="nc" id="L255">        props.getString(DataSourceWriteOptions.HIVE_USER_OPT_KEY(), DataSourceWriteOptions.DEFAULT_HIVE_USER_OPT_VAL());</span>
+<span class="nc" id="L256">    hiveSyncConfig.hivePass =</span>
+<span class="nc" id="L257">        props.getString(DataSourceWriteOptions.HIVE_PASS_OPT_KEY(), DataSourceWriteOptions.DEFAULT_HIVE_PASS_OPT_VAL());</span>
+<span class="nc" id="L258">    hiveSyncConfig.jdbcUrl =</span>
+<span class="nc" id="L259">        props.getString(DataSourceWriteOptions.HIVE_URL_OPT_KEY(), DataSourceWriteOptions.DEFAULT_HIVE_URL_OPT_VAL());</span>
+<span class="nc" id="L260">    hiveSyncConfig.partitionFields =</span>
+<span class="nc" id="L261">        props.getStringList(DataSourceWriteOptions.HIVE_PARTITION_FIELDS_OPT_KEY(), &quot;,&quot;, new ArrayList&lt;&gt;());</span>
+<span class="nc" id="L262">    hiveSyncConfig.partitionValueExtractorClass =</span>
+<span class="nc" id="L263">        props.getString(DataSourceWriteOptions.HIVE_PARTITION_EXTRACTOR_CLASS_OPT_KEY(),</span>
+<span class="nc" id="L264">            SlashEncodedDayPartitionValueExtractor.class.getName());</span>
+<span class="nc" id="L265">    return hiveSyncConfig;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

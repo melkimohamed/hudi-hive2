@@ -1,0 +1,60 @@
+
+*****************************************************
+Summary
+-------
+Generated at: 2020-03-04T21:54:10+01:00
+
+Notes: 0
+Binaries: 0
+Archives: 0
+Standards: 34
+
+Apache Licensed: 0
+Generated Documents: 0
+
+JavaDocs are generated, thus a license header is optional.
+Generated files do not require license headers.
+
+0 Unknown Licenses
+
+*****************************************************
+  Files with Apache License headers will be marked AL
+  Binary files (which do not require any license headers) will be marked B
+  Compressed archives will be marked A
+  Notices, licenses etc. will be marked N
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/conf/hudi-env.sh
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/hudi-cli.sh
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/pom.xml
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/HoodieCLI.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/HoodieHistoryFileNameProvider.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/HoodiePrintHelper.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/HoodiePrompt.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/HoodieSplashScreen.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/Main.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/Table.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/TableHeader.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/ArchivedCommitsCommand.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/CleansCommand.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/CommitsCommand.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/CompactionCommand.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/FileSystemViewCommand.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/HDFSParquetImportCommand.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/HoodieLogFileCommand.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/HoodieSyncCommand.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/RepairsCommand.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/RollbacksCommand.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/SavepointsCommand.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/SparkEnvCommand.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/SparkMain.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/StatsCommand.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/TableCommand.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/UtilsCommand.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/utils/CommitUtil.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/utils/HiveUtil.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/utils/InputStreamConsumer.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/utils/SparkUtil.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/resources/META-INF/spring/spring-shell-plugin.xml
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/scala/org/apache/hudi/cli/DedupeSparkJob.scala
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/scala/org/apache/hudi/cli/SparkHelpers.scala
+ 
+*****************************************************

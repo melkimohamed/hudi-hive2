@@ -1,0 +1,10 @@
+org/apache/hudi/keygen/NonpartitionedKeyGenerator.class
+org/apache/hudi/QuickstartUtils$DataGenerator.class
+org/apache/hudi/keygen/SimpleKeyGenerator.class
+org/apache/hudi/QuickstartUtils.class
+org/apache/hudi/keygen/ComplexKeyGenerator.class
+org/apache/hudi/keygen/GlobalDeleteKeyGenerator.class
+org/apache/hudi/keygen/KeyGenerator.class
+org/apache/hudi/HoodieDataSourceHelpers.class
+org/apache/hudi/payload/AWSDmsAvroPayload.class
+org/apache/hudi/DataSourceUtils.class

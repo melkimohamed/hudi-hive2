@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<checkstyle version="8.18">
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hive/src/main/java/org/apache/hudi/hive/HiveSyncConfig.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hive/src/main/java/org/apache/hudi/hive/HiveSyncTool.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hive/src/main/java/org/apache/hudi/hive/HoodieHiveClient.java">
+<error line="72" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hive/src/main/java/org/apache/hudi/hive/HoodieHiveSyncException.java">
+<error line="21" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hive/src/main/java/org/apache/hudi/hive/MultiPartKeysValueExtractor.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hive/src/main/java/org/apache/hudi/hive/NonPartitionedExtractor.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hive/src/main/java/org/apache/hudi/hive/PartitionValueExtractor.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hive/src/main/java/org/apache/hudi/hive/SchemaDifference.java">
+<error line="81" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hive/src/main/java/org/apache/hudi/hive/SlashEncodedDayPartitionValueExtractor.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hive/src/main/java/org/apache/hudi/hive/util/ColumnNameXLator.java">
+<error line="25" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hive/src/main/java/org/apache/hudi/hive/util/SchemaUtil.java">
+<error line="23" severity="info" message="Import org.apache.hudi.common.model.HoodieLogFile appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="31" severity="info" message="&apos;org.apache.log4j.LogManager&apos; devrait être séparé des imports précédents." source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hive/src/test/java/org/apache/hudi/hive/TestHiveSyncTool.java">
+<error line="48" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hive/src/test/java/org/apache/hudi/hive/TestUtil.java">
+<error line="29" severity="info" message="Import org.apache.hudi.common.model.HoodieBaseFile appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="80" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hive/src/test/java/org/apache/hudi/hive/util/HiveTestService.java">
+<error line="60" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hive/src/test/resources/log4j-surefire-quiet.properties">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-hive/src/test/resources/log4j-surefire.properties">
+</file>
+</checkstyle>

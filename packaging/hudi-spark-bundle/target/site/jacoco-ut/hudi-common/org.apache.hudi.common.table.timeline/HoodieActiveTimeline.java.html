@@ -1,0 +1,461 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieActiveTimeline.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.table.timeline</a> &gt; <span class="el_source">HoodieActiveTimeline.java</span></div><h1>HoodieActiveTimeline.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.table.timeline;
+
+import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.common.table.HoodieTimeline;
+import org.apache.hudi.common.table.timeline.HoodieInstant.State;
+import org.apache.hudi.common.util.FileIOUtils;
+import org.apache.hudi.common.util.Option;
+import org.apache.hudi.exception.HoodieIOException;
+
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableSet;
+import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FSDataOutputStream;
+import org.apache.hadoop.fs.Path;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.Serializable;
+import java.text.SimpleDateFormat;
+import java.util.Arrays;
+import java.util.Date;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+/**
+ * Represents the Active Timeline for the Hoodie table. Instants for the last 12 hours (configurable) is in the
+ * ActiveTimeline and the rest are Archived. ActiveTimeline is a special timeline that allows for creation of instants
+ * on the timeline.
+ * &lt;p&gt;
+ * &lt;/p&gt;
+ * The timeline is not automatically reloaded on any mutation operation, clients have to manually call reload() so that
+ * they can chain multiple mutations to the timeline and then call reload() once.
+ * &lt;p&gt;
+ * &lt;/p&gt;
+ * This class can be serialized and de-serialized and on de-serialization the FileSystem is re-initialized.
+ */
+public class HoodieActiveTimeline extends HoodieDefaultTimeline {
+
+<span class="nc" id="L62">  public static final SimpleDateFormat COMMIT_FORMATTER = new SimpleDateFormat(&quot;yyyyMMddHHmmss&quot;);</span>
+
+<span class="nc" id="L64">  public static final Set&lt;String&gt; VALID_EXTENSIONS_IN_ACTIVE_TIMELINE = new HashSet&lt;&gt;(Arrays.asList(</span>
+      COMMIT_EXTENSION, INFLIGHT_COMMIT_EXTENSION, REQUESTED_COMMIT_EXTENSION, DELTA_COMMIT_EXTENSION,
+      INFLIGHT_DELTA_COMMIT_EXTENSION, REQUESTED_DELTA_COMMIT_EXTENSION, SAVEPOINT_EXTENSION,
+      INFLIGHT_SAVEPOINT_EXTENSION, CLEAN_EXTENSION, REQUESTED_CLEAN_EXTENSION, INFLIGHT_CLEAN_EXTENSION,
+      INFLIGHT_COMPACTION_EXTENSION, REQUESTED_COMPACTION_EXTENSION, INFLIGHT_RESTORE_EXTENSION, RESTORE_EXTENSION));
+
+<span class="nc" id="L70">  private static final Logger LOG = LogManager.getLogger(HoodieActiveTimeline.class);</span>
+  protected HoodieTableMetaClient metaClient;
+<span class="nc" id="L72">  private static AtomicReference&lt;String&gt; lastInstantTime = new AtomicReference&lt;&gt;(String.valueOf(Integer.MIN_VALUE));</span>
+
+  /**
+   * Returns next instant time in the {@link #COMMIT_FORMATTER} format.
+   * Ensures each instant time is atleast 1 second apart since we create instant times at second granularity
+   */
+  public static String createNewInstantTime() {
+<span class="nc" id="L79">    return lastInstantTime.updateAndGet((oldVal) -&gt; {</span>
+      String newCommitTime;
+      do {
+<span class="nc" id="L82">        newCommitTime = HoodieActiveTimeline.COMMIT_FORMATTER.format(new Date());</span>
+<span class="nc bnc" id="L83" title="All 2 branches missed.">      } while (HoodieTimeline.compareTimestamps(newCommitTime, oldVal, LESSER_OR_EQUAL));</span>
+<span class="nc" id="L84">      return newCommitTime;</span>
+    });
+  }
+
+  protected HoodieActiveTimeline(HoodieTableMetaClient metaClient, Set&lt;String&gt; includedExtensions) {
+<span class="nc" id="L89">    this(metaClient, includedExtensions, true);</span>
+<span class="nc" id="L90">  }</span>
+
+  protected HoodieActiveTimeline(HoodieTableMetaClient metaClient, Set&lt;String&gt; includedExtensions,
+<span class="nc" id="L93">      boolean applyLayoutFilters) {</span>
+    // Filter all the filter in the metapath and include only the extensions passed and
+    // convert them into HoodieInstant
+    try {
+<span class="nc" id="L97">      this.setInstants(metaClient.scanHoodieInstantsFromFileSystem(includedExtensions, applyLayoutFilters));</span>
+<span class="nc" id="L98">    } catch (IOException e) {</span>
+<span class="nc" id="L99">      throw new HoodieIOException(&quot;Failed to scan metadata&quot;, e);</span>
+<span class="nc" id="L100">    }</span>
+<span class="nc" id="L101">    this.metaClient = metaClient;</span>
+    // multiple casts will make this lambda serializable -
+    // http://docs.oracle.com/javase/specs/jls/se8/html/jls-15.html#jls-15.16
+<span class="nc" id="L104">    this.details = (Function&lt;HoodieInstant, Option&lt;byte[]&gt;&gt; &amp; Serializable) this::getInstantDetails;</span>
+<span class="nc" id="L105">    LOG.info(&quot;Loaded instants &quot; + getInstants().collect(Collectors.toList()));</span>
+<span class="nc" id="L106">  }</span>
+
+  public HoodieActiveTimeline(HoodieTableMetaClient metaClient) {
+<span class="nc" id="L109">    this(metaClient, new ImmutableSet.Builder&lt;String&gt;().addAll(VALID_EXTENSIONS_IN_ACTIVE_TIMELINE).build());</span>
+<span class="nc" id="L110">  }</span>
+
+  public HoodieActiveTimeline(HoodieTableMetaClient metaClient, boolean applyLayoutFilter) {
+<span class="nc" id="L113">    this(metaClient,</span>
+        new ImmutableSet.Builder&lt;String&gt;()
+<span class="nc" id="L115">            .addAll(VALID_EXTENSIONS_IN_ACTIVE_TIMELINE).build(), applyLayoutFilter);</span>
+<span class="nc" id="L116">  }</span>
+
+  /**
+   * For serialization and de-serialization only.
+   *
+   * @deprecated
+   */
+<span class="nc" id="L123">  public HoodieActiveTimeline() {</span>
+<span class="nc" id="L124">  }</span>
+
+  /**
+   * This method is only used when this object is deserialized in a spark executor.
+   *
+   * @deprecated
+   */
+  private void readObject(java.io.ObjectInputStream in) throws IOException, ClassNotFoundException {
+<span class="nc" id="L132">    in.defaultReadObject();</span>
+<span class="nc" id="L133">  }</span>
+
+  public void createNewInstant(HoodieInstant instant) {
+<span class="nc" id="L136">    LOG.info(&quot;Creating a new instant &quot; + instant);</span>
+    // Create the in-flight file
+<span class="nc" id="L138">    createFileInMetaPath(instant.getFileName(), Option.empty(), false);</span>
+<span class="nc" id="L139">  }</span>
+
+  public void saveAsComplete(HoodieInstant instant, Option&lt;byte[]&gt; data) {
+<span class="nc" id="L142">    LOG.info(&quot;Marking instant complete &quot; + instant);</span>
+<span class="nc" id="L143">    Preconditions.checkArgument(instant.isInflight(),</span>
+        &quot;Could not mark an already completed instant as complete again &quot; + instant);
+<span class="nc" id="L145">    transitionState(instant, HoodieTimeline.getCompletedInstant(instant), data);</span>
+<span class="nc" id="L146">    LOG.info(&quot;Completed &quot; + instant);</span>
+<span class="nc" id="L147">  }</span>
+
+  public HoodieInstant revertToInflight(HoodieInstant instant) {
+<span class="nc" id="L150">    LOG.info(&quot;Reverting instant to inflight &quot; + instant);</span>
+<span class="nc" id="L151">    HoodieInstant inflight = HoodieTimeline.getInflightInstant(instant, metaClient.getTableType());</span>
+<span class="nc" id="L152">    revertCompleteToInflight(instant, inflight);</span>
+<span class="nc" id="L153">    LOG.info(&quot;Reverted &quot; + instant + &quot; to inflight &quot; + inflight);</span>
+<span class="nc" id="L154">    return inflight;</span>
+  }
+
+  public void deleteInflight(HoodieInstant instant) {
+<span class="nc" id="L158">    Preconditions.checkArgument(instant.isInflight());</span>
+<span class="nc" id="L159">    deleteInstantFile(instant);</span>
+<span class="nc" id="L160">  }</span>
+
+  public void deletePending(HoodieInstant instant) {
+<span class="nc bnc" id="L163" title="All 2 branches missed.">    Preconditions.checkArgument(!instant.isCompleted());</span>
+<span class="nc" id="L164">    deleteInstantFile(instant);</span>
+<span class="nc" id="L165">  }</span>
+
+  public void deleteCompactionRequested(HoodieInstant instant) {
+<span class="nc" id="L168">    Preconditions.checkArgument(instant.isRequested());</span>
+<span class="nc" id="L169">    Preconditions.checkArgument(instant.getAction().equals(HoodieTimeline.COMPACTION_ACTION));</span>
+<span class="nc" id="L170">    deleteInstantFile(instant);</span>
+<span class="nc" id="L171">  }</span>
+
+  private void deleteInstantFile(HoodieInstant instant) {
+<span class="nc" id="L174">    LOG.info(&quot;Deleting instant &quot; + instant);</span>
+<span class="nc" id="L175">    Path inFlightCommitFilePath = new Path(metaClient.getMetaPath(), instant.getFileName());</span>
+    try {
+<span class="nc" id="L177">      boolean result = metaClient.getFs().delete(inFlightCommitFilePath, false);</span>
+<span class="nc bnc" id="L178" title="All 2 branches missed.">      if (result) {</span>
+<span class="nc" id="L179">        LOG.info(&quot;Removed instant &quot; + instant);</span>
+      } else {
+<span class="nc" id="L181">        throw new HoodieIOException(&quot;Could not delete instant &quot; + instant);</span>
+      }
+<span class="nc" id="L183">    } catch (IOException e) {</span>
+<span class="nc" id="L184">      throw new HoodieIOException(&quot;Could not remove inflight commit &quot; + inFlightCommitFilePath, e);</span>
+<span class="nc" id="L185">    }</span>
+<span class="nc" id="L186">  }</span>
+
+  @Override
+  public Option&lt;byte[]&gt; getInstantDetails(HoodieInstant instant) {
+<span class="nc" id="L190">    Path detailPath = new Path(metaClient.getMetaPath(), instant.getFileName());</span>
+<span class="nc" id="L191">    return readDataFromPath(detailPath);</span>
+  }
+
+  public Option&lt;byte[]&gt; readCleanerInfoAsBytes(HoodieInstant instant) {
+    // Cleaner metadata are always stored only in timeline .hoodie
+<span class="nc" id="L196">    return readDataFromPath(new Path(metaClient.getMetaPath(), instant.getFileName()));</span>
+  }
+
+  //-----------------------------------------------------------------
+  //      BEGIN - COMPACTION RELATED META-DATA MANAGEMENT.
+  //-----------------------------------------------------------------
+
+  public Option&lt;byte[]&gt; readCompactionPlanAsBytes(HoodieInstant instant) {
+    try {
+      // Reading from auxiliary path first. In future release, we will cleanup compaction management
+      // to only write to timeline and skip auxiliary and this code will be able to handle it.
+<span class="nc" id="L207">      return readDataFromPath(new Path(metaClient.getMetaAuxiliaryPath(), instant.getFileName()));</span>
+<span class="nc" id="L208">    } catch (HoodieIOException e) {</span>
+      // This will be removed in future release. See HUDI-546
+<span class="nc bnc" id="L210" title="All 2 branches missed.">      if (e.getIOException() instanceof FileNotFoundException) {</span>
+<span class="nc" id="L211">        return readDataFromPath(new Path(metaClient.getMetaPath(), instant.getFileName()));</span>
+      } else {
+<span class="nc" id="L213">        throw e;</span>
+      }
+    }
+  }
+
+  /**
+   * Revert compaction State from inflight to requested.
+   *
+   * @param inflightInstant Inflight Instant
+   * @return requested instant
+   */
+  public HoodieInstant revertCompactionInflightToRequested(HoodieInstant inflightInstant) {
+<span class="nc" id="L225">    Preconditions.checkArgument(inflightInstant.getAction().equals(HoodieTimeline.COMPACTION_ACTION));</span>
+<span class="nc" id="L226">    Preconditions.checkArgument(inflightInstant.isInflight());</span>
+<span class="nc" id="L227">    HoodieInstant requestedInstant =</span>
+<span class="nc" id="L228">        new HoodieInstant(State.REQUESTED, COMPACTION_ACTION, inflightInstant.getTimestamp());</span>
+<span class="nc bnc" id="L229" title="All 2 branches missed.">    if (metaClient.getTimelineLayoutVersion().isNullVersion()) {</span>
+      // Pass empty data since it is read from the corresponding .aux/.compaction instant file
+<span class="nc" id="L231">      transitionState(inflightInstant, requestedInstant, Option.empty());</span>
+    } else {
+<span class="nc" id="L233">      deleteInflight(inflightInstant);</span>
+    }
+<span class="nc" id="L235">    return requestedInstant;</span>
+  }
+
+  /**
+   * Transition Compaction State from requested to inflight.
+   *
+   * @param requestedInstant Requested instant
+   * @return inflight instant
+   */
+  public HoodieInstant transitionCompactionRequestedToInflight(HoodieInstant requestedInstant) {
+<span class="nc" id="L245">    Preconditions.checkArgument(requestedInstant.getAction().equals(HoodieTimeline.COMPACTION_ACTION));</span>
+<span class="nc" id="L246">    Preconditions.checkArgument(requestedInstant.isRequested());</span>
+<span class="nc" id="L247">    HoodieInstant inflightInstant =</span>
+<span class="nc" id="L248">        new HoodieInstant(State.INFLIGHT, COMPACTION_ACTION, requestedInstant.getTimestamp());</span>
+<span class="nc" id="L249">    transitionState(requestedInstant, inflightInstant, Option.empty());</span>
+<span class="nc" id="L250">    return inflightInstant;</span>
+  }
+
+  /**
+   * Transition Compaction State from inflight to Committed.
+   *
+   * @param inflightInstant Inflight instant
+   * @param data Extra Metadata
+   * @return commit instant
+   */
+  public HoodieInstant transitionCompactionInflightToComplete(HoodieInstant inflightInstant, Option&lt;byte[]&gt; data) {
+<span class="nc" id="L261">    Preconditions.checkArgument(inflightInstant.getAction().equals(HoodieTimeline.COMPACTION_ACTION));</span>
+<span class="nc" id="L262">    Preconditions.checkArgument(inflightInstant.isInflight());</span>
+<span class="nc" id="L263">    HoodieInstant commitInstant = new HoodieInstant(State.COMPLETED, COMMIT_ACTION, inflightInstant.getTimestamp());</span>
+<span class="nc" id="L264">    transitionState(inflightInstant, commitInstant, data);</span>
+<span class="nc" id="L265">    return commitInstant;</span>
+  }
+
+  private void createFileInAuxiliaryFolder(HoodieInstant instant, Option&lt;byte[]&gt; data) {
+    // This will be removed in future release. See HUDI-546
+<span class="nc" id="L270">    Path fullPath = new Path(metaClient.getMetaAuxiliaryPath(), instant.getFileName());</span>
+<span class="nc" id="L271">    createFileInPath(fullPath, data);</span>
+<span class="nc" id="L272">  }</span>
+
+  //-----------------------------------------------------------------
+  //      END - COMPACTION RELATED META-DATA MANAGEMENT
+  //-----------------------------------------------------------------
+
+  /**
+   * Transition Clean State from inflight to Committed.
+   *
+   * @param inflightInstant Inflight instant
+   * @param data Extra Metadata
+   * @return commit instant
+   */
+  public HoodieInstant transitionCleanInflightToComplete(HoodieInstant inflightInstant, Option&lt;byte[]&gt; data) {
+<span class="nc" id="L286">    Preconditions.checkArgument(inflightInstant.getAction().equals(HoodieTimeline.CLEAN_ACTION));</span>
+<span class="nc" id="L287">    Preconditions.checkArgument(inflightInstant.isInflight());</span>
+<span class="nc" id="L288">    HoodieInstant commitInstant = new HoodieInstant(State.COMPLETED, CLEAN_ACTION, inflightInstant.getTimestamp());</span>
+    // Then write to timeline
+<span class="nc" id="L290">    transitionState(inflightInstant, commitInstant, data);</span>
+<span class="nc" id="L291">    return commitInstant;</span>
+  }
+
+  /**
+   * Transition Clean State from requested to inflight.
+   *
+   * @param requestedInstant requested instant
+   * @param data Optional data to be stored
+   * @return commit instant
+   */
+  public HoodieInstant transitionCleanRequestedToInflight(HoodieInstant requestedInstant, Option&lt;byte[]&gt; data) {
+<span class="nc" id="L302">    Preconditions.checkArgument(requestedInstant.getAction().equals(HoodieTimeline.CLEAN_ACTION));</span>
+<span class="nc" id="L303">    Preconditions.checkArgument(requestedInstant.isRequested());</span>
+<span class="nc" id="L304">    HoodieInstant inflight = new HoodieInstant(State.INFLIGHT, CLEAN_ACTION, requestedInstant.getTimestamp());</span>
+<span class="nc" id="L305">    transitionState(requestedInstant, inflight, data);</span>
+<span class="nc" id="L306">    return inflight;</span>
+  }
+
+  private void transitionState(HoodieInstant fromInstant, HoodieInstant toInstant, Option&lt;byte[]&gt; data) {
+<span class="nc" id="L310">    Preconditions.checkArgument(fromInstant.getTimestamp().equals(toInstant.getTimestamp()));</span>
+    try {
+<span class="nc bnc" id="L312" title="All 2 branches missed.">      if (metaClient.getTimelineLayoutVersion().isNullVersion()) {</span>
+        // Re-create the .inflight file by opening a new file and write the commit metadata in
+<span class="nc" id="L314">        createFileInMetaPath(fromInstant.getFileName(), data, false);</span>
+<span class="nc" id="L315">        Path fromInstantPath = new Path(metaClient.getMetaPath(), fromInstant.getFileName());</span>
+<span class="nc" id="L316">        Path toInstantPath = new Path(metaClient.getMetaPath(), toInstant.getFileName());</span>
+<span class="nc" id="L317">        boolean success = metaClient.getFs().rename(fromInstantPath, toInstantPath);</span>
+<span class="nc bnc" id="L318" title="All 2 branches missed.">        if (!success) {</span>
+<span class="nc" id="L319">          throw new HoodieIOException(&quot;Could not rename &quot; + fromInstantPath + &quot; to &quot; + toInstantPath);</span>
+        }
+<span class="nc" id="L321">      } else {</span>
+        // Ensures old state exists in timeline
+<span class="nc" id="L323">        LOG.info(&quot;Checking for file exists ?&quot; + new Path(metaClient.getMetaPath(), fromInstant.getFileName()));</span>
+<span class="nc" id="L324">        Preconditions.checkArgument(metaClient.getFs().exists(new Path(metaClient.getMetaPath(),</span>
+<span class="nc" id="L325">            fromInstant.getFileName())));</span>
+        // Use Write Once to create Target File
+<span class="nc" id="L327">        createImmutableFileInPath(new Path(metaClient.getMetaPath(), toInstant.getFileName()), data);</span>
+<span class="nc" id="L328">        LOG.info(&quot;Create new file for toInstant ?&quot; + new Path(metaClient.getMetaPath(), toInstant.getFileName()));</span>
+      }
+<span class="nc" id="L330">    } catch (IOException e) {</span>
+<span class="nc" id="L331">      throw new HoodieIOException(&quot;Could not complete &quot; + fromInstant, e);</span>
+<span class="nc" id="L332">    }</span>
+<span class="nc" id="L333">  }</span>
+
+  private void revertCompleteToInflight(HoodieInstant completed, HoodieInstant inflight) {
+<span class="nc" id="L336">    Preconditions.checkArgument(completed.getTimestamp().equals(inflight.getTimestamp()));</span>
+<span class="nc" id="L337">    Path inFlightCommitFilePath = new Path(metaClient.getMetaPath(), inflight.getFileName());</span>
+<span class="nc" id="L338">    Path commitFilePath = new Path(metaClient.getMetaPath(), completed.getFileName());</span>
+    try {
+<span class="nc bnc" id="L340" title="All 2 branches missed.">      if (metaClient.getTimelineLayoutVersion().isNullVersion()) {</span>
+<span class="nc bnc" id="L341" title="All 2 branches missed.">        if (!metaClient.getFs().exists(inFlightCommitFilePath)) {</span>
+<span class="nc" id="L342">          boolean success = metaClient.getFs().rename(commitFilePath, inFlightCommitFilePath);</span>
+<span class="nc bnc" id="L343" title="All 2 branches missed.">          if (!success) {</span>
+<span class="nc" id="L344">            throw new HoodieIOException(</span>
+                &quot;Could not rename &quot; + commitFilePath + &quot; to &quot; + inFlightCommitFilePath);
+          }
+<span class="nc" id="L347">        }</span>
+      } else {
+<span class="nc" id="L349">        Path requestedInstantFilePath = new Path(metaClient.getMetaPath(),</span>
+<span class="nc" id="L350">            new HoodieInstant(State.REQUESTED, inflight.getAction(), inflight.getTimestamp()).getFileName());</span>
+
+        // If inflight and requested files do not exist, create one
+<span class="nc bnc" id="L353" title="All 2 branches missed.">        if (!metaClient.getFs().exists(requestedInstantFilePath)) {</span>
+<span class="nc" id="L354">          metaClient.getFs().create(requestedInstantFilePath, false).close();</span>
+        }
+
+<span class="nc bnc" id="L357" title="All 2 branches missed.">        if (!metaClient.getFs().exists(inFlightCommitFilePath)) {</span>
+<span class="nc" id="L358">          metaClient.getFs().create(inFlightCommitFilePath, false).close();</span>
+        }
+
+<span class="nc" id="L361">        boolean success = metaClient.getFs().delete(commitFilePath, false);</span>
+<span class="nc" id="L362">        Preconditions.checkArgument(success, &quot;State Reverting failed&quot;);</span>
+      }
+<span class="nc" id="L364">    } catch (IOException e) {</span>
+<span class="nc" id="L365">      throw new HoodieIOException(&quot;Could not complete revert &quot; + completed, e);</span>
+<span class="nc" id="L366">    }</span>
+<span class="nc" id="L367">  }</span>
+
+  public void transitionRequestedToInflight(HoodieInstant requested, Option&lt;byte[]&gt; content) {
+<span class="nc" id="L370">    HoodieInstant inflight = new HoodieInstant(State.INFLIGHT, requested.getAction(), requested.getTimestamp());</span>
+<span class="nc" id="L371">    Preconditions.checkArgument(requested.isRequested(), &quot;Instant &quot; + requested + &quot; in wrong state&quot;);</span>
+<span class="nc" id="L372">    transitionState(requested, inflight, content);</span>
+<span class="nc" id="L373">  }</span>
+
+  public void saveToCompactionRequested(HoodieInstant instant, Option&lt;byte[]&gt; content) {
+<span class="nc" id="L376">    saveToCompactionRequested(instant, content, false);</span>
+<span class="nc" id="L377">  }</span>
+
+  public void saveToCompactionRequested(HoodieInstant instant, Option&lt;byte[]&gt; content, boolean overwrite) {
+<span class="nc" id="L380">    Preconditions.checkArgument(instant.getAction().equals(HoodieTimeline.COMPACTION_ACTION));</span>
+    // Write workload to auxiliary folder
+<span class="nc" id="L382">    createFileInAuxiliaryFolder(instant, content);</span>
+<span class="nc" id="L383">    createFileInMetaPath(instant.getFileName(), content, overwrite);</span>
+<span class="nc" id="L384">  }</span>
+
+  public void saveToCleanRequested(HoodieInstant instant, Option&lt;byte[]&gt; content) {
+<span class="nc" id="L387">    Preconditions.checkArgument(instant.getAction().equals(HoodieTimeline.CLEAN_ACTION));</span>
+<span class="nc" id="L388">    Preconditions.checkArgument(instant.getState().equals(State.REQUESTED));</span>
+    // Plan is stored in meta path
+<span class="nc" id="L390">    createFileInMetaPath(instant.getFileName(), content, false);</span>
+<span class="nc" id="L391">  }</span>
+
+  private void createFileInMetaPath(String filename, Option&lt;byte[]&gt; content, boolean allowOverwrite) {
+<span class="nc" id="L394">    Path fullPath = new Path(metaClient.getMetaPath(), filename);</span>
+<span class="nc bnc" id="L395" title="All 4 branches missed.">    if (allowOverwrite || metaClient.getTimelineLayoutVersion().isNullVersion()) {</span>
+<span class="nc" id="L396">      createFileInPath(fullPath, content);</span>
+    } else {
+<span class="nc" id="L398">      createImmutableFileInPath(fullPath, content);</span>
+    }
+<span class="nc" id="L400">  }</span>
+
+  private void createFileInPath(Path fullPath, Option&lt;byte[]&gt; content) {
+    try {
+      // If the path does not exist, create it first
+<span class="nc bnc" id="L405" title="All 2 branches missed.">      if (!metaClient.getFs().exists(fullPath)) {</span>
+<span class="nc bnc" id="L406" title="All 2 branches missed.">        if (metaClient.getFs().createNewFile(fullPath)) {</span>
+<span class="nc" id="L407">          LOG.info(&quot;Created a new file in meta path: &quot; + fullPath);</span>
+        } else {
+<span class="nc" id="L409">          throw new HoodieIOException(&quot;Failed to create file &quot; + fullPath);</span>
+        }
+      }
+
+<span class="nc bnc" id="L413" title="All 2 branches missed.">      if (content.isPresent()) {</span>
+<span class="nc" id="L414">        FSDataOutputStream fsout = metaClient.getFs().create(fullPath, true);</span>
+<span class="nc" id="L415">        fsout.write(content.get());</span>
+<span class="nc" id="L416">        fsout.close();</span>
+      }
+<span class="nc" id="L418">    } catch (IOException e) {</span>
+<span class="nc" id="L419">      throw new HoodieIOException(&quot;Failed to create file &quot; + fullPath, e);</span>
+<span class="nc" id="L420">    }</span>
+<span class="nc" id="L421">  }</span>
+
+  /**
+   * Creates a new file in timeline with overwrite set to false. This ensures
+   * files are created only once and never rewritten
+   * @param fullPath File Path
+   * @param content Content to be stored
+   */
+  private void createImmutableFileInPath(Path fullPath, Option&lt;byte[]&gt; content) {
+<span class="nc" id="L430">    FSDataOutputStream fsout = null;</span>
+    try {
+<span class="nc" id="L432">      fsout = metaClient.getFs().create(fullPath, false);</span>
+<span class="nc bnc" id="L433" title="All 2 branches missed.">      if (content.isPresent()) {</span>
+<span class="nc" id="L434">        fsout.write(content.get());</span>
+      }
+<span class="nc" id="L436">    } catch (IOException e) {</span>
+<span class="nc" id="L437">      throw new HoodieIOException(&quot;Failed to create file &quot; + fullPath, e);</span>
+    } finally {
+      try {
+<span class="nc bnc" id="L440" title="All 2 branches missed.">        if (null != fsout) {</span>
+<span class="nc" id="L441">          fsout.close();</span>
+        }
+<span class="nc" id="L443">      } catch (IOException e) {</span>
+<span class="nc" id="L444">        throw new HoodieIOException(&quot;Failed to close file &quot; + fullPath, e);</span>
+<span class="nc" id="L445">      }</span>
+    }
+<span class="nc" id="L447">  }</span>
+
+  private Option&lt;byte[]&gt; readDataFromPath(Path detailPath) {
+<span class="nc" id="L450">    try (FSDataInputStream is = metaClient.getFs().open(detailPath)) {</span>
+<span class="nc" id="L451">      return Option.of(FileIOUtils.readAsByteArray(is));</span>
+<span class="nc" id="L452">    } catch (IOException e) {</span>
+<span class="nc" id="L453">      throw new HoodieIOException(&quot;Could not read commit details from &quot; + detailPath, e);</span>
+    }
+  }
+
+  public HoodieActiveTimeline reload() {
+<span class="nc" id="L458">    return new HoodieActiveTimeline(metaClient);</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

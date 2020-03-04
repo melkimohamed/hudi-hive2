@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HiveSyncConfig.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-hive</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.hive</a> &gt; <span class="el_source">HiveSyncConfig.java</span></div><h1>HiveSyncConfig.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.hive;
+
+import com.beust.jcommander.Parameter;
+
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Configs needed to sync data into Hive.
+ */
+<span class="nc" id="L30">public class HiveSyncConfig implements Serializable {</span>
+
+  @Parameter(names = {&quot;--database&quot;}, description = &quot;name of the target database in Hive&quot;, required = true)
+  public String databaseName;
+
+  @Parameter(names = {&quot;--table&quot;}, description = &quot;name of the target table in Hive&quot;, required = true)
+  public String tableName;
+
+  @Parameter(names = {&quot;--user&quot;}, description = &quot;Hive username&quot;, required = true)
+  public String hiveUser;
+
+  @Parameter(names = {&quot;--pass&quot;}, description = &quot;Hive password&quot;, required = true)
+  public String hivePass;
+
+  @Parameter(names = {&quot;--jdbc-url&quot;}, description = &quot;Hive jdbc connect url&quot;, required = true)
+  public String jdbcUrl;
+
+  @Parameter(names = {&quot;--base-path&quot;}, description = &quot;Basepath of hoodie table to sync&quot;, required = true)
+  public String basePath;
+
+<span class="nc" id="L50">  @Parameter(names = &quot;--partitioned-by&quot;, description = &quot;Fields in the schema partitioned by&quot;)</span>
+  public List&lt;String&gt; partitionFields = new ArrayList&lt;&gt;();
+
+<span class="nc" id="L53">  @Parameter(names = &quot;--partition-value-extractor&quot;, description = &quot;Class which implements PartitionValueExtractor &quot;</span>
+      + &quot;to extract the partition values from HDFS path&quot;)
+<span class="nc" id="L55">  public String partitionValueExtractorClass = SlashEncodedDayPartitionValueExtractor.class.getName();</span>
+
+<span class="nc" id="L57">  @Parameter(names = {&quot;--assume-date-partitioning&quot;}, description = &quot;Assume standard yyyy/mm/dd partitioning, this&quot;</span>
+      + &quot; exists to support backward compatibility. If you use hoodie 0.3.x, do not set this parameter&quot;)
+<span class="nc" id="L59">  public Boolean assumeDatePartitioning = false;</span>
+
+<span class="nc" id="L61">  @Parameter(names = {&quot;--use-pre-apache-input-format&quot;},</span>
+      description = &quot;Use InputFormat under com.uber.hoodie package &quot;
+          + &quot;instead of org.apache.hudi package. Use this when you are in the process of migrating from &quot;
+          + &quot;com.uber.hoodie to org.apache.hudi. Stop using this after you migrated the table definition to &quot;
+          + &quot;org.apache.hudi input format.&quot;)
+<span class="nc" id="L66">  public Boolean usePreApacheInputFormat = false;</span>
+
+<span class="nc" id="L68">  @Parameter(names = {&quot;--use-jdbc&quot;}, description = &quot;Hive jdbc connect url&quot;)</span>
+<span class="nc" id="L69">  public Boolean useJdbc = true;</span>
+
+<span class="nc" id="L71">  @Parameter(names = {&quot;--skip-ro-suffix&quot;}, description = &quot;Skip the `_ro` suffix for Read optimized table, when registering&quot;)</span>
+<span class="nc" id="L72">  public Boolean skipROSuffix = false;</span>
+
+<span class="nc" id="L74">  @Parameter(names = {&quot;--help&quot;, &quot;-h&quot;}, help = true)</span>
+<span class="nc" id="L75">  public Boolean help = false;</span>
+
+  public static HiveSyncConfig copy(HiveSyncConfig cfg) {
+<span class="nc" id="L78">    HiveSyncConfig newConfig = new HiveSyncConfig();</span>
+<span class="nc" id="L79">    newConfig.basePath = cfg.basePath;</span>
+<span class="nc" id="L80">    newConfig.assumeDatePartitioning = cfg.assumeDatePartitioning;</span>
+<span class="nc" id="L81">    newConfig.databaseName = cfg.databaseName;</span>
+<span class="nc" id="L82">    newConfig.hivePass = cfg.hivePass;</span>
+<span class="nc" id="L83">    newConfig.hiveUser = cfg.hiveUser;</span>
+<span class="nc" id="L84">    newConfig.partitionFields = cfg.partitionFields;</span>
+<span class="nc" id="L85">    newConfig.partitionValueExtractorClass = cfg.partitionValueExtractorClass;</span>
+<span class="nc" id="L86">    newConfig.jdbcUrl = cfg.jdbcUrl;</span>
+<span class="nc" id="L87">    newConfig.tableName = cfg.tableName;</span>
+<span class="nc" id="L88">    newConfig.usePreApacheInputFormat = cfg.usePreApacheInputFormat;</span>
+<span class="nc" id="L89">    return newConfig;</span>
+  }
+
+  @Override
+  public String toString() {
+<span class="nc" id="L94">    return &quot;HiveSyncConfig{databaseName='&quot; + databaseName + '\'' + &quot;, tableName='&quot; + tableName + '\''</span>
+        + &quot;, hiveUser='&quot; + hiveUser + '\'' + &quot;, hivePass='&quot; + hivePass + '\'' + &quot;, jdbcUrl='&quot; + jdbcUrl + '\''
+        + &quot;, basePath='&quot; + basePath + '\'' + &quot;, partitionFields=&quot; + partitionFields + &quot;, partitionValueExtractorClass='&quot;
+        + partitionValueExtractorClass + '\'' + &quot;, assumeDatePartitioning=&quot; + assumeDatePartitioning
+        + &quot;, usePreApacheInputFormat=&quot; + usePreApacheInputFormat + &quot;, useJdbc=&quot; + useJdbc + &quot;, help=&quot; + help + '}';
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

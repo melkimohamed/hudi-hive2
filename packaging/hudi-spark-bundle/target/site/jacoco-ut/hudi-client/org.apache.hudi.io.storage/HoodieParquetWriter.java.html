@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieParquetWriter.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-client</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.io.storage</a> &gt; <span class="el_source">HoodieParquetWriter.java</span></div><h1>HoodieParquetWriter.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.io.storage;
+
+import org.apache.hudi.avro.HoodieAvroWriteSupport;
+import org.apache.hudi.common.io.storage.HoodieWrapperFileSystem;
+import org.apache.hudi.common.model.HoodieRecord;
+import org.apache.hudi.common.model.HoodieRecordPayload;
+import org.apache.hudi.common.util.FSUtils;
+import org.apache.hudi.common.util.HoodieAvroUtils;
+
+import org.apache.avro.Schema;
+import org.apache.avro.generic.GenericRecord;
+import org.apache.avro.generic.IndexedRecord;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.parquet.hadoop.ParquetFileWriter;
+import org.apache.parquet.hadoop.ParquetWriter;
+import org.apache.spark.TaskContext;
+
+import java.io.IOException;
+import java.util.concurrent.atomic.AtomicLong;
+
+/**
+ * HoodieParquetWriter extends the ParquetWriter to help limit the size of underlying file. Provides a way to check if
+ * the current file can take more records with the &lt;code&gt;canWrite()&lt;/code&gt;
+ */
+public class HoodieParquetWriter&lt;T extends HoodieRecordPayload, R extends IndexedRecord&gt;
+    extends ParquetWriter&lt;IndexedRecord&gt; implements HoodieStorageWriter&lt;R&gt; {
+
+<span class="nc" id="L47">  private static AtomicLong recordIndex = new AtomicLong(1);</span>
+
+  private final Path file;
+  private final HoodieWrapperFileSystem fs;
+  private final long maxFileSize;
+  private final HoodieAvroWriteSupport writeSupport;
+  private final String commitTime;
+  private final Schema schema;
+
+  public HoodieParquetWriter(String commitTime, Path file, HoodieParquetConfig parquetConfig, Schema schema)
+      throws IOException {
+<span class="nc" id="L58">    super(HoodieWrapperFileSystem.convertToHoodiePath(file, parquetConfig.getHadoopConf()),</span>
+<span class="nc" id="L59">        ParquetFileWriter.Mode.CREATE, parquetConfig.getWriteSupport(), parquetConfig.getCompressionCodecName(),</span>
+<span class="nc" id="L60">        parquetConfig.getBlockSize(), parquetConfig.getPageSize(), parquetConfig.getPageSize(),</span>
+        ParquetWriter.DEFAULT_IS_DICTIONARY_ENABLED, ParquetWriter.DEFAULT_IS_VALIDATING_ENABLED,
+<span class="nc" id="L62">        ParquetWriter.DEFAULT_WRITER_VERSION, registerFileSystem(file, parquetConfig.getHadoopConf()));</span>
+<span class="nc" id="L63">    this.file = HoodieWrapperFileSystem.convertToHoodiePath(file, parquetConfig.getHadoopConf());</span>
+<span class="nc" id="L64">    this.fs =</span>
+<span class="nc" id="L65">        (HoodieWrapperFileSystem) this.file.getFileSystem(registerFileSystem(file, parquetConfig.getHadoopConf()));</span>
+    // We cannot accurately measure the snappy compressed output file size. We are choosing a
+    // conservative 10%
+    // TODO - compute this compression ratio dynamically by looking at the bytes written to the
+    // stream and the actual file size reported by HDFS
+<span class="nc" id="L70">    this.maxFileSize = parquetConfig.getMaxFileSize()</span>
+<span class="nc" id="L71">        + Math.round(parquetConfig.getMaxFileSize() * parquetConfig.getCompressionRatio());</span>
+<span class="nc" id="L72">    this.writeSupport = parquetConfig.getWriteSupport();</span>
+<span class="nc" id="L73">    this.commitTime = commitTime;</span>
+<span class="nc" id="L74">    this.schema = schema;</span>
+<span class="nc" id="L75">  }</span>
+
+  public static Configuration registerFileSystem(Path file, Configuration conf) {
+<span class="nc" id="L78">    Configuration returnConf = new Configuration(conf);</span>
+<span class="nc" id="L79">    String scheme = FSUtils.getFs(file.toString(), conf).getScheme();</span>
+<span class="nc" id="L80">    returnConf.set(&quot;fs.&quot; + HoodieWrapperFileSystem.getHoodieScheme(scheme) + &quot;.impl&quot;,</span>
+<span class="nc" id="L81">        HoodieWrapperFileSystem.class.getName());</span>
+<span class="nc" id="L82">    return returnConf;</span>
+  }
+
+  @Override
+  public void writeAvroWithMetadata(R avroRecord, HoodieRecord record) throws IOException {
+<span class="nc" id="L87">    String seqId =</span>
+<span class="nc" id="L88">        HoodieRecord.generateSequenceId(commitTime, TaskContext.getPartitionId(), recordIndex.getAndIncrement());</span>
+<span class="nc" id="L89">    HoodieAvroUtils.addHoodieKeyToRecord((GenericRecord) avroRecord, record.getRecordKey(), record.getPartitionPath(),</span>
+<span class="nc" id="L90">        file.getName());</span>
+<span class="nc" id="L91">    HoodieAvroUtils.addCommitMetadataToRecord((GenericRecord) avroRecord, commitTime, seqId);</span>
+<span class="nc" id="L92">    super.write(avroRecord);</span>
+<span class="nc" id="L93">    writeSupport.add(record.getRecordKey());</span>
+<span class="nc" id="L94">  }</span>
+
+  @Override
+  public boolean canWrite() {
+<span class="nc bnc" id="L98" title="All 2 branches missed.">    return fs.getBytesWritten(file) &lt; maxFileSize;</span>
+  }
+
+  @Override
+  public void writeAvro(String key, IndexedRecord object) throws IOException {
+<span class="nc" id="L103">    super.write(object);</span>
+<span class="nc" id="L104">    writeSupport.add(key);</span>
+<span class="nc" id="L105">  }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

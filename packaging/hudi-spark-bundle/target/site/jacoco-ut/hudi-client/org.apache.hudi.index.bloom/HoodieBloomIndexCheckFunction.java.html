@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieBloomIndexCheckFunction.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-client</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.index.bloom</a> &gt; <span class="el_source">HoodieBloomIndexCheckFunction.java</span></div><h1>HoodieBloomIndexCheckFunction.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.index.bloom;
+
+import org.apache.hudi.common.model.HoodieKey;
+import org.apache.hudi.common.util.collection.Pair;
+import org.apache.hudi.config.HoodieWriteConfig;
+import org.apache.hudi.exception.HoodieException;
+import org.apache.hudi.exception.HoodieIndexException;
+import org.apache.hudi.client.utils.LazyIterableIterator;
+import org.apache.hudi.io.HoodieKeyLookupHandle;
+import org.apache.hudi.io.HoodieKeyLookupHandle.KeyLookupResult;
+import org.apache.hudi.table.HoodieTable;
+
+import org.apache.spark.api.java.function.Function2;
+
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+
+import scala.Tuple2;
+
+/**
+ * Function performing actual checking of RDD partition containing (fileId, hoodieKeys) against the actual files.
+ */
+public class HoodieBloomIndexCheckFunction
+    implements Function2&lt;Integer, Iterator&lt;Tuple2&lt;String, HoodieKey&gt;&gt;, Iterator&lt;List&lt;KeyLookupResult&gt;&gt;&gt; {
+
+  private final HoodieTable hoodieTable;
+
+  private final HoodieWriteConfig config;
+
+<span class="nc" id="L49">  public HoodieBloomIndexCheckFunction(HoodieTable hoodieTable, HoodieWriteConfig config) {</span>
+<span class="nc" id="L50">    this.hoodieTable = hoodieTable;</span>
+<span class="nc" id="L51">    this.config = config;</span>
+<span class="nc" id="L52">  }</span>
+
+  @Override
+  public Iterator&lt;List&lt;KeyLookupResult&gt;&gt; call(Integer partition,
+      Iterator&lt;Tuple2&lt;String, HoodieKey&gt;&gt; fileParitionRecordKeyTripletItr) {
+<span class="nc" id="L57">    return new LazyKeyCheckIterator(fileParitionRecordKeyTripletItr);</span>
+  }
+
+  class LazyKeyCheckIterator extends LazyIterableIterator&lt;Tuple2&lt;String, HoodieKey&gt;, List&lt;KeyLookupResult&gt;&gt; {
+
+    private HoodieKeyLookupHandle keyLookupHandle;
+
+<span class="nc" id="L64">    LazyKeyCheckIterator(Iterator&lt;Tuple2&lt;String, HoodieKey&gt;&gt; filePartitionRecordKeyTripletItr) {</span>
+<span class="nc" id="L65">      super(filePartitionRecordKeyTripletItr);</span>
+<span class="nc" id="L66">    }</span>
+
+    @Override
+    protected void start() {
+<span class="nc" id="L70">    }</span>
+
+    @Override
+    protected List&lt;HoodieKeyLookupHandle.KeyLookupResult&gt; computeNext() {
+
+<span class="nc" id="L75">      List&lt;HoodieKeyLookupHandle.KeyLookupResult&gt; ret = new ArrayList&lt;&gt;();</span>
+      try {
+        // process one file in each go.
+<span class="nc bnc" id="L78" title="All 2 branches missed.">        while (inputItr.hasNext()) {</span>
+<span class="nc" id="L79">          Tuple2&lt;String, HoodieKey&gt; currentTuple = inputItr.next();</span>
+<span class="nc" id="L80">          String fileId = currentTuple._1;</span>
+<span class="nc" id="L81">          String partitionPath = currentTuple._2.getPartitionPath();</span>
+<span class="nc" id="L82">          String recordKey = currentTuple._2.getRecordKey();</span>
+<span class="nc" id="L83">          Pair&lt;String, String&gt; partitionPathFilePair = Pair.of(partitionPath, fileId);</span>
+
+          // lazily init state
+<span class="nc bnc" id="L86" title="All 2 branches missed.">          if (keyLookupHandle == null) {</span>
+<span class="nc" id="L87">            keyLookupHandle = new HoodieKeyLookupHandle(config, hoodieTable, partitionPathFilePair);</span>
+          }
+
+          // if continue on current file
+<span class="nc bnc" id="L91" title="All 2 branches missed.">          if (keyLookupHandle.getPartitionPathFilePair().equals(partitionPathFilePair)) {</span>
+<span class="nc" id="L92">            keyLookupHandle.addKey(recordKey);</span>
+          } else {
+            // do the actual checking of file &amp; break out
+<span class="nc" id="L95">            ret.add(keyLookupHandle.getLookupResult());</span>
+<span class="nc" id="L96">            keyLookupHandle = new HoodieKeyLookupHandle(config, hoodieTable, partitionPathFilePair);</span>
+<span class="nc" id="L97">            keyLookupHandle.addKey(recordKey);</span>
+<span class="nc" id="L98">            break;</span>
+          }
+<span class="nc" id="L100">        }</span>
+
+        // handle case, where we ran out of input, close pending work, update return val
+<span class="nc bnc" id="L103" title="All 2 branches missed.">        if (!inputItr.hasNext()) {</span>
+<span class="nc" id="L104">          ret.add(keyLookupHandle.getLookupResult());</span>
+        }
+<span class="nc" id="L106">      } catch (Throwable e) {</span>
+<span class="nc bnc" id="L107" title="All 2 branches missed.">        if (e instanceof HoodieException) {</span>
+<span class="nc" id="L108">          throw e;</span>
+        }
+<span class="nc" id="L110">        throw new HoodieIndexException(&quot;Error checking bloom filter index. &quot;, e);</span>
+<span class="nc" id="L111">      }</span>
+
+<span class="nc" id="L113">      return ret;</span>
+    }
+
+    @Override
+    protected void end() {
+<span class="nc" id="L118">    }</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

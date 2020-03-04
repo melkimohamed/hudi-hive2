@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<checkstyle version="8.18">
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-timeline-service/src/main/java/org/apache/hudi/timeline/service/FileSystemViewHandler.java">
+<error line="24" severity="info" message="Import org.apache.hudi.common.table.timeline.dto.BaseFileDTO appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-timeline-service/src/main/java/org/apache/hudi/timeline/service/TimelineService.java">
+<error line="72" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-timeline-service/src/main/java/org/apache/hudi/timeline/service/handlers/BaseFileHandler.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-timeline-service/src/main/java/org/apache/hudi/timeline/service/handlers/FileSliceHandler.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-timeline-service/src/main/java/org/apache/hudi/timeline/service/handlers/Handler.java">
+<error line="28" severity="info" message="Commentaire Javadoc manquant." source="com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocTypeCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-timeline-service/src/main/java/org/apache/hudi/timeline/service/handlers/TimelineHandler.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-timeline-service/src/test/java/org/apache/hudi/timeline/table/view/TestRemoteHoodieTableFileSystemView.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-timeline-service/src/test/resources/log4j-surefire-quiet.properties">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-timeline-service/src/test/resources/log4j-surefire.properties">
+</file>
+</checkstyle>

@@ -1,0 +1,366 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>AvroConversionHelper.scala</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-spark_2.11</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi</a> &gt; <span class="el_source">AvroConversionHelper.scala</span></div><h1>AvroConversionHelper.scala</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi
+
+import java.nio.ByteBuffer
+import java.sql.{Date, Timestamp}
+import java.util
+
+import org.apache.avro.Conversions.DecimalConversion
+import org.apache.avro.LogicalTypes.{TimestampMicros, TimestampMillis}
+import org.apache.avro.{LogicalTypes, Schema}
+import org.apache.avro.Schema.Type._
+import org.apache.avro.generic.GenericData.{Fixed, Record}
+import org.apache.avro.generic.{GenericData, GenericFixed, GenericRecord}
+import org.apache.hudi.AvroConversionUtils.getNewRecordNamespace
+import org.apache.spark.sql.Row
+import org.apache.spark.sql.avro.{IncompatibleSchemaException, SchemaConverters}
+import org.apache.spark.sql.catalyst.expressions.GenericRow
+import org.apache.spark.sql.types._
+
+import scala.collection.JavaConverters._
+
+object AvroConversionHelper {
+
+  private def createDecimal(decimal: java.math.BigDecimal, precision: Int, scale: Int): Decimal = {
+<span class="nc bnc" id="L41" title="All 2 branches missed.">    if (precision &lt;= Decimal.MAX_LONG_DIGITS) {</span>
+      // Constructs a `Decimal` with an unscaled `Long` value if possible.
+<span class="nc" id="L43">      Decimal(decimal.unscaledValue().longValue(), precision, scale)</span>
+    } else {
+      // Otherwise, resorts to an unscaled `BigInteger` instead.
+<span class="nc" id="L46">      Decimal(decimal, precision, scale)</span>
+    }
+  }
+
+  /**
+    *
+    * Returns a converter function to convert row in avro format to GenericRow of catalyst.
+    *
+    * @param sourceAvroSchema Source schema before conversion inferred from avro file by passed in
+    *                         by user.
+    * @param targetSqlType    Target catalyst sql type after the conversion.
+    * @return returns a converter function to convert row in avro format to GenericRow of catalyst.
+    */
+  def createConverterToRow(sourceAvroSchema: Schema,
+                           targetSqlType: DataType): AnyRef =&gt; AnyRef = {
+
+    def createConverter(avroSchema: Schema, sqlType: DataType, path: List[String]): AnyRef =&gt; AnyRef = {
+<span class="nc" id="L63">      val avroType = avroSchema.getType</span>
+<span class="nc bnc" id="L64" title="All 22 branches missed.">      (sqlType, avroType) match {</span>
+        // Avro strings are in Utf8, so we have to call toString on them
+<span class="nc bnc" id="L66" title="All 14 branches missed.">        case (StringType, STRING) | (StringType, ENUM) =&gt;</span>
+<span class="nc bnc" id="L67" title="All 2 branches missed.">          (item: AnyRef) =&gt; if (item == null) null else item.toString</span>
+        // Byte arrays are reused by avro, so we have to make a copy of them.
+<span class="nc bnc" id="L69" title="All 24 branches missed.">        case (IntegerType, INT) | (BooleanType, BOOLEAN) | (DoubleType, DOUBLE) |</span>
+<span class="nc bnc" id="L70" title="All 8 branches missed.">             (FloatType, FLOAT) | (LongType, LONG) =&gt;</span>
+<span class="nc" id="L71">          identity</span>
+<span class="nc bnc" id="L72" title="All 4 branches missed.">        case (BinaryType, FIXED) =&gt;</span>
+<span class="nc" id="L73">          (item: AnyRef) =&gt;</span>
+<span class="nc bnc" id="L74" title="All 2 branches missed.">            if (item == null) {</span>
+<span class="nc" id="L75">              null</span>
+            } else {
+<span class="nc" id="L77">              item.asInstanceOf[Fixed].bytes().clone()</span>
+            }
+<span class="nc bnc" id="L79" title="All 4 branches missed.">        case (BinaryType, BYTES) =&gt;</span>
+<span class="nc" id="L80">          (item: AnyRef) =&gt;</span>
+<span class="nc bnc" id="L81" title="All 2 branches missed.">            if (item == null) {</span>
+<span class="nc" id="L82">              null</span>
+            } else {
+<span class="nc" id="L84">              val byteBuffer = item.asInstanceOf[ByteBuffer]</span>
+<span class="nc" id="L85">              val bytes = new Array[Byte](byteBuffer.remaining)</span>
+<span class="nc" id="L86">              byteBuffer.get(bytes)</span>
+<span class="nc" id="L87">              bytes</span>
+            }
+<span class="nc bnc" id="L89" title="All 4 branches missed.">        case (d: DecimalType, FIXED) =&gt;</span>
+<span class="nc" id="L90">          (item: AnyRef) =&gt;</span>
+<span class="nc bnc" id="L91" title="All 2 branches missed.">            if (item == null) {</span>
+<span class="nc" id="L92">              null</span>
+            } else {
+<span class="nc" id="L94">              val decimalConversion = new DecimalConversion</span>
+<span class="nc" id="L95">              val bigDecimal = decimalConversion.fromFixed(item.asInstanceOf[GenericFixed], avroSchema,</span>
+<span class="nc" id="L96">                LogicalTypes.decimal(d.precision, d.scale))</span>
+<span class="nc" id="L97">              createDecimal(bigDecimal, d.precision, d.scale)</span>
+            }
+<span class="nc bnc" id="L99" title="All 4 branches missed.">        case (d: DecimalType, BYTES) =&gt;</span>
+<span class="nc" id="L100">          (item: AnyRef) =&gt;</span>
+<span class="nc bnc" id="L101" title="All 2 branches missed.">            if (item == null) {</span>
+<span class="nc" id="L102">              null</span>
+            } else {
+<span class="nc" id="L104">              val decimalConversion = new DecimalConversion</span>
+<span class="nc" id="L105">              val bigDecimal = decimalConversion.fromBytes(item.asInstanceOf[ByteBuffer], avroSchema,</span>
+<span class="nc" id="L106">                LogicalTypes.decimal(d.precision, d.scale))</span>
+<span class="nc" id="L107">              createDecimal(bigDecimal, d.precision, d.scale)</span>
+            }
+<span class="nc bnc" id="L109" title="All 4 branches missed.">        case (DateType, INT) =&gt;</span>
+<span class="nc" id="L110">          (item: AnyRef) =&gt;</span>
+<span class="nc bnc" id="L111" title="All 2 branches missed.">            if (item == null) {</span>
+<span class="nc" id="L112">              null</span>
+            } else {
+<span class="nc" id="L114">              new Date(item.asInstanceOf[Long])</span>
+            }
+<span class="nc bnc" id="L116" title="All 4 branches missed.">        case (TimestampType, LONG) =&gt;</span>
+<span class="nc" id="L117">          (item: AnyRef) =&gt;</span>
+<span class="nc bnc" id="L118" title="All 2 branches missed.">            if (item == null) {</span>
+<span class="nc" id="L119">              null</span>
+            } else {
+<span class="nc" id="L121">              avroSchema.getLogicalType match {</span>
+<span class="nc bnc" id="L122" title="All 2 branches missed.">                case _: TimestampMillis =&gt;</span>
+<span class="nc" id="L123">                  new Timestamp(item.asInstanceOf[Long])</span>
+<span class="nc bnc" id="L124" title="All 2 branches missed.">                case _: TimestampMicros =&gt;</span>
+<span class="nc" id="L125">                  new Timestamp(item.asInstanceOf[Long] / 1000)</span>
+<span class="nc bnc" id="L126" title="All 2 branches missed.">                case null =&gt;</span>
+<span class="nc" id="L127">                  new Timestamp(item.asInstanceOf[Long])</span>
+                case other =&gt;
+<span class="nc" id="L129">                  throw new IncompatibleSchemaException(</span>
+<span class="nc" id="L130">                    s&quot;Cannot convert Avro logical type $other to Catalyst Timestamp type.&quot;)</span>
+              }
+            }
+<span class="nc bnc" id="L133" title="All 4 branches missed.">        case (struct: StructType, RECORD) =&gt;</span>
+<span class="nc" id="L134">          val length = struct.fields.length</span>
+<span class="nc" id="L135">          val converters = new Array[AnyRef =&gt; AnyRef](length)</span>
+<span class="nc" id="L136">          val avroFieldIndexes = new Array[Int](length)</span>
+<span class="nc" id="L137">          var i = 0</span>
+<span class="nc bnc" id="L138" title="All 2 branches missed.">          while (i &lt; length) {</span>
+<span class="nc" id="L139">            val sqlField = struct.fields(i)</span>
+<span class="nc" id="L140">            val avroField = avroSchema.getField(sqlField.name)</span>
+<span class="nc bnc" id="L141" title="All 2 branches missed.">            if (avroField != null) {</span>
+<span class="nc" id="L142">              val converter = createConverter(avroField.schema(), sqlField.dataType,</span>
+<span class="nc" id="L143">                path :+ sqlField.name)</span>
+<span class="nc" id="L144">              converters(i) = converter</span>
+<span class="nc" id="L145">              avroFieldIndexes(i) = avroField.pos()</span>
+<span class="nc bnc" id="L146" title="All 2 branches missed.">            } else if (!sqlField.nullable) {</span>
+<span class="nc" id="L147">              throw new IncompatibleSchemaException(</span>
+<span class="nc" id="L148">                s&quot;Cannot find non-nullable field ${sqlField.name} at path ${path.mkString(&quot;.&quot;)} &quot; +</span>
+<span class="nc" id="L149">                  &quot;in Avro schema\n&quot; +</span>
+<span class="nc" id="L150">                  s&quot;Source Avro schema: $sourceAvroSchema.\n&quot; +</span>
+<span class="nc" id="L151">                  s&quot;Target Catalyst type: $targetSqlType&quot;)</span>
+            }
+<span class="nc" id="L153">            i += 1</span>
+          }
+
+<span class="nc" id="L156">          (item: AnyRef) =&gt; {</span>
+<span class="nc bnc" id="L157" title="All 2 branches missed.">            if (item == null) {</span>
+<span class="nc" id="L158">              null</span>
+            } else {
+<span class="nc" id="L160">              val record = item.asInstanceOf[GenericRecord]</span>
+
+<span class="nc" id="L162">              val result = new Array[Any](length)</span>
+<span class="nc" id="L163">              var i = 0</span>
+<span class="nc bnc" id="L164" title="All 2 branches missed.">              while (i &lt; converters.length) {</span>
+<span class="nc bnc" id="L165" title="All 2 branches missed.">                if (converters(i) != null) {</span>
+<span class="nc" id="L166">                  val converter = converters(i)</span>
+<span class="nc" id="L167">                  result(i) = converter(record.get(avroFieldIndexes(i)))</span>
+                }
+<span class="nc" id="L169">                i += 1</span>
+              }
+<span class="nc" id="L171">              new GenericRow(result)</span>
+            }
+          }
+<span class="nc bnc" id="L174" title="All 4 branches missed.">        case (arrayType: ArrayType, ARRAY) =&gt;</span>
+<span class="nc" id="L175">          val elementConverter = createConverter(avroSchema.getElementType, arrayType.elementType,</span>
+<span class="nc" id="L176">            path)</span>
+<span class="nc" id="L177">          val allowsNull = arrayType.containsNull</span>
+<span class="nc" id="L178">          (item: AnyRef) =&gt; {</span>
+<span class="nc bnc" id="L179" title="All 2 branches missed.">            if (item == null) {</span>
+<span class="nc" id="L180">              null</span>
+            } else {
+<span class="nc bnc" id="L182" title="All 2 branches missed.">              item.asInstanceOf[java.lang.Iterable[AnyRef]].asScala.map { element =&gt;</span>
+<span class="nc bnc" id="L183" title="All 4 branches missed.">                if (element == null &amp;&amp; !allowsNull) {</span>
+<span class="nc" id="L184">                  throw new RuntimeException(s&quot;Array value at path ${path.mkString(&quot;.&quot;)} is not &quot; +</span>
+<span class="nc" id="L185">                    &quot;allowed to be null&quot;)</span>
+                } else {
+<span class="nc" id="L187">                  elementConverter(element)</span>
+                }
+              }
+            }
+          }
+<span class="nc bnc" id="L192" title="All 10 branches missed.">        case (mapType: MapType, MAP) if mapType.keyType == StringType =&gt;</span>
+<span class="nc" id="L193">          val valueConverter = createConverter(avroSchema.getValueType, mapType.valueType, path)</span>
+<span class="nc" id="L194">          val allowsNull = mapType.valueContainsNull</span>
+<span class="nc" id="L195">          (item: AnyRef) =&gt; {</span>
+<span class="nc bnc" id="L196" title="All 2 branches missed.">            if (item == null) {</span>
+<span class="nc" id="L197">              null</span>
+            } else {
+<span class="nc bnc" id="L199" title="All 2 branches missed.">              item.asInstanceOf[java.util.Map[AnyRef, AnyRef]].asScala.map { x =&gt;</span>
+<span class="nc bnc" id="L200" title="All 4 branches missed.">                if (x._2 == null &amp;&amp; !allowsNull) {</span>
+<span class="nc" id="L201">                  throw new RuntimeException(s&quot;Map value at path ${path.mkString(&quot;.&quot;)} is not &quot; +</span>
+<span class="nc" id="L202">                    &quot;allowed to be null&quot;)</span>
+                } else {
+<span class="nc" id="L204">                  (x._1.toString, valueConverter(x._2))</span>
+                }
+<span class="nc" id="L206">              }.toMap</span>
+            }
+          }
+<span class="nc bnc" id="L209" title="All 2 branches missed.">        case (sqlType, UNION) =&gt;</span>
+<span class="nc bnc" id="L210" title="All 8 branches missed.">          if (avroSchema.getTypes.asScala.exists(_.getType == NULL)) {</span>
+<span class="nc bnc" id="L211" title="All 6 branches missed.">            val remainingUnionTypes = avroSchema.getTypes.asScala.filterNot(_.getType == NULL)</span>
+<span class="nc bnc" id="L212" title="All 2 branches missed.">            if (remainingUnionTypes.size == 1) {</span>
+<span class="nc" id="L213">              createConverter(remainingUnionTypes.head, sqlType, path)</span>
+            } else {
+<span class="nc" id="L215">              createConverter(Schema.createUnion(remainingUnionTypes.asJava), sqlType, path)</span>
+            }
+<span class="nc" id="L217">          } else avroSchema.getTypes.asScala.map(_.getType) match {</span>
+<span class="nc bnc" id="L218" title="All 6 branches missed.">            case Seq(_) =&gt; createConverter(avroSchema.getTypes.get(0), sqlType, path)</span>
+<span class="nc bnc" id="L219" title="All 18 branches missed.">            case Seq(a, b) if Set(a, b) == Set(INT, LONG) &amp;&amp; sqlType == LongType =&gt;</span>
+<span class="nc" id="L220">              (item: AnyRef) =&gt; {</span>
+<span class="nc" id="L221">                item match {</span>
+<span class="nc bnc" id="L222" title="All 2 branches missed.">                  case null =&gt; null</span>
+<span class="nc bnc" id="L223" title="All 2 branches missed.">                  case l: java.lang.Long =&gt; l</span>
+<span class="nc bnc" id="L224" title="All 2 branches missed.">                  case i: java.lang.Integer =&gt; new java.lang.Long(i.longValue())</span>
+                }
+              }
+<span class="nc bnc" id="L227" title="All 18 branches missed.">            case Seq(a, b) if Set(a, b) == Set(FLOAT, DOUBLE) &amp;&amp; sqlType == DoubleType =&gt;</span>
+<span class="nc" id="L228">              (item: AnyRef) =&gt; {</span>
+<span class="nc" id="L229">                item match {</span>
+<span class="nc bnc" id="L230" title="All 2 branches missed.">                  case null =&gt; null</span>
+<span class="nc bnc" id="L231" title="All 2 branches missed.">                  case d: java.lang.Double =&gt; d</span>
+<span class="nc bnc" id="L232" title="All 2 branches missed.">                  case f: java.lang.Float =&gt; new java.lang.Double(f.doubleValue())</span>
+                }
+              }
+            case other =&gt;
+<span class="nc" id="L236">              sqlType match {</span>
+<span class="nc bnc" id="L237" title="All 4 branches missed.">                case t: StructType if t.fields.length == avroSchema.getTypes.size =&gt;</span>
+<span class="nc bnc" id="L238" title="All 2 branches missed.">                  val fieldConverters = t.fields.zip(avroSchema.getTypes.asScala).map {</span>
+<span class="nc" id="L239">                    case (field, schema) =&gt;</span>
+<span class="nc" id="L240">                      createConverter(schema, field.dataType, path :+ field.name)</span>
+                  }
+
+<span class="nc" id="L243">                  (item: AnyRef) =&gt;</span>
+<span class="nc bnc" id="L244" title="All 2 branches missed.">                    if (item == null) {</span>
+<span class="nc" id="L245">                      null</span>
+                    } else {
+<span class="nc" id="L247">                      val i = GenericData.get().resolveUnion(avroSchema, item)</span>
+<span class="nc" id="L248">                      val converted = new Array[Any](fieldConverters.length)</span>
+<span class="nc" id="L249">                      converted(i) = fieldConverters(i)(item)</span>
+<span class="nc" id="L250">                      new GenericRow(converted)</span>
+                    }
+<span class="nc" id="L252">                case _ =&gt; throw new IncompatibleSchemaException(</span>
+<span class="nc" id="L253">                  s&quot;Cannot convert Avro schema to catalyst type because schema at path &quot; +</span>
+<span class="nc" id="L254">                    s&quot;${path.mkString(&quot;.&quot;)} is not compatible &quot; +</span>
+<span class="nc" id="L255">                    s&quot;(avroType = $other, sqlType = $sqlType). \n&quot; +</span>
+<span class="nc" id="L256">                    s&quot;Source Avro schema: $sourceAvroSchema.\n&quot; +</span>
+<span class="nc" id="L257">                    s&quot;Target Catalyst type: $targetSqlType&quot;)</span>
+              }
+          }
+<span class="nc" id="L260">        case (left, right) =&gt;</span>
+<span class="nc" id="L261">          throw new IncompatibleSchemaException(</span>
+<span class="nc" id="L262">            s&quot;Cannot convert Avro schema to catalyst type because schema at path &quot; +</span>
+<span class="nc" id="L263">              s&quot;${path.mkString(&quot;.&quot;)} is not compatible (avroType = $left, sqlType = $right). \n&quot; +</span>
+<span class="nc" id="L264">              s&quot;Source Avro schema: $sourceAvroSchema.\n&quot; +</span>
+<span class="nc" id="L265">              s&quot;Target Catalyst type: $targetSqlType&quot;)</span>
+      }
+    }
+
+<span class="nc" id="L269">    createConverter(sourceAvroSchema, targetSqlType, List.empty[String])</span>
+  }
+
+  def createConverterToAvro(avroSchema: Schema,
+                            dataType: DataType,
+                            structName: String,
+                            recordNamespace: String): Any =&gt; Any = {
+<span class="nc" id="L276">    dataType match {</span>
+<span class="nc bnc" id="L277" title="All 2 branches missed.">      case BinaryType =&gt; (item: Any) =&gt;</span>
+<span class="nc" id="L278">        item match {</span>
+<span class="nc bnc" id="L279" title="All 2 branches missed.">          case null =&gt; null</span>
+<span class="nc bnc" id="L280" title="All 2 branches missed.">          case bytes: Array[Byte] =&gt; ByteBuffer.wrap(bytes)</span>
+        }
+<span class="nc bnc" id="L282" title="All 6 branches missed.">      case IntegerType | LongType |</span>
+<span class="nc bnc" id="L283" title="All 8 branches missed.">           FloatType | DoubleType | StringType | BooleanType =&gt; identity</span>
+<span class="nc bnc" id="L284" title="All 2 branches missed.">      case ByteType =&gt; (item: Any) =&gt;</span>
+<span class="nc bnc" id="L285" title="All 2 branches missed.">        if (item == null) null else item.asInstanceOf[Byte].intValue</span>
+<span class="nc bnc" id="L286" title="All 2 branches missed.">      case ShortType =&gt; (item: Any) =&gt;</span>
+<span class="nc bnc" id="L287" title="All 2 branches missed.">        if (item == null) null else item.asInstanceOf[Short].intValue</span>
+<span class="nc bnc" id="L288" title="All 2 branches missed.">      case dec: DecimalType =&gt; (item: Any) =&gt;</span>
+<span class="nc bnc" id="L289" title="All 2 branches missed.">        Option(item).map { _ =&gt;</span>
+<span class="nc" id="L290">          val bigDecimalValue = item.asInstanceOf[java.math.BigDecimal]</span>
+<span class="nc" id="L291">          val decimalConversions = new DecimalConversion()</span>
+<span class="nc" id="L292">          decimalConversions.toFixed(bigDecimalValue, avroSchema.getField(structName).schema().getTypes.get(0),</span>
+<span class="nc" id="L293">            LogicalTypes.decimal(dec.precision, dec.scale))</span>
+<span class="nc" id="L294">        }.orNull</span>
+<span class="nc bnc" id="L295" title="All 2 branches missed.">      case TimestampType =&gt; (item: Any) =&gt;</span>
+        // Convert time to microseconds since spark-avro by default converts TimestampType to
+        // Avro Logical TimestampMicros
+<span class="nc" id="L298">        Option(item).map(_.asInstanceOf[Timestamp].getTime * 1000).orNull</span>
+<span class="nc bnc" id="L299" title="All 2 branches missed.">      case DateType =&gt; (item: Any) =&gt;</span>
+<span class="nc" id="L300">        Option(item).map(_.asInstanceOf[Date].toLocalDate.toEpochDay.toInt).orNull</span>
+<span class="nc bnc" id="L301" title="All 2 branches missed.">      case ArrayType(elementType, _) =&gt;</span>
+<span class="nc" id="L302">        val elementConverter = createConverterToAvro(</span>
+<span class="nc" id="L303">          avroSchema,</span>
+<span class="nc" id="L304">          elementType,</span>
+<span class="nc" id="L305">          structName,</span>
+<span class="nc" id="L306">          getNewRecordNamespace(elementType, recordNamespace, structName))</span>
+<span class="nc" id="L307">        (item: Any) =&gt; {</span>
+<span class="nc bnc" id="L308" title="All 2 branches missed.">          if (item == null) {</span>
+<span class="nc" id="L309">            null</span>
+          } else {
+<span class="nc" id="L311">            val sourceArray = item.asInstanceOf[Seq[Any]]</span>
+<span class="nc" id="L312">            val sourceArraySize = sourceArray.size</span>
+<span class="nc" id="L313">            val targetList = new util.ArrayList[Any](sourceArraySize)</span>
+<span class="nc" id="L314">            var idx = 0</span>
+<span class="nc bnc" id="L315" title="All 2 branches missed.">            while (idx &lt; sourceArraySize) {</span>
+<span class="nc" id="L316">              targetList.add(elementConverter(sourceArray(idx)))</span>
+<span class="nc" id="L317">              idx += 1</span>
+            }
+<span class="nc" id="L319">            targetList</span>
+          }
+        }
+<span class="nc bnc" id="L322" title="All 4 branches missed.">      case MapType(StringType, valueType, _) =&gt;</span>
+<span class="nc" id="L323">        val valueConverter = createConverterToAvro(</span>
+<span class="nc" id="L324">          avroSchema,</span>
+<span class="nc" id="L325">          valueType,</span>
+<span class="nc" id="L326">          structName,</span>
+<span class="nc" id="L327">          getNewRecordNamespace(valueType, recordNamespace, structName))</span>
+<span class="nc" id="L328">        (item: Any) =&gt; {</span>
+<span class="nc bnc" id="L329" title="All 2 branches missed.">          if (item == null) {</span>
+<span class="nc" id="L330">            null</span>
+          } else {
+<span class="nc" id="L332">            val javaMap = new util.HashMap[String, Any]()</span>
+<span class="nc bnc" id="L333" title="All 4 branches missed.">            item.asInstanceOf[Map[String, Any]].foreach { case (key, value) =&gt;</span>
+<span class="nc" id="L334">              javaMap.put(key, valueConverter(value))</span>
+            }
+<span class="nc" id="L336">            javaMap</span>
+          }
+        }
+<span class="nc bnc" id="L339" title="All 2 branches missed.">      case structType: StructType =&gt;</span>
+<span class="nc" id="L340">        val schema: Schema = SchemaConverters.toAvroType(structType, nullable = false, structName, recordNamespace)</span>
+<span class="nc" id="L341">        val fieldConverters = structType.fields.map(field =&gt;</span>
+<span class="nc" id="L342">          createConverterToAvro(</span>
+<span class="nc" id="L343">            avroSchema,</span>
+<span class="nc" id="L344">            field.dataType,</span>
+<span class="nc" id="L345">            field.name,</span>
+<span class="nc" id="L346">            getNewRecordNamespace(field.dataType, recordNamespace, structName)))</span>
+<span class="nc" id="L347">        (item: Any) =&gt; {</span>
+<span class="nc bnc" id="L348" title="All 2 branches missed.">          if (item == null) {</span>
+<span class="nc" id="L349">            null</span>
+          } else {
+<span class="nc" id="L351">            val record = new Record(schema)</span>
+<span class="nc" id="L352">            val convertersIterator = fieldConverters.iterator</span>
+<span class="nc" id="L353">            val fieldNamesIterator = dataType.asInstanceOf[StructType].fieldNames.iterator</span>
+<span class="nc" id="L354">            val rowIterator = item.asInstanceOf[Row].toSeq.iterator</span>
+
+<span class="nc bnc" id="L356" title="All 2 branches missed.">            while (convertersIterator.hasNext) {</span>
+<span class="nc" id="L357">              val converter = convertersIterator.next()</span>
+<span class="nc" id="L358">              record.put(fieldNamesIterator.next(), converter(rowIterator.next()))</span>
+            }
+<span class="nc" id="L360">            record</span>
+          }
+        }
+    }
+  }
+<span class="nc" id="L365">}</span>
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

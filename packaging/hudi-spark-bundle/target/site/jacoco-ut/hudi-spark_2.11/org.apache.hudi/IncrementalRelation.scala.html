@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>IncrementalRelation.scala</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-spark_2.11</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi</a> &gt; <span class="el_source">IncrementalRelation.scala</span></div><h1>IncrementalRelation.scala</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi
+
+import org.apache.hadoop.fs.GlobPattern
+import org.apache.hadoop.fs.Path
+import org.apache.hudi.common.model.{HoodieCommitMetadata, HoodieRecord, HoodieTableType}
+import org.apache.hudi.common.table.HoodieTableMetaClient
+import org.apache.hudi.common.util.ParquetUtils
+import org.apache.hudi.config.HoodieWriteConfig
+import org.apache.hudi.exception.HoodieException
+import org.apache.hudi.table.HoodieTable
+import org.apache.log4j.LogManager
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.sources.{BaseRelation, TableScan}
+import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.{Row, SQLContext}
+
+import scala.collection.JavaConversions._
+import scala.collection.mutable
+
+/**
+  * Relation, that implements the Hoodie incremental view.
+  *
+  * Implemented for Copy_on_write storage.
+  *
+  */
+<span class="nc" id="L43">class IncrementalRelation(val sqlContext: SQLContext,</span>
+<span class="nc" id="L44">                          val basePath: String,</span>
+<span class="nc" id="L45">                          val optParams: Map[String, String],</span>
+<span class="nc" id="L46">                          val userSchema: StructType) extends BaseRelation with TableScan {</span>
+
+<span class="nc" id="L48">  private val log = LogManager.getLogger(classOf[IncrementalRelation])</span>
+
+<span class="nc" id="L50">  val fs = new Path(basePath).getFileSystem(sqlContext.sparkContext.hadoopConfiguration)</span>
+<span class="nc" id="L51">  val metaClient = new HoodieTableMetaClient(sqlContext.sparkContext.hadoopConfiguration, basePath, true)</span>
+  // MOR tables not supported yet
+<span class="nc bnc" id="L53" title="All 2 branches missed.">  if (metaClient.getTableType.equals(HoodieTableType.MERGE_ON_READ)) {</span>
+<span class="nc" id="L54">    throw new HoodieException(&quot;Incremental view not implemented yet, for merge-on-read tables&quot;)</span>
+  }
+  // TODO : Figure out a valid HoodieWriteConfig
+<span class="nc" id="L57">  private val hoodieTable = HoodieTable.getHoodieTable(metaClient, HoodieWriteConfig.newBuilder().withPath(basePath).build(),</span>
+<span class="nc" id="L58">    sqlContext.sparkContext)</span>
+<span class="nc" id="L59">  val commitTimeline = hoodieTable.getMetaClient.getCommitTimeline.filterCompletedInstants()</span>
+<span class="nc bnc" id="L60" title="All 2 branches missed.">  if (commitTimeline.empty()) {</span>
+<span class="nc" id="L61">    throw new HoodieException(&quot;No instants to incrementally pull&quot;)</span>
+  }
+<span class="nc bnc" id="L63" title="All 2 branches missed.">  if (!optParams.contains(DataSourceReadOptions.BEGIN_INSTANTTIME_OPT_KEY)) {</span>
+<span class="nc" id="L64">    throw new HoodieException(s&quot;Specify the begin instant time to pull from using &quot; +</span>
+<span class="nc" id="L65">      s&quot;option ${DataSourceReadOptions.BEGIN_INSTANTTIME_OPT_KEY}&quot;)</span>
+  }
+
+<span class="nc" id="L68">  val lastInstant = commitTimeline.lastInstant().get()</span>
+
+<span class="nc" id="L70">  val commitsToReturn = commitTimeline.findInstantsInRange(</span>
+<span class="nc" id="L71">    optParams(DataSourceReadOptions.BEGIN_INSTANTTIME_OPT_KEY),</span>
+<span class="nc bnc" id="L72" title="All 2 branches missed.">    optParams.getOrElse(DataSourceReadOptions.END_INSTANTTIME_OPT_KEY, lastInstant.getTimestamp))</span>
+<span class="nc" id="L73">    .getInstants.iterator().toList</span>
+
+  // use schema from a file produced in the latest instant
+<span class="nc" id="L76">  val latestSchema = {</span>
+    // use last instant if instant range is empty
+<span class="nc bnc" id="L78" title="All 2 branches missed.">    val instant = commitsToReturn.lastOption.getOrElse(lastInstant)</span>
+<span class="nc" id="L79">    val latestMeta = HoodieCommitMetadata</span>
+<span class="nc" id="L80">          .fromBytes(commitTimeline.getInstantDetails(instant).get, classOf[HoodieCommitMetadata])</span>
+<span class="nc" id="L81">    val metaFilePath = latestMeta.getFileIdAndFullPaths(basePath).values().iterator().next()</span>
+<span class="nc" id="L82">    AvroConversionUtils.convertAvroSchemaToStructType(ParquetUtils.readAvroSchema(</span>
+<span class="nc" id="L83">      sqlContext.sparkContext.hadoopConfiguration, new Path(metaFilePath)))</span>
+  }
+
+<span class="nc" id="L86">  val filters = {</span>
+<span class="nc bnc" id="L87" title="All 2 branches missed.">    if (optParams.contains(DataSourceReadOptions.PUSH_DOWN_INCR_FILTERS_OPT_KEY)) {</span>
+<span class="nc" id="L88">      val filterStr = optParams.getOrElse(</span>
+<span class="nc" id="L89">        DataSourceReadOptions.PUSH_DOWN_INCR_FILTERS_OPT_KEY,</span>
+<span class="nc" id="L90">        DataSourceReadOptions.DEFAULT_PUSH_DOWN_FILTERS_OPT_VAL)</span>
+<span class="nc bnc" id="L91" title="All 2 branches missed.">      filterStr.split(&quot;,&quot;).filter(!_.isEmpty)</span>
+    } else {
+<span class="nc" id="L93">      Array[String]()</span>
+    }
+  }
+
+<span class="nc" id="L97">  override def schema: StructType = latestSchema</span>
+
+<span class="nc" id="L99">  override def buildScan(): RDD[Row] = {</span>
+<span class="nc" id="L100">    val fileIdToFullPath = mutable.HashMap[String, String]()</span>
+<span class="nc bnc" id="L101" title="All 2 branches missed.">    for (commit &lt;- commitsToReturn) {</span>
+<span class="nc" id="L102">      val metadata: HoodieCommitMetadata = HoodieCommitMetadata.fromBytes(commitTimeline.getInstantDetails(commit)</span>
+<span class="nc" id="L103">        .get, classOf[HoodieCommitMetadata])</span>
+<span class="nc" id="L104">      fileIdToFullPath ++= metadata.getFileIdAndFullPaths(basePath).toMap</span>
+    }
+<span class="nc" id="L106">    val pathGlobPattern = optParams.getOrElse(</span>
+<span class="nc" id="L107">      DataSourceReadOptions.INCR_PATH_GLOB_OPT_KEY,</span>
+<span class="nc" id="L108">      DataSourceReadOptions.DEFAULT_INCR_PATH_GLOB_OPT_VAL)</span>
+<span class="nc bnc" id="L109" title="All 2 branches missed.">    val filteredFullPath = if(!pathGlobPattern.equals(DataSourceReadOptions.DEFAULT_INCR_PATH_GLOB_OPT_VAL)) {</span>
+<span class="nc" id="L110">      val globMatcher = new GlobPattern(&quot;*&quot; + pathGlobPattern)</span>
+<span class="nc" id="L111">      fileIdToFullPath.filter(p =&gt; globMatcher.matches(p._2))</span>
+    } else {
+<span class="nc" id="L113">      fileIdToFullPath</span>
+    }
+    // unset the path filter, otherwise if end_instant_time is not the latest instant, path filter set for RO view
+    // will filter out all the files incorrectly.
+<span class="nc" id="L117">    sqlContext.sparkContext.hadoopConfiguration.unset(&quot;mapreduce.input.pathFilter.class&quot;)</span>
+<span class="nc bnc" id="L118" title="All 2 branches missed.">    val sOpts = optParams.filter(p =&gt; !p._1.equalsIgnoreCase(&quot;path&quot;))</span>
+<span class="nc bnc" id="L119" title="All 2 branches missed.">    if (filteredFullPath.isEmpty) {</span>
+<span class="nc" id="L120">      sqlContext.sparkContext.emptyRDD[Row]</span>
+    } else {
+<span class="nc" id="L122">      log.info(&quot;Additional Filters to be applied to incremental source are :&quot; + filters)</span>
+<span class="nc" id="L123">      filters.foldLeft(sqlContext.read.options(sOpts)</span>
+<span class="nc" id="L124">        .schema(latestSchema)</span>
+<span class="nc" id="L125">        .parquet(filteredFullPath.values.toList: _*)</span>
+<span class="nc" id="L126">        .filter(String.format(&quot;%s &gt;= '%s'&quot;, HoodieRecord.COMMIT_TIME_METADATA_FIELD, commitsToReturn.head.getTimestamp))</span>
+<span class="nc" id="L127">        .filter(String.format(&quot;%s &lt;= '%s'&quot;,</span>
+<span class="nc" id="L128">          HoodieRecord.COMMIT_TIME_METADATA_FIELD, commitsToReturn.last.getTimestamp)))((e, f) =&gt; e.filter(f))</span>
+<span class="nc" id="L129">        .toDF().rdd</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

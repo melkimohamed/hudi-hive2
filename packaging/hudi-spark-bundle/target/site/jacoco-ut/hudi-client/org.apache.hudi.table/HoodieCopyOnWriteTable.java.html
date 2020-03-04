@@ -1,0 +1,783 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieCopyOnWriteTable.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-client</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.table</a> &gt; <span class="el_source">HoodieCopyOnWriteTable.java</span></div><h1>HoodieCopyOnWriteTable.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.table;
+
+import org.apache.hudi.client.WriteStatus;
+import org.apache.hudi.avro.model.HoodieActionInstant;
+import org.apache.hudi.avro.model.HoodieCleanerPlan;
+import org.apache.hudi.avro.model.HoodieCompactionPlan;
+import org.apache.hudi.common.HoodieCleanStat;
+import org.apache.hudi.common.HoodieRollbackStat;
+import org.apache.hudi.common.model.HoodieCleaningPolicy;
+import org.apache.hudi.common.model.HoodieCommitMetadata;
+import org.apache.hudi.common.model.HoodieBaseFile;
+import org.apache.hudi.common.model.HoodieKey;
+import org.apache.hudi.common.model.HoodieRecord;
+import org.apache.hudi.common.model.HoodieRecordLocation;
+import org.apache.hudi.common.model.HoodieRecordPayload;
+import org.apache.hudi.common.model.HoodieRollingStatMetadata;
+import org.apache.hudi.common.table.HoodieTimeline;
+import org.apache.hudi.common.table.timeline.HoodieActiveTimeline;
+import org.apache.hudi.common.table.timeline.HoodieInstant;
+import org.apache.hudi.common.table.timeline.HoodieInstant.State;
+import org.apache.hudi.common.util.FSUtils;
+import org.apache.hudi.common.util.Option;
+import org.apache.hudi.common.util.collection.Pair;
+import org.apache.hudi.common.util.queue.BoundedInMemoryExecutor;
+import org.apache.hudi.common.util.queue.BoundedInMemoryQueueConsumer;
+import org.apache.hudi.config.HoodieWriteConfig;
+import org.apache.hudi.exception.HoodieException;
+import org.apache.hudi.exception.HoodieIOException;
+import org.apache.hudi.exception.HoodieNotSupportedException;
+import org.apache.hudi.exception.HoodieUpsertException;
+import org.apache.hudi.execution.CopyOnWriteLazyInsertIterable;
+import org.apache.hudi.client.utils.ParquetReaderIterator;
+import org.apache.hudi.execution.SparkBoundedInMemoryExecutor;
+import org.apache.hudi.io.HoodieCreateHandle;
+import org.apache.hudi.io.HoodieMergeHandle;
+
+import com.google.common.hash.Hashing;
+import org.apache.avro.generic.GenericRecord;
+import org.apache.avro.generic.IndexedRecord;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.hudi.table.rollback.RollbackHelper;
+import org.apache.hudi.table.rollback.RollbackRequest;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+import org.apache.parquet.avro.AvroParquetReader;
+import org.apache.parquet.avro.AvroReadSupport;
+import org.apache.parquet.hadoop.ParquetReader;
+import org.apache.spark.Partitioner;
+import org.apache.spark.api.java.JavaRDD;
+import org.apache.spark.api.java.JavaSparkContext;
+import org.apache.spark.api.java.function.PairFlatMapFunction;
+
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.Serializable;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+import scala.Tuple2;
+
+/**
+ * Implementation of a very heavily read-optimized Hoodie Table where, all data is stored in base files, with
+ * zero read amplification.
+ *
+ * &lt;p&gt;
+ * INSERTS - Produce new files, block aligned to desired size (or) Merge with the smallest existing file, to expand it
+ * &lt;p&gt;
+ * UPDATES - Produce a new version of the file, just replacing the updated records with new values
+ */
+public class HoodieCopyOnWriteTable&lt;T extends HoodieRecordPayload&gt; extends HoodieTable&lt;T&gt; {
+
+<span class="nc" id="L98">  private static final Logger LOG = LogManager.getLogger(HoodieCopyOnWriteTable.class);</span>
+
+  public HoodieCopyOnWriteTable(HoodieWriteConfig config, JavaSparkContext jsc) {
+<span class="nc" id="L101">    super(config, jsc);</span>
+<span class="nc" id="L102">  }</span>
+
+  private static PairFlatMapFunction&lt;Iterator&lt;Tuple2&lt;String, String&gt;&gt;, String, PartitionCleanStat&gt; deleteFilesFunc(
+      HoodieTable table) {
+<span class="nc" id="L106">    return (PairFlatMapFunction&lt;Iterator&lt;Tuple2&lt;String, String&gt;&gt;, String, PartitionCleanStat&gt;) iter -&gt; {</span>
+<span class="nc" id="L107">      Map&lt;String, PartitionCleanStat&gt; partitionCleanStatMap = new HashMap&lt;&gt;();</span>
+
+<span class="nc" id="L109">      FileSystem fs = table.getMetaClient().getFs();</span>
+<span class="nc" id="L110">      Path basePath = new Path(table.getMetaClient().getBasePath());</span>
+<span class="nc bnc" id="L111" title="All 2 branches missed.">      while (iter.hasNext()) {</span>
+<span class="nc" id="L112">        Tuple2&lt;String, String&gt; partitionDelFileTuple = iter.next();</span>
+<span class="nc" id="L113">        String partitionPath = partitionDelFileTuple._1();</span>
+<span class="nc" id="L114">        String delFileName = partitionDelFileTuple._2();</span>
+<span class="nc" id="L115">        Path deletePath = FSUtils.getPartitionPath(FSUtils.getPartitionPath(basePath, partitionPath), delFileName);</span>
+<span class="nc" id="L116">        String deletePathStr = deletePath.toString();</span>
+<span class="nc" id="L117">        Boolean deletedFileResult = deleteFileAndGetResult(fs, deletePathStr);</span>
+<span class="nc bnc" id="L118" title="All 2 branches missed.">        if (!partitionCleanStatMap.containsKey(partitionPath)) {</span>
+<span class="nc" id="L119">          partitionCleanStatMap.put(partitionPath, new PartitionCleanStat(partitionPath));</span>
+        }
+<span class="nc" id="L121">        PartitionCleanStat partitionCleanStat = partitionCleanStatMap.get(partitionPath);</span>
+<span class="nc" id="L122">        partitionCleanStat.addDeleteFilePatterns(deletePath.getName());</span>
+<span class="nc" id="L123">        partitionCleanStat.addDeletedFileResult(deletePath.getName(), deletedFileResult);</span>
+<span class="nc" id="L124">      }</span>
+<span class="nc" id="L125">      return partitionCleanStatMap.entrySet().stream().map(e -&gt; new Tuple2&lt;&gt;(e.getKey(), e.getValue()))</span>
+<span class="nc" id="L126">          .collect(Collectors.toList()).iterator();</span>
+    };
+  }
+
+  private static Boolean deleteFileAndGetResult(FileSystem fs, String deletePathStr) throws IOException {
+<span class="nc" id="L131">    Path deletePath = new Path(deletePathStr);</span>
+<span class="nc" id="L132">    LOG.debug(&quot;Working on delete path :&quot; + deletePath);</span>
+    try {
+<span class="nc" id="L134">      boolean deleteResult = fs.delete(deletePath, false);</span>
+<span class="nc bnc" id="L135" title="All 2 branches missed.">      if (deleteResult) {</span>
+<span class="nc" id="L136">        LOG.debug(&quot;Cleaned file at path :&quot; + deletePath);</span>
+      }
+<span class="nc" id="L138">      return deleteResult;</span>
+<span class="nc" id="L139">    } catch (FileNotFoundException fio) {</span>
+      // With cleanPlan being used for retried cleaning operations, its possible to clean a file twice
+<span class="nc" id="L141">      return false;</span>
+    }
+  }
+
+  @Override
+  public Partitioner getUpsertPartitioner(WorkloadProfile profile) {
+<span class="nc bnc" id="L147" title="All 2 branches missed.">    if (profile == null) {</span>
+<span class="nc" id="L148">      throw new HoodieUpsertException(&quot;Need workload profile to construct the upsert partitioner.&quot;);</span>
+    }
+<span class="nc" id="L150">    return new UpsertPartitioner(profile);</span>
+  }
+
+  @Override
+  public Partitioner getInsertPartitioner(WorkloadProfile profile) {
+<span class="nc" id="L155">    return getUpsertPartitioner(profile);</span>
+  }
+
+  @Override
+  public boolean isWorkloadProfileNeeded() {
+<span class="nc" id="L160">    return true;</span>
+  }
+
+  @Override
+  public HoodieCompactionPlan scheduleCompaction(JavaSparkContext jsc, String commitTime) {
+<span class="nc" id="L165">    throw new HoodieNotSupportedException(&quot;Compaction is not supported from a CopyOnWrite table&quot;);</span>
+  }
+
+  @Override
+  public JavaRDD&lt;WriteStatus&gt; compact(JavaSparkContext jsc, String compactionInstantTime,
+      HoodieCompactionPlan compactionPlan) {
+<span class="nc" id="L171">    throw new HoodieNotSupportedException(&quot;Compaction is not supported from a CopyOnWrite table&quot;);</span>
+  }
+
+  public Iterator&lt;List&lt;WriteStatus&gt;&gt; handleUpdate(String commitTime, String fileId, Iterator&lt;HoodieRecord&lt;T&gt;&gt; recordItr)
+      throws IOException {
+    // This is needed since sometimes some buckets are never picked in getPartition() and end up with 0 records
+<span class="nc bnc" id="L177" title="All 2 branches missed.">    if (!recordItr.hasNext()) {</span>
+<span class="nc" id="L178">      LOG.info(&quot;Empty partition with fileId =&gt; &quot; + fileId);</span>
+<span class="nc" id="L179">      return Collections.singletonList((List&lt;WriteStatus&gt;) Collections.EMPTY_LIST).iterator();</span>
+    }
+    // these are updates
+<span class="nc" id="L182">    HoodieMergeHandle upsertHandle = getUpdateHandle(commitTime, fileId, recordItr);</span>
+<span class="nc" id="L183">    return handleUpdateInternal(upsertHandle, commitTime, fileId);</span>
+  }
+
+  public Iterator&lt;List&lt;WriteStatus&gt;&gt; handleUpdate(String commitTime, String fileId,
+      Map&lt;String, HoodieRecord&lt;T&gt;&gt; keyToNewRecords, HoodieBaseFile oldDataFile) throws IOException {
+    // these are updates
+<span class="nc" id="L189">    HoodieMergeHandle upsertHandle = getUpdateHandle(commitTime, fileId, keyToNewRecords, oldDataFile);</span>
+<span class="nc" id="L190">    return handleUpdateInternal(upsertHandle, commitTime, fileId);</span>
+  }
+
+  protected Iterator&lt;List&lt;WriteStatus&gt;&gt; handleUpdateInternal(HoodieMergeHandle upsertHandle, String commitTime,
+      String fileId) throws IOException {
+<span class="nc bnc" id="L195" title="All 2 branches missed.">    if (upsertHandle.getOldFilePath() == null) {</span>
+<span class="nc" id="L196">      throw new HoodieUpsertException(</span>
+          &quot;Error in finding the old file path at commit &quot; + commitTime + &quot; for fileId: &quot; + fileId);
+    } else {
+<span class="nc" id="L199">      AvroReadSupport.setAvroReadSchema(getHadoopConf(), upsertHandle.getWriterSchema());</span>
+<span class="nc" id="L200">      BoundedInMemoryExecutor&lt;GenericRecord, GenericRecord, Void&gt; wrapper = null;</span>
+<span class="nc" id="L201">      try (ParquetReader&lt;IndexedRecord&gt; reader =</span>
+<span class="nc" id="L202">          AvroParquetReader.&lt;IndexedRecord&gt;builder(upsertHandle.getOldFilePath()).withConf(getHadoopConf()).build()) {</span>
+<span class="nc" id="L203">        wrapper = new SparkBoundedInMemoryExecutor(config, new ParquetReaderIterator(reader),</span>
+<span class="nc" id="L204">            new UpdateHandler(upsertHandle), x -&gt; x);</span>
+<span class="nc" id="L205">        wrapper.execute();</span>
+<span class="nc" id="L206">      } catch (Exception e) {</span>
+<span class="nc" id="L207">        throw new HoodieException(e);</span>
+      } finally {
+<span class="nc" id="L209">        upsertHandle.close();</span>
+<span class="nc bnc" id="L210" title="All 2 branches missed.">        if (null != wrapper) {</span>
+<span class="nc" id="L211">          wrapper.shutdownNow();</span>
+        }
+      }
+    }
+
+    // TODO(vc): This needs to be revisited
+<span class="nc bnc" id="L217" title="All 2 branches missed.">    if (upsertHandle.getWriteStatus().getPartitionPath() == null) {</span>
+<span class="nc" id="L218">      LOG.info(&quot;Upsert Handle has partition path as null &quot; + upsertHandle.getOldFilePath() + &quot;, &quot;</span>
+<span class="nc" id="L219">          + upsertHandle.getWriteStatus());</span>
+    }
+<span class="nc" id="L221">    return Collections.singletonList(Collections.singletonList(upsertHandle.getWriteStatus())).iterator();</span>
+  }
+
+  protected HoodieMergeHandle getUpdateHandle(String commitTime, String fileId, Iterator&lt;HoodieRecord&lt;T&gt;&gt; recordItr) {
+<span class="nc" id="L225">    return new HoodieMergeHandle&lt;&gt;(config, commitTime, this, recordItr, fileId);</span>
+  }
+
+  protected HoodieMergeHandle getUpdateHandle(String commitTime, String fileId,
+      Map&lt;String, HoodieRecord&lt;T&gt;&gt; keyToNewRecords, HoodieBaseFile dataFileToBeMerged) {
+<span class="nc" id="L230">    return new HoodieMergeHandle&lt;&gt;(config, commitTime, this, keyToNewRecords, fileId, dataFileToBeMerged);</span>
+  }
+
+  public Iterator&lt;List&lt;WriteStatus&gt;&gt; handleInsert(String commitTime, String idPfx, Iterator&lt;HoodieRecord&lt;T&gt;&gt; recordItr)
+      throws Exception {
+    // This is needed since sometimes some buckets are never picked in getPartition() and end up with 0 records
+<span class="nc bnc" id="L236" title="All 2 branches missed.">    if (!recordItr.hasNext()) {</span>
+<span class="nc" id="L237">      LOG.info(&quot;Empty partition&quot;);</span>
+<span class="nc" id="L238">      return Collections.singletonList((List&lt;WriteStatus&gt;) Collections.EMPTY_LIST).iterator();</span>
+    }
+<span class="nc" id="L240">    return new CopyOnWriteLazyInsertIterable&lt;&gt;(recordItr, config, commitTime, this, idPfx);</span>
+  }
+
+  public Iterator&lt;List&lt;WriteStatus&gt;&gt; handleInsert(String commitTime, String partitionPath, String fileId,
+      Iterator&lt;HoodieRecord&lt;T&gt;&gt; recordItr) {
+<span class="nc" id="L245">    HoodieCreateHandle createHandle =</span>
+        new HoodieCreateHandle(config, commitTime, this, partitionPath, fileId, recordItr);
+<span class="nc" id="L247">    createHandle.write();</span>
+<span class="nc" id="L248">    return Collections.singletonList(Collections.singletonList(createHandle.close())).iterator();</span>
+  }
+
+  @SuppressWarnings(&quot;unchecked&quot;)
+  @Override
+  public Iterator&lt;List&lt;WriteStatus&gt;&gt; handleUpsertPartition(String commitTime, Integer partition, Iterator recordItr,
+      Partitioner partitioner) {
+<span class="nc" id="L255">    UpsertPartitioner upsertPartitioner = (UpsertPartitioner) partitioner;</span>
+<span class="nc" id="L256">    BucketInfo binfo = upsertPartitioner.getBucketInfo(partition);</span>
+<span class="nc" id="L257">    BucketType btype = binfo.bucketType;</span>
+    try {
+<span class="nc bnc" id="L259" title="All 2 branches missed.">      if (btype.equals(BucketType.INSERT)) {</span>
+<span class="nc" id="L260">        return handleInsert(commitTime, binfo.fileIdPrefix, recordItr);</span>
+<span class="nc bnc" id="L261" title="All 2 branches missed.">      } else if (btype.equals(BucketType.UPDATE)) {</span>
+<span class="nc" id="L262">        return handleUpdate(commitTime, binfo.fileIdPrefix, recordItr);</span>
+      } else {
+<span class="nc" id="L264">        throw new HoodieUpsertException(&quot;Unknown bucketType &quot; + btype + &quot; for partition :&quot; + partition);</span>
+      }
+<span class="nc" id="L266">    } catch (Throwable t) {</span>
+<span class="nc" id="L267">      String msg = &quot;Error upserting bucketType &quot; + btype + &quot; for partition :&quot; + partition;</span>
+<span class="nc" id="L268">      LOG.error(msg, t);</span>
+<span class="nc" id="L269">      throw new HoodieUpsertException(msg, t);</span>
+    }
+  }
+
+  @Override
+  public Iterator&lt;List&lt;WriteStatus&gt;&gt; handleInsertPartition(String commitTime, Integer partition, Iterator recordItr,
+      Partitioner partitioner) {
+<span class="nc" id="L276">    return handleUpsertPartition(commitTime, partition, recordItr, partitioner);</span>
+  }
+
+  /**
+   * Generates List of files to be cleaned.
+   * 
+   * @param jsc JavaSparkContext
+   * @return Cleaner Plan
+   */
+  @Override
+  public HoodieCleanerPlan scheduleClean(JavaSparkContext jsc) {
+    try {
+<span class="nc" id="L288">      CleanHelper cleaner = new CleanHelper(this, config);</span>
+<span class="nc" id="L289">      Option&lt;HoodieInstant&gt; earliestInstant = cleaner.getEarliestCommitToRetain();</span>
+
+<span class="nc" id="L291">      List&lt;String&gt; partitionsToClean = cleaner.getPartitionPathsToClean(earliestInstant);</span>
+
+<span class="nc bnc" id="L293" title="All 2 branches missed.">      if (partitionsToClean.isEmpty()) {</span>
+<span class="nc" id="L294">        LOG.info(&quot;Nothing to clean here. It is already clean&quot;);</span>
+<span class="nc" id="L295">        return HoodieCleanerPlan.newBuilder().setPolicy(HoodieCleaningPolicy.KEEP_LATEST_COMMITS.name()).build();</span>
+      }
+<span class="nc" id="L297">      LOG.info(</span>
+<span class="nc" id="L298">          &quot;Total Partitions to clean : &quot; + partitionsToClean.size() + &quot;, with policy &quot; + config.getCleanerPolicy());</span>
+<span class="nc" id="L299">      int cleanerParallelism = Math.min(partitionsToClean.size(), config.getCleanerParallelism());</span>
+<span class="nc" id="L300">      LOG.info(&quot;Using cleanerParallelism: &quot; + cleanerParallelism);</span>
+
+<span class="nc" id="L302">      Map&lt;String, List&lt;String&gt;&gt; cleanOps = jsc.parallelize(partitionsToClean, cleanerParallelism)</span>
+<span class="nc" id="L303">          .map(partitionPathToClean -&gt; Pair.of(partitionPathToClean, cleaner.getDeletePaths(partitionPathToClean)))</span>
+<span class="nc" id="L304">          .collect().stream().collect(Collectors.toMap(Pair::getKey, Pair::getValue));</span>
+<span class="nc" id="L305">      return new HoodieCleanerPlan(earliestInstant</span>
+<span class="nc" id="L306">          .map(x -&gt; new HoodieActionInstant(x.getTimestamp(), x.getAction(), x.getState().name())).orElse(null),</span>
+<span class="nc" id="L307">          config.getCleanerPolicy().name(), cleanOps, 1);</span>
+<span class="nc" id="L308">    } catch (IOException e) {</span>
+<span class="nc" id="L309">      throw new HoodieIOException(&quot;Failed to schedule clean operation&quot;, e);</span>
+    }
+  }
+
+  /**
+   * Performs cleaning of partition paths according to cleaning policy and returns the number of files cleaned. Handles
+   * skews in partitions to clean by making files to clean as the unit of task distribution.
+   *
+   * @throws IllegalArgumentException if unknown cleaning policy is provided
+   */
+  @Override
+  public List&lt;HoodieCleanStat&gt; clean(JavaSparkContext jsc, HoodieInstant cleanInstant, HoodieCleanerPlan cleanerPlan) {
+<span class="nc" id="L321">    int cleanerParallelism = Math.min(</span>
+<span class="nc" id="L322">        (int) (cleanerPlan.getFilesToBeDeletedPerPartition().values().stream().mapToInt(List::size).count()),</span>
+<span class="nc" id="L323">        config.getCleanerParallelism());</span>
+<span class="nc" id="L324">    LOG.info(&quot;Using cleanerParallelism: &quot; + cleanerParallelism);</span>
+<span class="nc" id="L325">    List&lt;Tuple2&lt;String, PartitionCleanStat&gt;&gt; partitionCleanStats = jsc</span>
+<span class="nc" id="L326">        .parallelize(cleanerPlan.getFilesToBeDeletedPerPartition().entrySet().stream()</span>
+<span class="nc" id="L327">            .flatMap(x -&gt; x.getValue().stream().map(y -&gt; new Tuple2&lt;&gt;(x.getKey(), y)))</span>
+<span class="nc" id="L328">            .collect(Collectors.toList()), cleanerParallelism)</span>
+<span class="nc" id="L329">        .mapPartitionsToPair(deleteFilesFunc(this)).reduceByKey(PartitionCleanStat::merge).collect();</span>
+
+<span class="nc" id="L331">    Map&lt;String, PartitionCleanStat&gt; partitionCleanStatsMap =</span>
+<span class="nc" id="L332">        partitionCleanStats.stream().collect(Collectors.toMap(Tuple2::_1, Tuple2::_2));</span>
+
+    // Return PartitionCleanStat for each partition passed.
+<span class="nc" id="L335">    return cleanerPlan.getFilesToBeDeletedPerPartition().keySet().stream().map(partitionPath -&gt; {</span>
+<span class="nc" id="L336">      PartitionCleanStat partitionCleanStat =</span>
+<span class="nc bnc" id="L337" title="All 2 branches missed.">          (partitionCleanStatsMap.containsKey(partitionPath)) ? partitionCleanStatsMap.get(partitionPath)</span>
+              : new PartitionCleanStat(partitionPath);
+<span class="nc" id="L339">      HoodieActionInstant actionInstant = cleanerPlan.getEarliestInstantToRetain();</span>
+<span class="nc bnc" id="L340" title="All 2 branches missed.">      return HoodieCleanStat.newBuilder().withPolicy(config.getCleanerPolicy()).withPartitionPath(partitionPath)</span>
+<span class="nc" id="L341">          .withEarliestCommitRetained(Option.ofNullable(</span>
+              actionInstant != null
+<span class="nc" id="L343">                  ? new HoodieInstant(State.valueOf(actionInstant.getState()),</span>
+<span class="nc" id="L344">                      actionInstant.getAction(), actionInstant.getTimestamp())</span>
+                  : null))
+<span class="nc" id="L346">          .withDeletePathPattern(partitionCleanStat.deletePathPatterns)</span>
+<span class="nc" id="L347">          .withSuccessfulDeletes(partitionCleanStat.successDeleteFiles)</span>
+<span class="nc" id="L348">          .withFailedDeletes(partitionCleanStat.failedDeleteFiles).build();</span>
+<span class="nc" id="L349">    }).collect(Collectors.toList());</span>
+  }
+
+  @Override
+  public List&lt;HoodieRollbackStat&gt; rollback(JavaSparkContext jsc, HoodieInstant instant, boolean deleteInstants)
+      throws IOException {
+<span class="nc" id="L355">    long startTime = System.currentTimeMillis();</span>
+<span class="nc" id="L356">    List&lt;HoodieRollbackStat&gt; stats = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L357">    HoodieActiveTimeline activeTimeline = this.getActiveTimeline();</span>
+
+<span class="nc bnc" id="L359" title="All 2 branches missed.">    if (instant.isCompleted()) {</span>
+<span class="nc" id="L360">      LOG.info(&quot;Unpublishing instant &quot; + instant);</span>
+<span class="nc" id="L361">      instant = activeTimeline.revertToInflight(instant);</span>
+    }
+
+    // For Requested State (like failure during index lookup), there is nothing to do rollback other than
+    // deleting the timeline file
+<span class="nc bnc" id="L366" title="All 2 branches missed.">    if (!instant.isRequested()) {</span>
+<span class="nc" id="L367">      String commit = instant.getTimestamp();</span>
+
+      // delete all the data files for this commit
+<span class="nc" id="L370">      LOG.info(&quot;Clean out all parquet files generated for commit: &quot; + commit);</span>
+<span class="nc" id="L371">      List&lt;RollbackRequest&gt; rollbackRequests = generateRollbackRequests(instant);</span>
+
+      //TODO: We need to persist this as rollback workload and use it in case of partial failures
+<span class="nc" id="L374">      stats = new RollbackHelper(metaClient, config).performRollback(jsc, instant, rollbackRequests);</span>
+    }
+    // Delete Inflight instant if enabled
+<span class="nc" id="L377">    deleteInflightAndRequestedInstant(deleteInstants, activeTimeline, instant);</span>
+<span class="nc" id="L378">    LOG.info(&quot;Time(in ms) taken to finish rollback &quot; + (System.currentTimeMillis() - startTime));</span>
+<span class="nc" id="L379">    return stats;</span>
+  }
+
+  private List&lt;RollbackRequest&gt; generateRollbackRequests(HoodieInstant instantToRollback)
+      throws IOException {
+<span class="nc" id="L384">    return FSUtils.getAllPartitionPaths(this.metaClient.getFs(), this.getMetaClient().getBasePath(),</span>
+<span class="nc" id="L385">        config.shouldAssumeDatePartitioning()).stream().map(partitionPath -&gt; RollbackRequest.createRollbackRequestWithDeleteDataAndLogFilesAction(partitionPath, instantToRollback))</span>
+<span class="nc" id="L386">            .collect(Collectors.toList());</span>
+  }
+
+
+  /**
+   * Delete Inflight instant if enabled.
+   *
+   * @param deleteInstant Enable Deletion of Inflight instant
+   * @param activeTimeline Hoodie active timeline
+   * @param instantToBeDeleted Instant to be deleted
+   */
+  protected void deleteInflightAndRequestedInstant(boolean deleteInstant, HoodieActiveTimeline activeTimeline,
+      HoodieInstant instantToBeDeleted) {
+    // Remove marker files always on rollback
+<span class="nc" id="L400">    deleteMarkerDir(instantToBeDeleted.getTimestamp());</span>
+
+    // Remove the rolled back inflight commits
+<span class="nc bnc" id="L403" title="All 2 branches missed.">    if (deleteInstant) {</span>
+<span class="nc" id="L404">      LOG.info(&quot;Deleting instant=&quot; + instantToBeDeleted);</span>
+<span class="nc" id="L405">      activeTimeline.deletePending(instantToBeDeleted);</span>
+<span class="nc bnc" id="L406" title="All 4 branches missed.">      if (instantToBeDeleted.isInflight() &amp;&amp; !metaClient.getTimelineLayoutVersion().isNullVersion()) {</span>
+        // Delete corresponding requested instant
+<span class="nc" id="L408">        instantToBeDeleted = new HoodieInstant(State.REQUESTED, instantToBeDeleted.getAction(),</span>
+<span class="nc" id="L409">            instantToBeDeleted.getTimestamp());</span>
+<span class="nc" id="L410">        activeTimeline.deletePending(instantToBeDeleted);</span>
+      }
+<span class="nc" id="L412">      LOG.info(&quot;Deleted pending commit &quot; + instantToBeDeleted);</span>
+    } else {
+<span class="nc" id="L414">      LOG.warn(&quot;Rollback finished without deleting inflight instant file. Instant=&quot; + instantToBeDeleted);</span>
+    }
+<span class="nc" id="L416">  }</span>
+
+<span class="nc" id="L418">  enum BucketType {</span>
+<span class="nc" id="L419">    UPDATE, INSERT</span>
+  }
+
+  /**
+   * Consumer that dequeues records from queue and sends to Merge Handle.
+   */
+  private static class UpdateHandler extends BoundedInMemoryQueueConsumer&lt;GenericRecord, Void&gt; {
+
+    private final HoodieMergeHandle upsertHandle;
+
+<span class="nc" id="L429">    private UpdateHandler(HoodieMergeHandle upsertHandle) {</span>
+<span class="nc" id="L430">      this.upsertHandle = upsertHandle;</span>
+<span class="nc" id="L431">    }</span>
+
+    @Override
+    protected void consumeOneRecord(GenericRecord record) {
+<span class="nc" id="L435">      upsertHandle.write(record);</span>
+<span class="nc" id="L436">    }</span>
+
+    @Override
+<span class="nc" id="L439">    protected void finish() {}</span>
+
+    @Override
+    protected Void getResult() {
+<span class="nc" id="L443">      return null;</span>
+    }
+  }
+
+  private static class PartitionCleanStat implements Serializable {
+
+    private final String partitionPath;
+<span class="nc" id="L450">    private final List&lt;String&gt; deletePathPatterns = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L451">    private final List&lt;String&gt; successDeleteFiles = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L452">    private final List&lt;String&gt; failedDeleteFiles = new ArrayList&lt;&gt;();</span>
+
+<span class="nc" id="L454">    private PartitionCleanStat(String partitionPath) {</span>
+<span class="nc" id="L455">      this.partitionPath = partitionPath;</span>
+<span class="nc" id="L456">    }</span>
+
+    private void addDeletedFileResult(String deletePathStr, Boolean deletedFileResult) {
+<span class="nc bnc" id="L459" title="All 2 branches missed.">      if (deletedFileResult) {</span>
+<span class="nc" id="L460">        successDeleteFiles.add(deletePathStr);</span>
+      } else {
+<span class="nc" id="L462">        failedDeleteFiles.add(deletePathStr);</span>
+      }
+<span class="nc" id="L464">    }</span>
+
+    private void addDeleteFilePatterns(String deletePathStr) {
+<span class="nc" id="L467">      deletePathPatterns.add(deletePathStr);</span>
+<span class="nc" id="L468">    }</span>
+
+    private PartitionCleanStat merge(PartitionCleanStat other) {
+<span class="nc bnc" id="L471" title="All 2 branches missed.">      if (!this.partitionPath.equals(other.partitionPath)) {</span>
+<span class="nc" id="L472">        throw new RuntimeException(</span>
+<span class="nc" id="L473">            String.format(&quot;partitionPath is not a match: (%s, %s)&quot;, partitionPath, other.partitionPath));</span>
+      }
+<span class="nc" id="L475">      successDeleteFiles.addAll(other.successDeleteFiles);</span>
+<span class="nc" id="L476">      deletePathPatterns.addAll(other.deletePathPatterns);</span>
+<span class="nc" id="L477">      failedDeleteFiles.addAll(other.failedDeleteFiles);</span>
+<span class="nc" id="L478">      return this;</span>
+    }
+  }
+
+  /**
+   * Helper class for a small file's location and its actual size on disk.
+   */
+<span class="nc" id="L485">  static class SmallFile implements Serializable {</span>
+
+    HoodieRecordLocation location;
+    long sizeBytes;
+
+    @Override
+    public String toString() {
+<span class="nc" id="L492">      final StringBuilder sb = new StringBuilder(&quot;SmallFile {&quot;);</span>
+<span class="nc" id="L493">      sb.append(&quot;location=&quot;).append(location).append(&quot;, &quot;);</span>
+<span class="nc" id="L494">      sb.append(&quot;sizeBytes=&quot;).append(sizeBytes);</span>
+<span class="nc" id="L495">      sb.append('}');</span>
+<span class="nc" id="L496">      return sb.toString();</span>
+    }
+  }
+
+  /**
+   * Helper class for an insert bucket along with the weight [0.0, 0.1] that defines the amount of incoming inserts that
+   * should be allocated to the bucket.
+   */
+<span class="nc" id="L504">  class InsertBucket implements Serializable {</span>
+
+    int bucketNumber;
+    // fraction of total inserts, that should go into this bucket
+    double weight;
+
+    @Override
+    public String toString() {
+<span class="nc" id="L512">      final StringBuilder sb = new StringBuilder(&quot;WorkloadStat {&quot;);</span>
+<span class="nc" id="L513">      sb.append(&quot;bucketNumber=&quot;).append(bucketNumber).append(&quot;, &quot;);</span>
+<span class="nc" id="L514">      sb.append(&quot;weight=&quot;).append(weight);</span>
+<span class="nc" id="L515">      sb.append('}');</span>
+<span class="nc" id="L516">      return sb.toString();</span>
+    }
+  }
+
+  /**
+   * Helper class for a bucket's type (INSERT and UPDATE) and its file location.
+   */
+<span class="nc" id="L523">  class BucketInfo implements Serializable {</span>
+
+    BucketType bucketType;
+    String fileIdPrefix;
+
+    @Override
+    public String toString() {
+<span class="nc" id="L530">      final StringBuilder sb = new StringBuilder(&quot;BucketInfo {&quot;);</span>
+<span class="nc" id="L531">      sb.append(&quot;bucketType=&quot;).append(bucketType).append(&quot;, &quot;);</span>
+<span class="nc" id="L532">      sb.append(&quot;fileIdPrefix=&quot;).append(fileIdPrefix);</span>
+<span class="nc" id="L533">      sb.append('}');</span>
+<span class="nc" id="L534">      return sb.toString();</span>
+    }
+  }
+
+  /**
+   * Packs incoming records to be upserted, into buckets (1 bucket = 1 RDD partition).
+   */
+  class UpsertPartitioner extends Partitioner {
+
+    /**
+     * List of all small files to be corrected.
+     */
+<span class="nc" id="L546">    List&lt;SmallFile&gt; smallFiles = new ArrayList&lt;&gt;();</span>
+    /**
+     * Total number of RDD partitions, is determined by total buckets we want to pack the incoming workload into.
+     */
+<span class="nc" id="L550">    private int totalBuckets = 0;</span>
+    /**
+     * Stat for the current workload. Helps in determining total inserts, upserts etc.
+     */
+    private WorkloadStat globalStat;
+    /**
+     * Helps decide which bucket an incoming update should go to.
+     */
+    private HashMap&lt;String, Integer&gt; updateLocationToBucket;
+    /**
+     * Helps us pack inserts into 1 or more buckets depending on number of incoming records.
+     */
+    private HashMap&lt;String, List&lt;InsertBucket&gt;&gt; partitionPathToInsertBuckets;
+    /**
+     * Remembers what type each bucket is for later.
+     */
+    private HashMap&lt;Integer, BucketInfo&gt; bucketInfoMap;
+
+    /**
+     * Rolling stats for files.
+     */
+    protected HoodieRollingStatMetadata rollingStatMetadata;
+
+<span class="nc" id="L573">    UpsertPartitioner(WorkloadProfile profile) {</span>
+<span class="nc" id="L574">      updateLocationToBucket = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L575">      partitionPathToInsertBuckets = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L576">      bucketInfoMap = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L577">      globalStat = profile.getGlobalStat();</span>
+<span class="nc" id="L578">      rollingStatMetadata = getRollingStats();</span>
+<span class="nc" id="L579">      assignUpdates(profile);</span>
+<span class="nc" id="L580">      assignInserts(profile);</span>
+
+<span class="nc" id="L582">      LOG.info(&quot;Total Buckets :&quot; + totalBuckets + &quot;, buckets info =&gt; &quot; + bucketInfoMap + &quot;, \n&quot;</span>
+          + &quot;Partition to insert buckets =&gt; &quot; + partitionPathToInsertBuckets + &quot;, \n&quot;
+          + &quot;UpdateLocations mapped to buckets =&gt;&quot; + updateLocationToBucket);
+<span class="nc" id="L585">    }</span>
+
+    private void assignUpdates(WorkloadProfile profile) {
+      // each update location gets a partition
+<span class="nc" id="L589">      WorkloadStat gStat = profile.getGlobalStat();</span>
+<span class="nc bnc" id="L590" title="All 2 branches missed.">      for (Map.Entry&lt;String, Pair&lt;String, Long&gt;&gt; updateLocEntry : gStat.getUpdateLocationToCount().entrySet()) {</span>
+<span class="nc" id="L591">        addUpdateBucket(updateLocEntry.getKey());</span>
+<span class="nc" id="L592">      }</span>
+<span class="nc" id="L593">    }</span>
+
+    private int addUpdateBucket(String fileIdHint) {
+<span class="nc" id="L596">      int bucket = totalBuckets;</span>
+<span class="nc" id="L597">      updateLocationToBucket.put(fileIdHint, bucket);</span>
+<span class="nc" id="L598">      BucketInfo bucketInfo = new BucketInfo();</span>
+<span class="nc" id="L599">      bucketInfo.bucketType = BucketType.UPDATE;</span>
+<span class="nc" id="L600">      bucketInfo.fileIdPrefix = fileIdHint;</span>
+<span class="nc" id="L601">      bucketInfoMap.put(totalBuckets, bucketInfo);</span>
+<span class="nc" id="L602">      totalBuckets++;</span>
+<span class="nc" id="L603">      return bucket;</span>
+    }
+
+    private void assignInserts(WorkloadProfile profile) {
+      // for new inserts, compute buckets depending on how many records we have for each partition
+<span class="nc" id="L608">      Set&lt;String&gt; partitionPaths = profile.getPartitionPaths();</span>
+<span class="nc" id="L609">      long averageRecordSize =</span>
+<span class="nc" id="L610">          averageBytesPerRecord(metaClient.getActiveTimeline().getCommitTimeline().filterCompletedInstants(),</span>
+<span class="nc" id="L611">              config.getCopyOnWriteRecordSizeEstimate());</span>
+<span class="nc" id="L612">      LOG.info(&quot;AvgRecordSize =&gt; &quot; + averageRecordSize);</span>
+<span class="nc bnc" id="L613" title="All 2 branches missed.">      for (String partitionPath : partitionPaths) {</span>
+<span class="nc" id="L614">        WorkloadStat pStat = profile.getWorkloadStat(partitionPath);</span>
+<span class="nc bnc" id="L615" title="All 2 branches missed.">        if (pStat.getNumInserts() &gt; 0) {</span>
+
+<span class="nc" id="L617">          List&lt;SmallFile&gt; smallFiles = getSmallFiles(partitionPath);</span>
+<span class="nc" id="L618">          LOG.info(&quot;For partitionPath : &quot; + partitionPath + &quot; Small Files =&gt; &quot; + smallFiles);</span>
+
+<span class="nc" id="L620">          long totalUnassignedInserts = pStat.getNumInserts();</span>
+<span class="nc" id="L621">          List&lt;Integer&gt; bucketNumbers = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L622">          List&lt;Long&gt; recordsPerBucket = new ArrayList&lt;&gt;();</span>
+
+          // first try packing this into one of the smallFiles
+<span class="nc bnc" id="L625" title="All 2 branches missed.">          for (SmallFile smallFile : smallFiles) {</span>
+<span class="nc" id="L626">            long recordsToAppend = Math.min((config.getParquetMaxFileSize() - smallFile.sizeBytes) / averageRecordSize,</span>
+                totalUnassignedInserts);
+<span class="nc bnc" id="L628" title="All 4 branches missed.">            if (recordsToAppend &gt; 0 &amp;&amp; totalUnassignedInserts &gt; 0) {</span>
+              // create a new bucket or re-use an existing bucket
+              int bucket;
+<span class="nc bnc" id="L631" title="All 2 branches missed.">              if (updateLocationToBucket.containsKey(smallFile.location.getFileId())) {</span>
+<span class="nc" id="L632">                bucket = updateLocationToBucket.get(smallFile.location.getFileId());</span>
+<span class="nc" id="L633">                LOG.info(&quot;Assigning &quot; + recordsToAppend + &quot; inserts to existing update bucket &quot; + bucket);</span>
+              } else {
+<span class="nc" id="L635">                bucket = addUpdateBucket(smallFile.location.getFileId());</span>
+<span class="nc" id="L636">                LOG.info(&quot;Assigning &quot; + recordsToAppend + &quot; inserts to new update bucket &quot; + bucket);</span>
+              }
+<span class="nc" id="L638">              bucketNumbers.add(bucket);</span>
+<span class="nc" id="L639">              recordsPerBucket.add(recordsToAppend);</span>
+<span class="nc" id="L640">              totalUnassignedInserts -= recordsToAppend;</span>
+            }
+<span class="nc" id="L642">          }</span>
+
+          // if we have anything more, create new insert buckets, like normal
+<span class="nc bnc" id="L645" title="All 2 branches missed.">          if (totalUnassignedInserts &gt; 0) {</span>
+<span class="nc" id="L646">            long insertRecordsPerBucket = config.getCopyOnWriteInsertSplitSize();</span>
+<span class="nc bnc" id="L647" title="All 2 branches missed.">            if (config.shouldAutoTuneInsertSplits()) {</span>
+<span class="nc" id="L648">              insertRecordsPerBucket = config.getParquetMaxFileSize() / averageRecordSize;</span>
+            }
+
+<span class="nc" id="L651">            int insertBuckets = (int) Math.ceil((1.0 * totalUnassignedInserts) / insertRecordsPerBucket);</span>
+<span class="nc" id="L652">            LOG.info(&quot;After small file assignment: unassignedInserts =&gt; &quot; + totalUnassignedInserts</span>
+                + &quot;, totalInsertBuckets =&gt; &quot; + insertBuckets + &quot;, recordsPerBucket =&gt; &quot; + insertRecordsPerBucket);
+<span class="nc bnc" id="L654" title="All 2 branches missed.">            for (int b = 0; b &lt; insertBuckets; b++) {</span>
+<span class="nc" id="L655">              bucketNumbers.add(totalBuckets);</span>
+<span class="nc" id="L656">              recordsPerBucket.add(totalUnassignedInserts / insertBuckets);</span>
+<span class="nc" id="L657">              BucketInfo bucketInfo = new BucketInfo();</span>
+<span class="nc" id="L658">              bucketInfo.bucketType = BucketType.INSERT;</span>
+<span class="nc" id="L659">              bucketInfo.fileIdPrefix = FSUtils.createNewFileIdPfx();</span>
+<span class="nc" id="L660">              bucketInfoMap.put(totalBuckets, bucketInfo);</span>
+<span class="nc" id="L661">              totalBuckets++;</span>
+            }
+          }
+
+          // Go over all such buckets, and assign weights as per amount of incoming inserts.
+<span class="nc" id="L666">          List&lt;InsertBucket&gt; insertBuckets = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L667" title="All 2 branches missed.">          for (int i = 0; i &lt; bucketNumbers.size(); i++) {</span>
+<span class="nc" id="L668">            InsertBucket bkt = new InsertBucket();</span>
+<span class="nc" id="L669">            bkt.bucketNumber = bucketNumbers.get(i);</span>
+<span class="nc" id="L670">            bkt.weight = (1.0 * recordsPerBucket.get(i)) / pStat.getNumInserts();</span>
+<span class="nc" id="L671">            insertBuckets.add(bkt);</span>
+          }
+<span class="nc" id="L673">          LOG.info(&quot;Total insert buckets for partition path &quot; + partitionPath + &quot; =&gt; &quot; + insertBuckets);</span>
+<span class="nc" id="L674">          partitionPathToInsertBuckets.put(partitionPath, insertBuckets);</span>
+        }
+<span class="nc" id="L676">      }</span>
+<span class="nc" id="L677">    }</span>
+
+    /**
+     * Returns a list of small files in the given partition path.
+     */
+    protected List&lt;SmallFile&gt; getSmallFiles(String partitionPath) {
+
+      // smallFiles only for partitionPath
+<span class="nc" id="L685">      List&lt;SmallFile&gt; smallFileLocations = new ArrayList&lt;&gt;();</span>
+
+<span class="nc" id="L687">      HoodieTimeline commitTimeline = getCompletedCommitsTimeline();</span>
+
+<span class="nc bnc" id="L689" title="All 2 branches missed.">      if (!commitTimeline.empty()) { // if we have some commits</span>
+<span class="nc" id="L690">        HoodieInstant latestCommitTime = commitTimeline.lastInstant().get();</span>
+<span class="nc" id="L691">        List&lt;HoodieBaseFile&gt; allFiles = getBaseFileOnlyView()</span>
+<span class="nc" id="L692">            .getLatestBaseFilesBeforeOrOn(partitionPath, latestCommitTime.getTimestamp()).collect(Collectors.toList());</span>
+
+<span class="nc bnc" id="L694" title="All 2 branches missed.">        for (HoodieBaseFile file : allFiles) {</span>
+<span class="nc bnc" id="L695" title="All 2 branches missed.">          if (file.getFileSize() &lt; config.getParquetSmallFileLimit()) {</span>
+<span class="nc" id="L696">            String filename = file.getFileName();</span>
+<span class="nc" id="L697">            SmallFile sf = new SmallFile();</span>
+<span class="nc" id="L698">            sf.location = new HoodieRecordLocation(FSUtils.getCommitTime(filename), FSUtils.getFileId(filename));</span>
+<span class="nc" id="L699">            sf.sizeBytes = file.getFileSize();</span>
+<span class="nc" id="L700">            smallFileLocations.add(sf);</span>
+            // Update the global small files list
+<span class="nc" id="L702">            smallFiles.add(sf);</span>
+          }
+<span class="nc" id="L704">        }</span>
+      }
+
+<span class="nc" id="L707">      return smallFileLocations;</span>
+    }
+
+    public BucketInfo getBucketInfo(int bucketNumber) {
+<span class="nc" id="L711">      return bucketInfoMap.get(bucketNumber);</span>
+    }
+
+    public List&lt;InsertBucket&gt; getInsertBuckets(String partitionPath) {
+<span class="nc" id="L715">      return partitionPathToInsertBuckets.get(partitionPath);</span>
+    }
+
+    @Override
+    public int numPartitions() {
+<span class="nc" id="L720">      return totalBuckets;</span>
+    }
+
+    @Override
+    public int getPartition(Object key) {
+<span class="nc" id="L725">      Tuple2&lt;HoodieKey, Option&lt;HoodieRecordLocation&gt;&gt; keyLocation =</span>
+          (Tuple2&lt;HoodieKey, Option&lt;HoodieRecordLocation&gt;&gt;) key;
+<span class="nc bnc" id="L727" title="All 2 branches missed.">      if (keyLocation._2().isPresent()) {</span>
+<span class="nc" id="L728">        HoodieRecordLocation location = keyLocation._2().get();</span>
+<span class="nc" id="L729">        return updateLocationToBucket.get(location.getFileId());</span>
+      } else {
+<span class="nc" id="L731">        List&lt;InsertBucket&gt; targetBuckets = partitionPathToInsertBuckets.get(keyLocation._1().getPartitionPath());</span>
+        // pick the target bucket to use based on the weights.
+<span class="nc" id="L733">        double totalWeight = 0.0;</span>
+<span class="nc" id="L734">        final long totalInserts = Math.max(1, globalStat.getNumInserts());</span>
+        final long hashOfKey =
+<span class="nc" id="L736">            Hashing.md5().hashString(keyLocation._1().getRecordKey(), StandardCharsets.UTF_8).asLong();</span>
+<span class="nc" id="L737">        final double r = 1.0 * Math.floorMod(hashOfKey, totalInserts) / totalInserts;</span>
+<span class="nc bnc" id="L738" title="All 2 branches missed.">        for (InsertBucket insertBucket : targetBuckets) {</span>
+<span class="nc" id="L739">          totalWeight += insertBucket.weight;</span>
+<span class="nc bnc" id="L740" title="All 2 branches missed.">          if (r &lt;= totalWeight) {</span>
+<span class="nc" id="L741">            return insertBucket.bucketNumber;</span>
+          }
+<span class="nc" id="L743">        }</span>
+        // return first one, by default
+<span class="nc" id="L745">        return targetBuckets.get(0).bucketNumber;</span>
+      }
+    }
+  }
+
+  protected HoodieRollingStatMetadata getRollingStats() {
+<span class="nc" id="L751">    return null;</span>
+  }
+
+  /**
+   * Obtains the average record size based on records written during previous commits. Used for estimating how many
+   * records pack into one file.
+   */
+  protected static long averageBytesPerRecord(HoodieTimeline commitTimeline, int defaultRecordSizeEstimate) {
+<span class="nc" id="L759">    long avgSize = defaultRecordSizeEstimate;</span>
+    try {
+<span class="nc bnc" id="L761" title="All 2 branches missed.">      if (!commitTimeline.empty()) {</span>
+        // Go over the reverse ordered commits to get a more recent estimate of average record size.
+<span class="nc" id="L763">        Iterator&lt;HoodieInstant&gt; instants = commitTimeline.getReverseOrderedInstants().iterator();</span>
+<span class="nc bnc" id="L764" title="All 2 branches missed.">        while (instants.hasNext()) {</span>
+<span class="nc" id="L765">          HoodieInstant instant = instants.next();</span>
+<span class="nc" id="L766">          HoodieCommitMetadata commitMetadata = HoodieCommitMetadata</span>
+<span class="nc" id="L767">              .fromBytes(commitTimeline.getInstantDetails(instant).get(), HoodieCommitMetadata.class);</span>
+<span class="nc" id="L768">          long totalBytesWritten = commitMetadata.fetchTotalBytesWritten();</span>
+<span class="nc" id="L769">          long totalRecordsWritten = commitMetadata.fetchTotalRecordsWritten();</span>
+<span class="nc bnc" id="L770" title="All 4 branches missed.">          if (totalBytesWritten &gt; 0 &amp;&amp; totalRecordsWritten &gt; 0) {</span>
+<span class="nc" id="L771">            avgSize = (long) Math.ceil((1.0 * totalBytesWritten) / totalRecordsWritten);</span>
+<span class="nc" id="L772">            break;</span>
+          }
+<span class="nc" id="L774">        }</span>
+      }
+<span class="nc" id="L776">    } catch (Throwable t) {</span>
+      // make this fail safe.
+<span class="nc" id="L778">      LOG.error(&quot;Error trying to compute average bytes/record &quot;, t);</span>
+<span class="nc" id="L779">    }</span>
+<span class="nc" id="L780">    return avgSize;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

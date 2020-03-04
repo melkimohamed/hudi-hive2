@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieRollingStatMetadata.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.model</a> &gt; <span class="el_source">HoodieRollingStatMetadata.java</span></div><h1>HoodieRollingStatMetadata.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.model;
+
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+import java.io.IOException;
+import java.io.Serializable;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * This class holds statistics about files belonging to a table.
+ */
+public class HoodieRollingStatMetadata implements Serializable {
+
+<span class="nc" id="L34">  private static final Logger LOG = LogManager.getLogger(HoodieRollingStatMetadata.class);</span>
+  protected Map&lt;String, Map&lt;String, HoodieRollingStat&gt;&gt; partitionToRollingStats;
+<span class="nc" id="L36">  private String actionType = &quot;DUMMY_ACTION&quot;;</span>
+  public static final String ROLLING_STAT_METADATA_KEY = &quot;ROLLING_STAT&quot;;
+
+  public void addRollingStat(String partitionPath, HoodieRollingStat stat) {
+<span class="nc bnc" id="L40" title="All 2 branches missed.">    if (!partitionToRollingStats.containsKey(partitionPath)) {</span>
+<span class="nc" id="L41">      partitionToRollingStats.put(partitionPath, new RollingStatsHashMap&lt;&gt;());</span>
+    }
+<span class="nc" id="L43">    partitionToRollingStats.get(partitionPath).put(stat.getFileId(), stat);</span>
+<span class="nc" id="L44">  }</span>
+
+<span class="nc" id="L46">  public HoodieRollingStatMetadata() {</span>
+<span class="nc" id="L47">    partitionToRollingStats = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L48">  }</span>
+
+  public HoodieRollingStatMetadata(String actionType) {
+<span class="nc" id="L51">    this();</span>
+<span class="nc" id="L52">    this.actionType = actionType;</span>
+<span class="nc" id="L53">  }</span>
+
+<span class="nc" id="L55">  class RollingStatsHashMap&lt;K, V&gt; extends HashMap&lt;K, V&gt; {</span>
+
+    @Override
+    public V put(K key, V value) {
+<span class="nc" id="L59">      V v = this.get(key);</span>
+<span class="nc bnc" id="L60" title="All 2 branches missed.">      if (v == null) {</span>
+<span class="nc" id="L61">        super.put(key, value);</span>
+<span class="nc bnc" id="L62" title="All 2 branches missed.">      } else if (v instanceof HoodieRollingStat) {</span>
+<span class="nc" id="L63">        long inserts = ((HoodieRollingStat) v).getInserts();</span>
+<span class="nc" id="L64">        long upserts = ((HoodieRollingStat) v).getUpserts();</span>
+<span class="nc" id="L65">        long deletes = ((HoodieRollingStat) v).getDeletes();</span>
+<span class="nc" id="L66">        ((HoodieRollingStat) value).addInserts(inserts);</span>
+<span class="nc" id="L67">        ((HoodieRollingStat) value).addUpserts(upserts);</span>
+<span class="nc" id="L68">        ((HoodieRollingStat) value).addDeletes(deletes);</span>
+<span class="nc" id="L69">        super.put(key, value);</span>
+      }
+<span class="nc" id="L71">      return value;</span>
+    }
+  }
+
+  public static HoodieRollingStatMetadata fromBytes(byte[] bytes) throws IOException {
+<span class="nc" id="L76">    return HoodieCommitMetadata.fromBytes(bytes, HoodieRollingStatMetadata.class);</span>
+  }
+
+  public String toJsonString() throws IOException {
+<span class="nc bnc" id="L80" title="All 2 branches missed.">    if (partitionToRollingStats.containsKey(null)) {</span>
+<span class="nc" id="L81">      LOG.info(&quot;partition path is null for &quot; + partitionToRollingStats.get(null));</span>
+<span class="nc" id="L82">      partitionToRollingStats.remove(null);</span>
+    }
+<span class="nc" id="L84">    return HoodieCommitMetadata.getObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(this);</span>
+  }
+
+  public HoodieRollingStatMetadata merge(HoodieRollingStatMetadata rollingStatMetadata) {
+<span class="nc bnc" id="L88" title="All 2 branches missed.">    for (Map.Entry&lt;String, Map&lt;String, HoodieRollingStat&gt;&gt; stat : rollingStatMetadata.partitionToRollingStats</span>
+<span class="nc" id="L89">        .entrySet()) {</span>
+<span class="nc bnc" id="L90" title="All 2 branches missed.">      for (Map.Entry&lt;String, HoodieRollingStat&gt; innerStat : stat.getValue().entrySet()) {</span>
+<span class="nc" id="L91">        this.addRollingStat(stat.getKey(), innerStat.getValue());</span>
+<span class="nc" id="L92">      }</span>
+<span class="nc" id="L93">    }</span>
+<span class="nc" id="L94">    return this;</span>
+  }
+
+  public Map&lt;String, Map&lt;String, HoodieRollingStat&gt;&gt; getPartitionToRollingStats() {
+<span class="nc" id="L98">    return partitionToRollingStats;</span>
+  }
+
+  public String getActionType() {
+<span class="nc" id="L102">    return actionType;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

@@ -1,0 +1,688 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieHiveClient.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-hive</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.hive</a> &gt; <span class="el_source">HoodieHiveClient.java</span></div><h1>HoodieHiveClient.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.hive;
+
+import org.apache.hudi.common.model.HoodieCommitMetadata;
+import org.apache.hudi.common.model.HoodieFileFormat;
+import org.apache.hudi.common.model.HoodieLogFile;
+import org.apache.hudi.common.model.HoodieTableType;
+import org.apache.hudi.common.storage.StorageSchemes;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.common.table.HoodieTimeline;
+import org.apache.hudi.common.table.timeline.HoodieInstant;
+import org.apache.hudi.common.util.FSUtils;
+import org.apache.hudi.common.util.Option;
+import org.apache.hudi.common.util.collection.Pair;
+import org.apache.hudi.exception.HoodieIOException;
+import org.apache.hudi.exception.InvalidTableException;
+import org.apache.hudi.hive.util.SchemaUtil;
+
+import com.google.common.base.Preconditions;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hive.conf.HiveConf;
+import org.apache.hadoop.hive.metastore.IMetaStoreClient;
+import org.apache.hadoop.hive.metastore.api.FieldSchema;
+import org.apache.hadoop.hive.metastore.api.MetaException;
+import org.apache.hadoop.hive.metastore.api.Partition;
+import org.apache.hadoop.hive.metastore.api.Table;
+import org.apache.hadoop.hive.ql.metadata.Hive;
+import org.apache.hadoop.hive.ql.metadata.HiveException;
+import org.apache.hadoop.hive.ql.processors.CommandProcessorResponse;
+import org.apache.hadoop.hive.ql.session.SessionState;
+import org.apache.hive.jdbc.HiveDriver;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+import org.apache.parquet.format.converter.ParquetMetadataConverter;
+import org.apache.parquet.hadoop.ParquetFileReader;
+import org.apache.parquet.hadoop.metadata.ParquetMetadata;
+import org.apache.parquet.schema.MessageType;
+import org.apache.thrift.TException;
+
+import java.io.IOException;
+import java.sql.Connection;
+import java.sql.DatabaseMetaData;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+public class HoodieHiveClient {
+
+  private static final String HOODIE_LAST_COMMIT_TIME_SYNC = &quot;last_commit_time_sync&quot;;
+  // Make sure we have the hive JDBC driver in classpath
+<span class="nc" id="L76">  private static String driverName = HiveDriver.class.getName();</span>
+  private static final String HIVE_ESCAPE_CHARACTER = SchemaUtil.HIVE_ESCAPE_CHARACTER;
+
+  static {
+    try {
+<span class="nc" id="L81">      Class.forName(driverName);</span>
+<span class="nc" id="L82">    } catch (ClassNotFoundException e) {</span>
+<span class="nc" id="L83">      throw new IllegalStateException(&quot;Could not find &quot; + driverName + &quot; in classpath. &quot;, e);</span>
+<span class="nc" id="L84">    }</span>
+  }
+
+<span class="nc" id="L87">  private static final Logger LOG = LogManager.getLogger(HoodieHiveClient.class);</span>
+  private final HoodieTableMetaClient metaClient;
+  private final HoodieTableType tableType;
+  private final PartitionValueExtractor partitionValueExtractor;
+  private IMetaStoreClient client;
+  private HiveSyncConfig syncConfig;
+  private FileSystem fs;
+  private Connection connection;
+  private HoodieTimeline activeTimeline;
+  private HiveConf configuration;
+
+<span class="nc" id="L98">  public HoodieHiveClient(HiveSyncConfig cfg, HiveConf configuration, FileSystem fs) {</span>
+<span class="nc" id="L99">    this.syncConfig = cfg;</span>
+<span class="nc" id="L100">    this.fs = fs;</span>
+<span class="nc" id="L101">    this.metaClient = new HoodieTableMetaClient(fs.getConf(), cfg.basePath, true);</span>
+<span class="nc" id="L102">    this.tableType = metaClient.getTableType();</span>
+
+<span class="nc" id="L104">    this.configuration = configuration;</span>
+    // Support both JDBC and metastore based implementations for backwards compatiblity. Future users should
+    // disable jdbc and depend on metastore client for all hive registrations
+<span class="nc bnc" id="L107" title="All 2 branches missed.">    if (cfg.useJdbc) {</span>
+<span class="nc" id="L108">      LOG.info(&quot;Creating hive connection &quot; + cfg.jdbcUrl);</span>
+<span class="nc" id="L109">      createHiveConnection();</span>
+    }
+    try {
+<span class="nc" id="L112">      this.client = Hive.get(configuration).getMSC();</span>
+<span class="nc" id="L113">    } catch (MetaException | HiveException e) {</span>
+<span class="nc" id="L114">      throw new HoodieHiveSyncException(&quot;Failed to create HiveMetaStoreClient&quot;, e);</span>
+<span class="nc" id="L115">    }</span>
+
+    try {
+<span class="nc" id="L118">      this.partitionValueExtractor =</span>
+<span class="nc" id="L119">          (PartitionValueExtractor) Class.forName(cfg.partitionValueExtractorClass).newInstance();</span>
+<span class="nc" id="L120">    } catch (Exception e) {</span>
+<span class="nc" id="L121">      throw new HoodieHiveSyncException(</span>
+          &quot;Failed to initialize PartitionValueExtractor class &quot; + cfg.partitionValueExtractorClass, e);
+<span class="nc" id="L123">    }</span>
+
+<span class="nc" id="L125">    activeTimeline = metaClient.getActiveTimeline().getCommitsTimeline().filterCompletedInstants();</span>
+<span class="nc" id="L126">  }</span>
+
+  public HoodieTimeline getActiveTimeline() {
+<span class="nc" id="L129">    return activeTimeline;</span>
+  }
+
+  /**
+   * Add the (NEW) partitions to the table.
+   */
+  void addPartitionsToTable(String tableName, List&lt;String&gt; partitionsToAdd) {
+<span class="nc bnc" id="L136" title="All 2 branches missed.">    if (partitionsToAdd.isEmpty()) {</span>
+<span class="nc" id="L137">      LOG.info(&quot;No partitions to add for &quot; + tableName);</span>
+<span class="nc" id="L138">      return;</span>
+    }
+<span class="nc" id="L140">    LOG.info(&quot;Adding partitions &quot; + partitionsToAdd.size() + &quot; to table &quot; + tableName);</span>
+<span class="nc" id="L141">    String sql = constructAddPartitions(tableName, partitionsToAdd);</span>
+<span class="nc" id="L142">    updateHiveSQL(sql);</span>
+<span class="nc" id="L143">  }</span>
+
+  /**
+   * Partition path has changed - update the path for te following partitions.
+   */
+  void updatePartitionsToTable(String tableName, List&lt;String&gt; changedPartitions) {
+<span class="nc bnc" id="L149" title="All 2 branches missed.">    if (changedPartitions.isEmpty()) {</span>
+<span class="nc" id="L150">      LOG.info(&quot;No partitions to change for &quot; + tableName);</span>
+<span class="nc" id="L151">      return;</span>
+    }
+<span class="nc" id="L153">    LOG.info(&quot;Changing partitions &quot; + changedPartitions.size() + &quot; on &quot; + tableName);</span>
+<span class="nc" id="L154">    List&lt;String&gt; sqls = constructChangePartitions(tableName, changedPartitions);</span>
+<span class="nc bnc" id="L155" title="All 2 branches missed.">    for (String sql : sqls) {</span>
+<span class="nc" id="L156">      updateHiveSQL(sql);</span>
+<span class="nc" id="L157">    }</span>
+<span class="nc" id="L158">  }</span>
+
+  private String constructAddPartitions(String tableName, List&lt;String&gt; partitions) {
+<span class="nc" id="L161">    StringBuilder alterSQL = new StringBuilder(&quot;ALTER TABLE &quot;);</span>
+<span class="nc" id="L162">    alterSQL.append(HIVE_ESCAPE_CHARACTER).append(syncConfig.databaseName)</span>
+<span class="nc" id="L163">            .append(HIVE_ESCAPE_CHARACTER).append(&quot;.&quot;).append(HIVE_ESCAPE_CHARACTER)</span>
+<span class="nc" id="L164">            .append(tableName).append(HIVE_ESCAPE_CHARACTER).append(&quot; ADD IF NOT EXISTS &quot;);</span>
+<span class="nc bnc" id="L165" title="All 2 branches missed.">    for (String partition : partitions) {</span>
+<span class="nc" id="L166">      String partitionClause = getPartitionClause(partition);</span>
+<span class="nc" id="L167">      String fullPartitionPath = FSUtils.getPartitionPath(syncConfig.basePath, partition).toString();</span>
+<span class="nc" id="L168">      alterSQL.append(&quot;  PARTITION (&quot;).append(partitionClause).append(&quot;) LOCATION '&quot;).append(fullPartitionPath)</span>
+<span class="nc" id="L169">          .append(&quot;' &quot;);</span>
+<span class="nc" id="L170">    }</span>
+<span class="nc" id="L171">    return alterSQL.toString();</span>
+  }
+
+  /**
+   * Generate Hive Partition from partition values.
+   *
+   * @param partition Partition path
+   * @return
+   */
+  private String getPartitionClause(String partition) {
+<span class="nc" id="L181">    List&lt;String&gt; partitionValues = partitionValueExtractor.extractPartitionValuesInPath(partition);</span>
+<span class="nc bnc" id="L182" title="All 2 branches missed.">    Preconditions.checkArgument(syncConfig.partitionFields.size() == partitionValues.size(),</span>
+        &quot;Partition key parts &quot; + syncConfig.partitionFields + &quot; does not match with partition values &quot; + partitionValues
+            + &quot;. Check partition strategy. &quot;);
+<span class="nc" id="L185">    List&lt;String&gt; partBuilder = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L186" title="All 2 branches missed.">    for (int i = 0; i &lt; syncConfig.partitionFields.size(); i++) {</span>
+<span class="nc" id="L187">      partBuilder.add(&quot;`&quot; + syncConfig.partitionFields.get(i) + &quot;`='&quot; + partitionValues.get(i) + &quot;'&quot;);</span>
+    }
+<span class="nc" id="L189">    return String.join(&quot;,&quot;, partBuilder);</span>
+  }
+
+  private List&lt;String&gt; constructChangePartitions(String tableName, List&lt;String&gt; partitions) {
+<span class="nc" id="L193">    List&lt;String&gt; changePartitions = new ArrayList&lt;&gt;();</span>
+    // Hive 2.x doesn't like db.table name for operations, hence we need to change to using the database first
+<span class="nc" id="L195">    String useDatabase = &quot;USE &quot; + HIVE_ESCAPE_CHARACTER + syncConfig.databaseName + HIVE_ESCAPE_CHARACTER;</span>
+<span class="nc" id="L196">    changePartitions.add(useDatabase);</span>
+<span class="nc" id="L197">    String alterTable = &quot;ALTER TABLE &quot; + HIVE_ESCAPE_CHARACTER + tableName + HIVE_ESCAPE_CHARACTER;</span>
+<span class="nc bnc" id="L198" title="All 2 branches missed.">    for (String partition : partitions) {</span>
+<span class="nc" id="L199">      String partitionClause = getPartitionClause(partition);</span>
+<span class="nc" id="L200">      Path partitionPath = FSUtils.getPartitionPath(syncConfig.basePath, partition);</span>
+<span class="nc bnc" id="L201" title="All 2 branches missed.">      String fullPartitionPath = partitionPath.toUri().getScheme().equals(StorageSchemes.HDFS.getScheme())</span>
+<span class="nc" id="L202">              ? FSUtils.getDFSFullPartitionPath(fs, partitionPath) : partitionPath.toString();</span>
+<span class="nc" id="L203">      String changePartition =</span>
+          alterTable + &quot; PARTITION (&quot; + partitionClause + &quot;) SET LOCATION '&quot; + fullPartitionPath + &quot;'&quot;;
+<span class="nc" id="L205">      changePartitions.add(changePartition);</span>
+<span class="nc" id="L206">    }</span>
+<span class="nc" id="L207">    return changePartitions;</span>
+  }
+
+  /**
+   * Iterate over the storage partitions and find if there are any new partitions that need to be added or updated.
+   * Generate a list of PartitionEvent based on the changes required.
+   */
+  List&lt;PartitionEvent&gt; getPartitionEvents(List&lt;Partition&gt; tablePartitions, List&lt;String&gt; partitionStoragePartitions) {
+<span class="nc" id="L215">    Map&lt;String, String&gt; paths = new HashMap&lt;&gt;();</span>
+<span class="nc bnc" id="L216" title="All 2 branches missed.">    for (Partition tablePartition : tablePartitions) {</span>
+<span class="nc" id="L217">      List&lt;String&gt; hivePartitionValues = tablePartition.getValues();</span>
+<span class="nc" id="L218">      Collections.sort(hivePartitionValues);</span>
+<span class="nc" id="L219">      String fullTablePartitionPath =</span>
+<span class="nc" id="L220">          Path.getPathWithoutSchemeAndAuthority(new Path(tablePartition.getSd().getLocation())).toUri().getPath();</span>
+<span class="nc" id="L221">      paths.put(String.join(&quot;, &quot;, hivePartitionValues), fullTablePartitionPath);</span>
+<span class="nc" id="L222">    }</span>
+
+<span class="nc" id="L224">    List&lt;PartitionEvent&gt; events = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L225" title="All 2 branches missed.">    for (String storagePartition : partitionStoragePartitions) {</span>
+<span class="nc" id="L226">      Path storagePartitionPath = FSUtils.getPartitionPath(syncConfig.basePath, storagePartition);</span>
+<span class="nc" id="L227">      String fullStoragePartitionPath = Path.getPathWithoutSchemeAndAuthority(storagePartitionPath).toUri().getPath();</span>
+      // Check if the partition values or if hdfs path is the same
+<span class="nc" id="L229">      List&lt;String&gt; storagePartitionValues = partitionValueExtractor.extractPartitionValuesInPath(storagePartition);</span>
+<span class="nc" id="L230">      Collections.sort(storagePartitionValues);</span>
+<span class="nc bnc" id="L231" title="All 2 branches missed.">      if (!storagePartitionValues.isEmpty()) {</span>
+<span class="nc" id="L232">        String storageValue = String.join(&quot;, &quot;, storagePartitionValues);</span>
+<span class="nc bnc" id="L233" title="All 2 branches missed.">        if (!paths.containsKey(storageValue)) {</span>
+<span class="nc" id="L234">          events.add(PartitionEvent.newPartitionAddEvent(storagePartition));</span>
+<span class="nc bnc" id="L235" title="All 2 branches missed.">        } else if (!paths.get(storageValue).equals(fullStoragePartitionPath)) {</span>
+<span class="nc" id="L236">          events.add(PartitionEvent.newPartitionUpdateEvent(storagePartition));</span>
+        }
+      }
+<span class="nc" id="L239">    }</span>
+<span class="nc" id="L240">    return events;</span>
+  }
+
+  /**
+   * Scan table partitions.
+   */
+  public List&lt;Partition&gt; scanTablePartitions(String tableName) throws TException {
+<span class="nc" id="L247">    return client.listPartitions(syncConfig.databaseName, tableName, (short) -1);</span>
+  }
+
+  void updateTableDefinition(String tableName, MessageType newSchema) {
+    try {
+<span class="nc" id="L252">      String newSchemaStr = SchemaUtil.generateSchemaString(newSchema, syncConfig.partitionFields);</span>
+      // Cascade clause should not be present for non-partitioned tables
+<span class="nc bnc" id="L254" title="All 2 branches missed.">      String cascadeClause = syncConfig.partitionFields.size() &gt; 0 ? &quot; cascade&quot; : &quot;&quot;;</span>
+<span class="nc" id="L255">      StringBuilder sqlBuilder = new StringBuilder(&quot;ALTER TABLE &quot;).append(HIVE_ESCAPE_CHARACTER)</span>
+<span class="nc" id="L256">              .append(syncConfig.databaseName).append(HIVE_ESCAPE_CHARACTER).append(&quot;.&quot;)</span>
+<span class="nc" id="L257">              .append(HIVE_ESCAPE_CHARACTER).append(tableName)</span>
+<span class="nc" id="L258">              .append(HIVE_ESCAPE_CHARACTER).append(&quot; REPLACE COLUMNS(&quot;)</span>
+<span class="nc" id="L259">              .append(newSchemaStr).append(&quot; )&quot;).append(cascadeClause);</span>
+<span class="nc" id="L260">      LOG.info(&quot;Updating table definition with &quot; + sqlBuilder);</span>
+<span class="nc" id="L261">      updateHiveSQL(sqlBuilder.toString());</span>
+<span class="nc" id="L262">    } catch (IOException e) {</span>
+<span class="nc" id="L263">      throw new HoodieHiveSyncException(&quot;Failed to update table for &quot; + tableName, e);</span>
+<span class="nc" id="L264">    }</span>
+<span class="nc" id="L265">  }</span>
+
+  void createTable(String tableName, MessageType storageSchema, String inputFormatClass, String outputFormatClass, String serdeClass) {
+    try {
+<span class="nc" id="L269">      String createSQLQuery =</span>
+<span class="nc" id="L270">          SchemaUtil.generateCreateDDL(tableName, storageSchema, syncConfig, inputFormatClass, outputFormatClass, serdeClass);</span>
+<span class="nc" id="L271">      LOG.info(&quot;Creating table with &quot; + createSQLQuery);</span>
+<span class="nc" id="L272">      updateHiveSQL(createSQLQuery);</span>
+<span class="nc" id="L273">    } catch (IOException e) {</span>
+<span class="nc" id="L274">      throw new HoodieHiveSyncException(&quot;Failed to create table &quot; + tableName, e);</span>
+<span class="nc" id="L275">    }</span>
+<span class="nc" id="L276">  }</span>
+
+  /**
+   * Get the table schema.
+   */
+  public Map&lt;String, String&gt; getTableSchema(String tableName) {
+<span class="nc bnc" id="L282" title="All 2 branches missed.">    if (syncConfig.useJdbc) {</span>
+<span class="nc bnc" id="L283" title="All 2 branches missed.">      if (!doesTableExist(tableName)) {</span>
+<span class="nc" id="L284">        throw new IllegalArgumentException(</span>
+            &quot;Failed to get schema for table &quot; + tableName + &quot; does not exist&quot;);
+      }
+<span class="nc" id="L287">      Map&lt;String, String&gt; schema = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L288">      ResultSet result = null;</span>
+      try {
+<span class="nc" id="L290">        DatabaseMetaData databaseMetaData = connection.getMetaData();</span>
+<span class="nc" id="L291">        result = databaseMetaData.getColumns(null, syncConfig.databaseName, tableName, null);</span>
+<span class="nc bnc" id="L292" title="All 2 branches missed.">        while (result.next()) {</span>
+<span class="nc" id="L293">          String columnName = result.getString(4);</span>
+<span class="nc" id="L294">          String columnType = result.getString(6);</span>
+<span class="nc bnc" id="L295" title="All 2 branches missed.">          if (&quot;DECIMAL&quot;.equals(columnType)) {</span>
+<span class="nc" id="L296">            int columnSize = result.getInt(&quot;COLUMN_SIZE&quot;);</span>
+<span class="nc" id="L297">            int decimalDigits = result.getInt(&quot;DECIMAL_DIGITS&quot;);</span>
+<span class="nc" id="L298">            columnType += String.format(&quot;(%s,%s)&quot;, columnSize, decimalDigits);</span>
+          }
+<span class="nc" id="L300">          schema.put(columnName, columnType);</span>
+<span class="nc" id="L301">        }</span>
+<span class="nc" id="L302">        return schema;</span>
+<span class="nc" id="L303">      } catch (SQLException e) {</span>
+<span class="nc" id="L304">        throw new HoodieHiveSyncException(&quot;Failed to get table schema for &quot; + tableName, e);</span>
+      } finally {
+<span class="nc" id="L306">        closeQuietly(result, null);</span>
+      }
+    } else {
+<span class="nc" id="L309">      return getTableSchemaUsingMetastoreClient(tableName);</span>
+    }
+  }
+
+  public Map&lt;String, String&gt; getTableSchemaUsingMetastoreClient(String tableName) {
+    try {
+      // HiveMetastoreClient returns partition keys separate from Columns, hence get both and merge to
+      // get the Schema of the table.
+<span class="nc" id="L317">      final long start = System.currentTimeMillis();</span>
+<span class="nc" id="L318">      Table table = this.client.getTable(syncConfig.databaseName, tableName);</span>
+<span class="nc" id="L319">      Map&lt;String, String&gt; partitionKeysMap =</span>
+<span class="nc" id="L320">          table.getPartitionKeys().stream().collect(Collectors.toMap(FieldSchema::getName, f -&gt; f.getType().toUpperCase()));</span>
+
+<span class="nc" id="L322">      Map&lt;String, String&gt; columnsMap =</span>
+<span class="nc" id="L323">          table.getSd().getCols().stream().collect(Collectors.toMap(FieldSchema::getName, f -&gt; f.getType().toUpperCase()));</span>
+
+<span class="nc" id="L325">      Map&lt;String, String&gt; schema = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L326">      schema.putAll(columnsMap);</span>
+<span class="nc" id="L327">      schema.putAll(partitionKeysMap);</span>
+<span class="nc" id="L328">      final long end = System.currentTimeMillis();</span>
+<span class="nc" id="L329">      LOG.info(String.format(&quot;Time taken to getTableSchema: %s ms&quot;, (end - start)));</span>
+<span class="nc" id="L330">      return schema;</span>
+<span class="nc" id="L331">    } catch (Exception e) {</span>
+<span class="nc" id="L332">      throw new HoodieHiveSyncException(&quot;Failed to get table schema for : &quot; + tableName, e);</span>
+    }
+  }
+
+  /**
+   * Gets the schema for a hoodie table. Depending on the type of table, read from any file written in the latest
+   * commit. We will assume that the schema has not changed within a single atomic write.
+   *
+   * @return Parquet schema for this table
+   */
+  @SuppressWarnings(&quot;WeakerAccess&quot;)
+  public MessageType getDataSchema() {
+    try {
+<span class="nc bnc" id="L345" title="All 3 branches missed.">      switch (tableType) {</span>
+        case COPY_ON_WRITE:
+          // If this is COW, get the last commit and read the schema from a file written in the
+          // last commit
+<span class="nc" id="L349">          HoodieInstant lastCommit =</span>
+<span class="nc" id="L350">              activeTimeline.lastInstant().orElseThrow(() -&gt; new InvalidTableException(syncConfig.basePath));</span>
+<span class="nc" id="L351">          HoodieCommitMetadata commitMetadata = HoodieCommitMetadata</span>
+<span class="nc" id="L352">              .fromBytes(activeTimeline.getInstantDetails(lastCommit).get(), HoodieCommitMetadata.class);</span>
+<span class="nc" id="L353">          String filePath = commitMetadata.getFileIdAndFullPaths(metaClient.getBasePath()).values().stream().findAny()</span>
+<span class="nc" id="L354">              .orElseThrow(() -&gt; new IllegalArgumentException(&quot;Could not find any data file written for commit &quot;</span>
+<span class="nc" id="L355">                  + lastCommit + &quot;, could not get schema for table &quot; + metaClient.getBasePath() + &quot;, Metadata :&quot;</span>
+                  + commitMetadata));
+<span class="nc" id="L357">          return readSchemaFromBaseFile(new Path(filePath));</span>
+        case MERGE_ON_READ:
+          // If this is MOR, depending on whether the latest commit is a delta commit or
+          // compaction commit
+          // Get a datafile written and get the schema from that file
+<span class="nc" id="L362">          Option&lt;HoodieInstant&gt; lastCompactionCommit =</span>
+<span class="nc" id="L363">              metaClient.getActiveTimeline().getCommitTimeline().filterCompletedInstants().lastInstant();</span>
+<span class="nc" id="L364">          LOG.info(&quot;Found the last compaction commit as &quot; + lastCompactionCommit);</span>
+
+          Option&lt;HoodieInstant&gt; lastDeltaCommit;
+<span class="nc bnc" id="L367" title="All 2 branches missed.">          if (lastCompactionCommit.isPresent()) {</span>
+<span class="nc" id="L368">            lastDeltaCommit = metaClient.getActiveTimeline().getDeltaCommitTimeline().filterCompletedInstants()</span>
+<span class="nc" id="L369">                .findInstantsAfter(lastCompactionCommit.get().getTimestamp(), Integer.MAX_VALUE).lastInstant();</span>
+          } else {
+<span class="nc" id="L371">            lastDeltaCommit =</span>
+<span class="nc" id="L372">                metaClient.getActiveTimeline().getDeltaCommitTimeline().filterCompletedInstants().lastInstant();</span>
+          }
+<span class="nc" id="L374">          LOG.info(&quot;Found the last delta commit &quot; + lastDeltaCommit);</span>
+
+<span class="nc bnc" id="L376" title="All 2 branches missed.">          if (lastDeltaCommit.isPresent()) {</span>
+<span class="nc" id="L377">            HoodieInstant lastDeltaInstant = lastDeltaCommit.get();</span>
+            // read from the log file wrote
+<span class="nc" id="L379">            commitMetadata = HoodieCommitMetadata.fromBytes(activeTimeline.getInstantDetails(lastDeltaInstant).get(),</span>
+                HoodieCommitMetadata.class);
+<span class="nc" id="L381">            Pair&lt;String, HoodieFileFormat&gt; filePathWithFormat =</span>
+<span class="nc" id="L382">                commitMetadata.getFileIdAndFullPaths(metaClient.getBasePath()).values().stream()</span>
+<span class="nc" id="L383">                    .filter(s -&gt; s.contains(HoodieLogFile.DELTA_EXTENSION)).findAny()</span>
+<span class="nc" id="L384">                    .map(f -&gt; Pair.of(f, HoodieFileFormat.HOODIE_LOG)).orElseGet(() -&gt; {</span>
+                      // No Log files in Delta-Commit. Check if there are any parquet files
+<span class="nc" id="L386">                      return commitMetadata.getFileIdAndFullPaths(metaClient.getBasePath()).values().stream()</span>
+<span class="nc" id="L387">                          .filter(s -&gt; s.contains((metaClient.getTableConfig().getBaseFileFormat().getFileExtension())))</span>
+<span class="nc" id="L388">                          .findAny().map(f -&gt; Pair.of(f, HoodieFileFormat.PARQUET)).orElseThrow(() -&gt;</span>
+<span class="nc" id="L389">                              new IllegalArgumentException(&quot;Could not find any data file written for commit &quot;</span>
+<span class="nc" id="L390">                              + lastDeltaInstant + &quot;, could not get schema for table &quot; + metaClient.getBasePath()</span>
+                              + &quot;, CommitMetadata :&quot; + commitMetadata));
+                    });
+<span class="nc bnc" id="L393" title="All 3 branches missed.">            switch (filePathWithFormat.getRight()) {</span>
+              case HOODIE_LOG:
+<span class="nc" id="L395">                return readSchemaFromLogFile(lastCompactionCommit, new Path(filePathWithFormat.getLeft()));</span>
+              case PARQUET:
+<span class="nc" id="L397">                return readSchemaFromBaseFile(new Path(filePathWithFormat.getLeft()));</span>
+              default:
+<span class="nc" id="L399">                throw new IllegalArgumentException(&quot;Unknown file format :&quot; + filePathWithFormat.getRight()</span>
+<span class="nc" id="L400">                    + &quot; for file &quot; + filePathWithFormat.getLeft());</span>
+            }
+          } else {
+<span class="nc" id="L403">            return readSchemaFromLastCompaction(lastCompactionCommit);</span>
+          }
+        default:
+<span class="nc" id="L406">          LOG.error(&quot;Unknown table type &quot; + tableType);</span>
+<span class="nc" id="L407">          throw new InvalidTableException(syncConfig.basePath);</span>
+      }
+<span class="nc" id="L409">    } catch (IOException e) {</span>
+<span class="nc" id="L410">      throw new HoodieHiveSyncException(&quot;Failed to read data schema&quot;, e);</span>
+    }
+  }
+
+  /**
+   * Read schema from a data file from the last compaction commit done.
+   */
+  private MessageType readSchemaFromLastCompaction(Option&lt;HoodieInstant&gt; lastCompactionCommitOpt) throws IOException {
+<span class="nc" id="L418">    HoodieInstant lastCompactionCommit = lastCompactionCommitOpt.orElseThrow(() -&gt; new HoodieHiveSyncException(</span>
+        &quot;Could not read schema from last compaction, no compaction commits found on path &quot; + syncConfig.basePath));
+
+    // Read from the compacted file wrote
+<span class="nc" id="L422">    HoodieCommitMetadata compactionMetadata = HoodieCommitMetadata</span>
+<span class="nc" id="L423">        .fromBytes(activeTimeline.getInstantDetails(lastCompactionCommit).get(), HoodieCommitMetadata.class);</span>
+<span class="nc" id="L424">    String filePath = compactionMetadata.getFileIdAndFullPaths(metaClient.getBasePath()).values().stream().findAny()</span>
+<span class="nc" id="L425">        .orElseThrow(() -&gt; new IllegalArgumentException(&quot;Could not find any data file written for compaction &quot;</span>
+<span class="nc" id="L426">            + lastCompactionCommit + &quot;, could not get schema for table &quot; + metaClient.getBasePath()));</span>
+<span class="nc" id="L427">    return readSchemaFromBaseFile(new Path(filePath));</span>
+  }
+
+  /**
+   * Read the schema from the log file on path.
+   */
+  private MessageType readSchemaFromLogFile(Option&lt;HoodieInstant&gt; lastCompactionCommitOpt, Path path)
+      throws IOException {
+<span class="nc" id="L435">    MessageType messageType = SchemaUtil.readSchemaFromLogFile(fs, path);</span>
+    // Fall back to read the schema from last compaction
+<span class="nc bnc" id="L437" title="All 2 branches missed.">    if (messageType == null) {</span>
+<span class="nc" id="L438">      LOG.info(&quot;Falling back to read the schema from last compaction &quot; + lastCompactionCommitOpt);</span>
+<span class="nc" id="L439">      return readSchemaFromLastCompaction(lastCompactionCommitOpt);</span>
+    }
+<span class="nc" id="L441">    return messageType;</span>
+  }
+
+  /**
+   * Read the parquet schema from a parquet File.
+   */
+  private MessageType readSchemaFromBaseFile(Path parquetFilePath) throws IOException {
+<span class="nc" id="L448">    LOG.info(&quot;Reading schema from &quot; + parquetFilePath);</span>
+<span class="nc bnc" id="L449" title="All 2 branches missed.">    if (!fs.exists(parquetFilePath)) {</span>
+<span class="nc" id="L450">      throw new IllegalArgumentException(</span>
+          &quot;Failed to read schema from data file &quot; + parquetFilePath + &quot;. File does not exist.&quot;);
+    }
+<span class="nc" id="L453">    ParquetMetadata fileFooter =</span>
+<span class="nc" id="L454">        ParquetFileReader.readFooter(fs.getConf(), parquetFilePath, ParquetMetadataConverter.NO_FILTER);</span>
+<span class="nc" id="L455">    return fileFooter.getFileMetaData().getSchema();</span>
+  }
+
+  /**
+   * @return true if the configured table exists
+   */
+  public boolean doesTableExist(String tableName) {
+    try {
+<span class="nc" id="L463">      return client.tableExists(syncConfig.databaseName, tableName);</span>
+<span class="nc" id="L464">    } catch (TException e) {</span>
+<span class="nc" id="L465">      throw new HoodieHiveSyncException(&quot;Failed to check if table exists &quot; + tableName, e);</span>
+    }
+  }
+
+  /**
+   * Execute a update in hive metastore with this SQL.
+   *
+   * @param s SQL to execute
+   */
+  public void updateHiveSQL(String s) {
+<span class="nc bnc" id="L475" title="All 2 branches missed.">    if (syncConfig.useJdbc) {</span>
+<span class="nc" id="L476">      Statement stmt = null;</span>
+      try {
+<span class="nc" id="L478">        stmt = connection.createStatement();</span>
+<span class="nc" id="L479">        LOG.info(&quot;Executing SQL &quot; + s);</span>
+<span class="nc" id="L480">        stmt.execute(s);</span>
+<span class="nc" id="L481">      } catch (SQLException e) {</span>
+<span class="nc" id="L482">        throw new HoodieHiveSyncException(&quot;Failed in executing SQL &quot; + s, e);</span>
+      } finally {
+<span class="nc" id="L484">        closeQuietly(null, stmt);</span>
+      }
+<span class="nc" id="L486">    } else {</span>
+<span class="nc" id="L487">      updateHiveSQLUsingHiveDriver(s);</span>
+    }
+<span class="nc" id="L489">  }</span>
+
+  /**
+   * Execute a update in hive using Hive Driver.
+   *
+   * @param sql SQL statement to execute
+   */
+  public CommandProcessorResponse updateHiveSQLUsingHiveDriver(String sql) {
+<span class="nc" id="L497">    List&lt;CommandProcessorResponse&gt; responses = updateHiveSQLs(Collections.singletonList(sql));</span>
+<span class="nc" id="L498">    return responses.get(responses.size() - 1);</span>
+  }
+
+  private List&lt;CommandProcessorResponse&gt; updateHiveSQLs(List&lt;String&gt; sqls) {
+<span class="nc" id="L502">    SessionState ss = null;</span>
+<span class="nc" id="L503">    org.apache.hadoop.hive.ql.Driver hiveDriver = null;</span>
+<span class="nc" id="L504">    List&lt;CommandProcessorResponse&gt; responses = new ArrayList&lt;&gt;();</span>
+    try {
+<span class="nc" id="L506">      final long startTime = System.currentTimeMillis();</span>
+<span class="nc" id="L507">      ss = SessionState.start(configuration);</span>
+<span class="nc" id="L508">      hiveDriver = new org.apache.hadoop.hive.ql.Driver(configuration);</span>
+<span class="nc" id="L509">      final long endTime = System.currentTimeMillis();</span>
+<span class="nc" id="L510">      LOG.info(String.format(&quot;Time taken to start SessionState and create Driver: %s ms&quot;, (endTime - startTime)));</span>
+<span class="nc bnc" id="L511" title="All 2 branches missed.">      for (String sql : sqls) {</span>
+<span class="nc" id="L512">        final long start = System.currentTimeMillis();</span>
+<span class="nc" id="L513">        responses.add(hiveDriver.run(sql));</span>
+<span class="nc" id="L514">        final long end = System.currentTimeMillis();</span>
+<span class="nc" id="L515">        LOG.info(String.format(&quot;Time taken to execute [%s]: %s ms&quot;, sql, (end - start)));</span>
+<span class="nc" id="L516">      }</span>
+<span class="nc" id="L517">    } catch (Exception e) {</span>
+<span class="nc" id="L518">      throw new HoodieHiveSyncException(&quot;Failed in executing SQL&quot;, e);</span>
+    } finally {
+<span class="nc bnc" id="L520" title="All 2 branches missed.">      if (ss != null) {</span>
+        try {
+<span class="nc" id="L522">          ss.close();</span>
+<span class="nc" id="L523">        } catch (IOException ie) {</span>
+<span class="nc" id="L524">          LOG.error(&quot;Error while closing SessionState&quot;, ie);</span>
+<span class="nc" id="L525">        }</span>
+      }
+<span class="nc bnc" id="L527" title="All 2 branches missed.">      if (hiveDriver != null) {</span>
+        try {
+<span class="nc" id="L529">          hiveDriver.close();</span>
+<span class="nc" id="L530">        } catch (Exception e) {</span>
+<span class="nc" id="L531">          LOG.error(&quot;Error while closing hiveDriver&quot;, e);</span>
+<span class="nc" id="L532">        }</span>
+      }
+    }
+<span class="nc" id="L535">    return responses;</span>
+  }
+
+  private void createHiveConnection() {
+<span class="nc bnc" id="L539" title="All 2 branches missed.">    if (connection == null) {</span>
+      try {
+<span class="nc" id="L541">        Class.forName(HiveDriver.class.getCanonicalName());</span>
+<span class="nc" id="L542">      } catch (ClassNotFoundException e) {</span>
+<span class="nc" id="L543">        LOG.error(&quot;Unable to load Hive driver class&quot;, e);</span>
+<span class="nc" id="L544">        return;</span>
+<span class="nc" id="L545">      }</span>
+
+      try {
+<span class="nc" id="L548">        this.connection = DriverManager.getConnection(syncConfig.jdbcUrl, syncConfig.hiveUser, syncConfig.hivePass);</span>
+<span class="nc" id="L549">        LOG.info(&quot;Successfully established Hive connection to  &quot; + syncConfig.jdbcUrl);</span>
+<span class="nc" id="L550">      } catch (SQLException e) {</span>
+<span class="nc" id="L551">        throw new HoodieHiveSyncException(&quot;Cannot create hive connection &quot; + getHiveJdbcUrlWithDefaultDBName(), e);</span>
+<span class="nc" id="L552">      }</span>
+    }
+<span class="nc" id="L554">  }</span>
+
+  private String getHiveJdbcUrlWithDefaultDBName() {
+<span class="nc" id="L557">    String hiveJdbcUrl = syncConfig.jdbcUrl;</span>
+<span class="nc" id="L558">    String urlAppend = null;</span>
+    // If the hive url contains addition properties like ;transportMode=http;httpPath=hs2
+<span class="nc bnc" id="L560" title="All 2 branches missed.">    if (hiveJdbcUrl.contains(&quot;;&quot;)) {</span>
+<span class="nc" id="L561">      urlAppend = hiveJdbcUrl.substring(hiveJdbcUrl.indexOf(&quot;;&quot;));</span>
+<span class="nc" id="L562">      hiveJdbcUrl = hiveJdbcUrl.substring(0, hiveJdbcUrl.indexOf(&quot;;&quot;));</span>
+    }
+<span class="nc bnc" id="L564" title="All 2 branches missed.">    if (!hiveJdbcUrl.endsWith(&quot;/&quot;)) {</span>
+<span class="nc" id="L565">      hiveJdbcUrl = hiveJdbcUrl + &quot;/&quot;;</span>
+    }
+<span class="nc bnc" id="L567" title="All 2 branches missed.">    return hiveJdbcUrl + (urlAppend == null ? &quot;&quot; : urlAppend);</span>
+  }
+
+  private static void closeQuietly(ResultSet resultSet, Statement stmt) {
+    try {
+<span class="nc bnc" id="L572" title="All 2 branches missed.">      if (stmt != null) {</span>
+<span class="nc" id="L573">        stmt.close();</span>
+      }
+<span class="nc" id="L575">    } catch (SQLException e) {</span>
+<span class="nc" id="L576">      LOG.error(&quot;Could not close the statement opened &quot;, e);</span>
+<span class="nc" id="L577">    }</span>
+
+    try {
+<span class="nc bnc" id="L580" title="All 2 branches missed.">      if (resultSet != null) {</span>
+<span class="nc" id="L581">        resultSet.close();</span>
+      }
+<span class="nc" id="L583">    } catch (SQLException e) {</span>
+<span class="nc" id="L584">      LOG.error(&quot;Could not close the resultset opened &quot;, e);</span>
+<span class="nc" id="L585">    }</span>
+<span class="nc" id="L586">  }</span>
+
+  public String getBasePath() {
+<span class="nc" id="L589">    return metaClient.getBasePath();</span>
+  }
+
+  HoodieTableType getTableType() {
+<span class="nc" id="L593">    return tableType;</span>
+  }
+
+  public FileSystem getFs() {
+<span class="nc" id="L597">    return fs;</span>
+  }
+
+  public Option&lt;String&gt; getLastCommitTimeSynced(String tableName) {
+    // Get the last commit time from the TBLproperties
+    try {
+<span class="nc" id="L603">      Table database = client.getTable(syncConfig.databaseName, tableName);</span>
+<span class="nc" id="L604">      return Option.ofNullable(database.getParameters().getOrDefault(HOODIE_LAST_COMMIT_TIME_SYNC, null));</span>
+<span class="nc" id="L605">    } catch (Exception e) {</span>
+<span class="nc" id="L606">      throw new HoodieHiveSyncException(&quot;Failed to get the last commit time synced from the database&quot;, e);</span>
+    }
+  }
+
+  public void close() {
+    try {
+<span class="nc bnc" id="L612" title="All 2 branches missed.">      if (connection != null) {</span>
+<span class="nc" id="L613">        connection.close();</span>
+      }
+<span class="nc bnc" id="L615" title="All 2 branches missed.">      if (client != null) {</span>
+<span class="nc" id="L616">        Hive.closeCurrent();</span>
+<span class="nc" id="L617">        client = null;</span>
+      }
+<span class="nc" id="L619">    } catch (SQLException e) {</span>
+<span class="nc" id="L620">      LOG.error(&quot;Could not close connection &quot;, e);</span>
+<span class="nc" id="L621">    }</span>
+<span class="nc" id="L622">  }</span>
+
+  List&lt;String&gt; getPartitionsWrittenToSince(Option&lt;String&gt; lastCommitTimeSynced) {
+<span class="nc bnc" id="L625" title="All 2 branches missed.">    if (!lastCommitTimeSynced.isPresent()) {</span>
+<span class="nc" id="L626">      LOG.info(&quot;Last commit time synced is not known, listing all partitions in &quot; + syncConfig.basePath + &quot;,FS :&quot; + fs);</span>
+      try {
+<span class="nc" id="L628">        return FSUtils.getAllPartitionPaths(fs, syncConfig.basePath, syncConfig.assumeDatePartitioning);</span>
+<span class="nc" id="L629">      } catch (IOException e) {</span>
+<span class="nc" id="L630">        throw new HoodieIOException(&quot;Failed to list all partitions in &quot; + syncConfig.basePath, e);</span>
+      }
+    } else {
+<span class="nc" id="L633">      LOG.info(&quot;Last commit time synced is &quot; + lastCommitTimeSynced.get() + &quot;, Getting commits since then&quot;);</span>
+
+<span class="nc" id="L635">      HoodieTimeline timelineToSync = activeTimeline.findInstantsAfter(lastCommitTimeSynced.get(), Integer.MAX_VALUE);</span>
+<span class="nc" id="L636">      return timelineToSync.getInstants().map(s -&gt; {</span>
+        try {
+<span class="nc" id="L638">          return HoodieCommitMetadata.fromBytes(activeTimeline.getInstantDetails(s).get(), HoodieCommitMetadata.class);</span>
+<span class="nc" id="L639">        } catch (IOException e) {</span>
+<span class="nc" id="L640">          throw new HoodieIOException(&quot;Failed to get partitions written since &quot; + lastCommitTimeSynced, e);</span>
+        }
+<span class="nc" id="L642">      }).flatMap(s -&gt; s.getPartitionToWriteStats().keySet().stream()).distinct().collect(Collectors.toList());</span>
+    }
+  }
+
+  List&lt;String&gt; getAllTables(String db) throws Exception {
+<span class="nc" id="L647">    return client.getAllTables(db);</span>
+  }
+
+  void updateLastCommitTimeSynced(String tableName) {
+    // Set the last commit time from the TBLproperties
+<span class="nc" id="L652">    String lastCommitSynced = activeTimeline.lastInstant().get().getTimestamp();</span>
+    try {
+<span class="nc" id="L654">      Table table = client.getTable(syncConfig.databaseName, tableName);</span>
+<span class="nc" id="L655">      table.putToParameters(HOODIE_LAST_COMMIT_TIME_SYNC, lastCommitSynced);</span>
+<span class="nc" id="L656">      client.alter_table(syncConfig.databaseName, tableName, table);</span>
+<span class="nc" id="L657">    } catch (Exception e) {</span>
+<span class="nc" id="L658">      throw new HoodieHiveSyncException(&quot;Failed to get update last commit time synced to &quot; + lastCommitSynced, e);</span>
+<span class="nc" id="L659">    }</span>
+<span class="nc" id="L660">  }</span>
+
+  /**
+   * Partition Event captures any partition that needs to be added or updated.
+   */
+  static class PartitionEvent {
+
+<span class="nc" id="L667">    public enum PartitionEventType {</span>
+<span class="nc" id="L668">      ADD, UPDATE</span>
+    }
+
+    PartitionEventType eventType;
+    String storagePartition;
+
+<span class="nc" id="L674">    PartitionEvent(PartitionEventType eventType, String storagePartition) {</span>
+<span class="nc" id="L675">      this.eventType = eventType;</span>
+<span class="nc" id="L676">      this.storagePartition = storagePartition;</span>
+<span class="nc" id="L677">    }</span>
+
+    static PartitionEvent newPartitionAddEvent(String storagePartition) {
+<span class="nc" id="L680">      return new PartitionEvent(PartitionEventType.ADD, storagePartition);</span>
+    }
+
+    static PartitionEvent newPartitionUpdateEvent(String storagePartition) {
+<span class="nc" id="L684">      return new PartitionEvent(PartitionEventType.UPDATE, storagePartition);</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

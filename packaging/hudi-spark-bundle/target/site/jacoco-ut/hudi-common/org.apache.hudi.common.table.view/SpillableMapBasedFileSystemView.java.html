@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>SpillableMapBasedFileSystemView.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.table.view</a> &gt; <span class="el_source">SpillableMapBasedFileSystemView.java</span></div><h1>SpillableMapBasedFileSystemView.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.table.view;
+
+import org.apache.hudi.common.model.CompactionOperation;
+import org.apache.hudi.common.model.HoodieFileGroup;
+import org.apache.hudi.common.model.HoodieFileGroupId;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.common.table.HoodieTimeline;
+import org.apache.hudi.common.util.DefaultSizeEstimator;
+import org.apache.hudi.common.util.collection.ExternalSpillableMap;
+import org.apache.hudi.common.util.collection.Pair;
+
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Stream;
+
+/**
+ * Table FileSystemView implementation where view is stored in spillable disk using fixed memory.
+ */
+public class SpillableMapBasedFileSystemView extends HoodieTableFileSystemView {
+
+<span class="nc" id="L45">  private static final Logger LOG = LogManager.getLogger(SpillableMapBasedFileSystemView.class);</span>
+
+  private final long maxMemoryForFileGroupMap;
+  private final long maxMemoryForPendingCompaction;
+  private final String baseStoreDir;
+
+  public SpillableMapBasedFileSystemView(HoodieTableMetaClient metaClient, HoodieTimeline visibleActiveTimeline,
+      FileSystemViewStorageConfig config) {
+<span class="nc" id="L53">    super(config.isIncrementalTimelineSyncEnabled());</span>
+<span class="nc" id="L54">    this.maxMemoryForFileGroupMap = config.getMaxMemoryForFileGroupMap();</span>
+<span class="nc" id="L55">    this.maxMemoryForPendingCompaction = config.getMaxMemoryForPendingCompaction();</span>
+<span class="nc" id="L56">    this.baseStoreDir = config.getBaseStoreDir();</span>
+<span class="nc" id="L57">    init(metaClient, visibleActiveTimeline);</span>
+<span class="nc" id="L58">  }</span>
+
+  public SpillableMapBasedFileSystemView(HoodieTableMetaClient metaClient, HoodieTimeline visibleActiveTimeline,
+      FileStatus[] fileStatuses, FileSystemViewStorageConfig config) {
+<span class="nc" id="L62">    this(metaClient, visibleActiveTimeline, config);</span>
+<span class="nc" id="L63">    addFilesToView(fileStatuses);</span>
+<span class="nc" id="L64">  }</span>
+
+  @Override
+  protected Map&lt;String, List&lt;HoodieFileGroup&gt;&gt; createPartitionToFileGroups() {
+    try {
+<span class="nc" id="L69">      LOG.info(&quot;Creating Partition To File groups map using external spillable Map. Max Mem=&quot; + maxMemoryForFileGroupMap</span>
+          + &quot;, BaseDir=&quot; + baseStoreDir);
+<span class="nc" id="L71">      new File(baseStoreDir).mkdirs();</span>
+<span class="nc" id="L72">      return (Map&lt;String, List&lt;HoodieFileGroup&gt;&gt;) (new ExternalSpillableMap&lt;&gt;(maxMemoryForFileGroupMap, baseStoreDir,</span>
+          new DefaultSizeEstimator(), new DefaultSizeEstimator&lt;&gt;()));
+<span class="nc" id="L74">    } catch (IOException e) {</span>
+<span class="nc" id="L75">      throw new RuntimeException(e);</span>
+    }
+  }
+
+  @Override
+  protected Map&lt;HoodieFileGroupId, Pair&lt;String, CompactionOperation&gt;&gt; createFileIdToPendingCompactionMap(
+      Map&lt;HoodieFileGroupId, Pair&lt;String, CompactionOperation&gt;&gt; fgIdToPendingCompaction) {
+    try {
+<span class="nc" id="L83">      LOG.info(&quot;Creating Pending Compaction map using external spillable Map. Max Mem=&quot; + maxMemoryForPendingCompaction</span>
+          + &quot;, BaseDir=&quot; + baseStoreDir);
+<span class="nc" id="L85">      new File(baseStoreDir).mkdirs();</span>
+<span class="nc" id="L86">      Map&lt;HoodieFileGroupId, Pair&lt;String, CompactionOperation&gt;&gt; pendingMap = new ExternalSpillableMap&lt;&gt;(</span>
+<span class="nc" id="L87">          maxMemoryForPendingCompaction, baseStoreDir, new DefaultSizeEstimator(), new DefaultSizeEstimator&lt;&gt;());</span>
+<span class="nc" id="L88">      pendingMap.putAll(fgIdToPendingCompaction);</span>
+<span class="nc" id="L89">      return pendingMap;</span>
+<span class="nc" id="L90">    } catch (IOException e) {</span>
+<span class="nc" id="L91">      throw new RuntimeException(e);</span>
+    }
+  }
+
+  @Override
+  public Stream&lt;HoodieFileGroup&gt; getAllFileGroups() {
+<span class="nc" id="L97">    return ((ExternalSpillableMap) partitionToFileGroupsMap).valueStream()</span>
+<span class="nc" id="L98">        .flatMap(fg -&gt; ((List&lt;HoodieFileGroup&gt;) fg).stream());</span>
+  }
+
+  @Override
+  Stream&lt;Pair&lt;String, CompactionOperation&gt;&gt; fetchPendingCompactionOperations() {
+<span class="nc" id="L103">    return ((ExternalSpillableMap) fgIdToPendingCompaction).valueStream();</span>
+
+  }
+
+  @Override
+  public Stream&lt;HoodieFileGroup&gt; fetchAllStoredFileGroups() {
+<span class="nc" id="L109">    return ((ExternalSpillableMap) partitionToFileGroupsMap).valueStream().flatMap(fg -&gt; ((List&lt;HoodieFileGroup&gt;) fg).stream());</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

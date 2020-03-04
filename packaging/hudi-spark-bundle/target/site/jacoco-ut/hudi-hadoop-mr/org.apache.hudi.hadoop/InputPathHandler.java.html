@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>InputPathHandler.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-hadoop-mr</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.hadoop</a> &gt; <span class="el_source">InputPathHandler.java</span></div><h1>InputPathHandler.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.hadoop;
+
+import static org.apache.hudi.hadoop.HoodieParquetInputFormat.getTableMetaClient;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.exception.TableNotFoundException;
+import org.apache.hudi.exception.InvalidTableException;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+/**
+ * InputPathHandler takes in a set of input paths and incremental tables list. Then, classifies the
+ * input paths to incremental, snapshot paths and non-hoodie paths. This is then accessed later to
+ * mutate the JobConf before processing incremental mode queries and snapshot queries.
+ */
+public class InputPathHandler {
+
+<span class="nc" id="L43">  public static final Logger LOG = LogManager.getLogger(InputPathHandler.class);</span>
+
+  private final Configuration conf;
+  // tablename to metadata mapping for all Hoodie tables(both incremental &amp; snapshot)
+  private final Map&lt;String, HoodieTableMetaClient&gt; tableMetaClientMap;
+  private final Map&lt;HoodieTableMetaClient, List&lt;Path&gt;&gt; groupedIncrementalPaths;
+  private final List&lt;Path&gt; snapshotPaths;
+  private final List&lt;Path&gt; nonHoodieInputPaths;
+
+<span class="nc" id="L52">  InputPathHandler(Configuration conf, Path[] inputPaths, List&lt;String&gt; incrementalTables) throws IOException {</span>
+<span class="nc" id="L53">    this.conf = conf;</span>
+<span class="nc" id="L54">    tableMetaClientMap = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L55">    snapshotPaths = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L56">    nonHoodieInputPaths = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L57">    groupedIncrementalPaths = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L58">    parseInputPaths(inputPaths, incrementalTables);</span>
+<span class="nc" id="L59">  }</span>
+
+  /**
+   * Takes in the original InputPaths and classifies each of them into incremental, snapshot and
+   * non-hoodie InputPaths. The logic is as follows:
+   *
+   * 1. Check if an inputPath starts with the same basepath as any of the metadata basepaths we know
+   *    1a. If yes, this belongs to a Hoodie table that we already know about. Simply classify this
+   *        as incremental or snapshot - We can get the table name of this inputPath from the
+   *        metadata. Then based on the list of incrementalTables, we can classify this inputPath.
+   *    1b. If no, this could be a new Hoodie Table we haven't seen yet or a non-Hoodie Input Path.
+   *        Try creating the HoodieTableMetadataClient.
+   *            - If it succeeds, further classify as incremental on snapshot as described in step
+   *              1a above.
+   *            - If DatasetNotFoundException/InvalidDatasetException is caught, this is a
+   *              non-Hoodie inputPath
+   * @param inputPaths - InputPaths from the original jobConf that was passed to HoodieInputFormat
+   * @param incrementalTables - List of all incremental tables extracted from the config
+   * `hoodie.&amp;lt;table-name&amp;gt;.consume.mode=INCREMENTAL`
+   * @throws IOException
+   */
+  private void parseInputPaths(Path[] inputPaths, List&lt;String&gt; incrementalTables)
+      throws IOException {
+<span class="nc bnc" id="L82" title="All 2 branches missed.">    for (Path inputPath : inputPaths) {</span>
+<span class="nc" id="L83">      boolean basePathKnown = false;</span>
+<span class="nc bnc" id="L84" title="All 2 branches missed.">      for (HoodieTableMetaClient metaClient : tableMetaClientMap.values()) {</span>
+<span class="nc bnc" id="L85" title="All 2 branches missed.">        if (inputPath.toString().contains(metaClient.getBasePath())) {</span>
+          // We already know the base path for this inputPath.
+<span class="nc" id="L87">          basePathKnown = true;</span>
+          // Check if this is for a snapshot query
+<span class="nc" id="L89">          String tableName = metaClient.getTableConfig().getTableName();</span>
+<span class="nc" id="L90">          tagAsIncrementalOrSnapshot(inputPath, tableName, metaClient, incrementalTables);</span>
+<span class="nc" id="L91">          break;</span>
+        }
+<span class="nc" id="L93">      }</span>
+<span class="nc bnc" id="L94" title="All 2 branches missed.">      if (!basePathKnown) {</span>
+        // This path is for a table that we dont know about yet.
+        HoodieTableMetaClient metaClient;
+        try {
+<span class="nc" id="L98">          metaClient = getTableMetaClient(inputPath.getFileSystem(conf), inputPath);</span>
+<span class="nc" id="L99">          String tableName = metaClient.getTableConfig().getTableName();</span>
+<span class="nc" id="L100">          tableMetaClientMap.put(tableName, metaClient);</span>
+<span class="nc" id="L101">          tagAsIncrementalOrSnapshot(inputPath, tableName, metaClient, incrementalTables);</span>
+<span class="nc" id="L102">        } catch (TableNotFoundException | InvalidTableException e) {</span>
+          // This is a non Hoodie inputPath
+<span class="nc" id="L104">          LOG.info(&quot;Handling a non-hoodie path &quot; + inputPath);</span>
+<span class="nc" id="L105">          nonHoodieInputPaths.add(inputPath);</span>
+<span class="nc" id="L106">        }</span>
+      }
+    }
+<span class="nc" id="L109">  }</span>
+
+  private void tagAsIncrementalOrSnapshot(Path inputPath, String tableName,
+      HoodieTableMetaClient metaClient, List&lt;String&gt; incrementalTables) {
+<span class="nc bnc" id="L113" title="All 2 branches missed.">    if (!incrementalTables.contains(tableName)) {</span>
+<span class="nc" id="L114">      snapshotPaths.add(inputPath);</span>
+    } else {
+      // Group incremental Paths belonging to same table.
+<span class="nc bnc" id="L117" title="All 2 branches missed.">      if (!groupedIncrementalPaths.containsKey(metaClient)) {</span>
+<span class="nc" id="L118">        groupedIncrementalPaths.put(metaClient, new ArrayList&lt;&gt;());</span>
+      }
+<span class="nc" id="L120">      groupedIncrementalPaths.get(metaClient).add(inputPath);</span>
+    }
+<span class="nc" id="L122">  }</span>
+
+  public Map&lt;HoodieTableMetaClient, List&lt;Path&gt;&gt; getGroupedIncrementalPaths() {
+<span class="nc" id="L125">    return groupedIncrementalPaths;</span>
+  }
+
+  public Map&lt;String, HoodieTableMetaClient&gt; getTableMetaClientMap() {
+<span class="nc" id="L129">    return tableMetaClientMap;</span>
+  }
+
+  public List&lt;Path&gt; getSnapshotPaths() {
+<span class="nc" id="L133">    return snapshotPaths;</span>
+  }
+
+  public List&lt;Path&gt; getNonHoodieInputPaths() {
+<span class="nc" id="L137">    return nonHoodieInputPaths;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

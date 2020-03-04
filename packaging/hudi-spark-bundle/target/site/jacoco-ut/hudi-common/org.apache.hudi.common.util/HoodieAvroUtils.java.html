@@ -1,0 +1,244 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieAvroUtils.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.util</a> &gt; <span class="el_source">HoodieAvroUtils.java</span></div><h1>HoodieAvroUtils.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.util;
+
+import org.apache.hudi.common.model.HoodieRecord;
+import org.apache.hudi.exception.HoodieIOException;
+import org.apache.hudi.exception.SchemaCompatabilityException;
+
+import org.apache.avro.Schema;
+import org.apache.avro.Schema.Field;
+import org.apache.avro.generic.GenericData;
+import org.apache.avro.generic.GenericDatumReader;
+import org.apache.avro.generic.GenericDatumWriter;
+import org.apache.avro.generic.GenericRecord;
+import org.apache.avro.io.BinaryDecoder;
+import org.apache.avro.io.BinaryEncoder;
+import org.apache.avro.io.DecoderFactory;
+import org.apache.avro.io.EncoderFactory;
+import org.codehaus.jackson.JsonNode;
+import org.codehaus.jackson.node.NullNode;
+
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.zip.DeflaterOutputStream;
+import java.util.zip.InflaterInputStream;
+
+/**
+ * Helper class to do common stuff across Avro.
+ */
+<span class="nc" id="L56">public class HoodieAvroUtils {</span>
+
+<span class="nc" id="L58">  private static ThreadLocal&lt;BinaryEncoder&gt; reuseEncoder = ThreadLocal.withInitial(() -&gt; null);</span>
+
+<span class="nc" id="L60">  private static ThreadLocal&lt;BinaryDecoder&gt; reuseDecoder = ThreadLocal.withInitial(() -&gt; null);</span>
+
+  // All metadata fields are optional strings.
+<span class="nc" id="L63">  private static final Schema METADATA_FIELD_SCHEMA =</span>
+<span class="nc" id="L64">      Schema.createUnion(Arrays.asList(Schema.create(Schema.Type.NULL), Schema.create(Schema.Type.STRING)));</span>
+
+<span class="nc" id="L66">  private static final Schema RECORD_KEY_SCHEMA = initRecordKeySchema();</span>
+
+  /**
+   * Convert a given avro record to bytes.
+   */
+  public static byte[] avroToBytes(GenericRecord record) throws IOException {
+<span class="nc" id="L72">    GenericDatumWriter&lt;GenericRecord&gt; writer = new GenericDatumWriter&lt;&gt;(record.getSchema());</span>
+<span class="nc" id="L73">    ByteArrayOutputStream out = new ByteArrayOutputStream();</span>
+<span class="nc" id="L74">    BinaryEncoder encoder = EncoderFactory.get().binaryEncoder(out, reuseEncoder.get());</span>
+<span class="nc" id="L75">    reuseEncoder.set(encoder);</span>
+<span class="nc" id="L76">    writer.write(record, encoder);</span>
+<span class="nc" id="L77">    encoder.flush();</span>
+<span class="nc" id="L78">    out.close();</span>
+<span class="nc" id="L79">    return out.toByteArray();</span>
+  }
+
+  /**
+   * Convert serialized bytes back into avro record.
+   */
+  public static GenericRecord bytesToAvro(byte[] bytes, Schema schema) throws IOException {
+<span class="nc" id="L86">    BinaryDecoder decoder = DecoderFactory.get().binaryDecoder(bytes, reuseDecoder.get());</span>
+<span class="nc" id="L87">    reuseDecoder.set(decoder);</span>
+<span class="nc" id="L88">    GenericDatumReader&lt;GenericRecord&gt; reader = new GenericDatumReader&lt;&gt;(schema);</span>
+<span class="nc" id="L89">    return reader.read(null, decoder);</span>
+  }
+
+  public static boolean isMetadataField(String fieldName) {
+<span class="nc bnc" id="L93" title="All 2 branches missed.">    return HoodieRecord.COMMIT_TIME_METADATA_FIELD.equals(fieldName)</span>
+<span class="nc bnc" id="L94" title="All 2 branches missed.">        || HoodieRecord.COMMIT_SEQNO_METADATA_FIELD.equals(fieldName)</span>
+<span class="nc bnc" id="L95" title="All 2 branches missed.">        || HoodieRecord.RECORD_KEY_METADATA_FIELD.equals(fieldName)</span>
+<span class="nc bnc" id="L96" title="All 2 branches missed.">        || HoodieRecord.PARTITION_PATH_METADATA_FIELD.equals(fieldName)</span>
+<span class="nc bnc" id="L97" title="All 2 branches missed.">        || HoodieRecord.FILENAME_METADATA_FIELD.equals(fieldName);</span>
+  }
+
+  /**
+   * Adds the Hoodie metadata fields to the given schema.
+   */
+  public static Schema addMetadataFields(Schema schema) {
+<span class="nc" id="L104">    List&lt;Schema.Field&gt; parentFields = new ArrayList&lt;&gt;();</span>
+
+<span class="nc" id="L106">    Schema.Field commitTimeField =</span>
+<span class="nc" id="L107">        new Schema.Field(HoodieRecord.COMMIT_TIME_METADATA_FIELD, METADATA_FIELD_SCHEMA, &quot;&quot;, NullNode.getInstance());</span>
+<span class="nc" id="L108">    Schema.Field commitSeqnoField =</span>
+<span class="nc" id="L109">        new Schema.Field(HoodieRecord.COMMIT_SEQNO_METADATA_FIELD, METADATA_FIELD_SCHEMA, &quot;&quot;, NullNode.getInstance());</span>
+<span class="nc" id="L110">    Schema.Field recordKeyField =</span>
+<span class="nc" id="L111">        new Schema.Field(HoodieRecord.RECORD_KEY_METADATA_FIELD, METADATA_FIELD_SCHEMA, &quot;&quot;, NullNode.getInstance());</span>
+<span class="nc" id="L112">    Schema.Field partitionPathField =</span>
+<span class="nc" id="L113">        new Schema.Field(HoodieRecord.PARTITION_PATH_METADATA_FIELD, METADATA_FIELD_SCHEMA, &quot;&quot;, NullNode.getInstance());</span>
+<span class="nc" id="L114">    Schema.Field fileNameField =</span>
+<span class="nc" id="L115">        new Schema.Field(HoodieRecord.FILENAME_METADATA_FIELD, METADATA_FIELD_SCHEMA, &quot;&quot;, NullNode.getInstance());</span>
+
+<span class="nc" id="L117">    parentFields.add(commitTimeField);</span>
+<span class="nc" id="L118">    parentFields.add(commitSeqnoField);</span>
+<span class="nc" id="L119">    parentFields.add(recordKeyField);</span>
+<span class="nc" id="L120">    parentFields.add(partitionPathField);</span>
+<span class="nc" id="L121">    parentFields.add(fileNameField);</span>
+<span class="nc bnc" id="L122" title="All 2 branches missed.">    for (Schema.Field field : schema.getFields()) {</span>
+<span class="nc bnc" id="L123" title="All 2 branches missed.">      if (!isMetadataField(field.name())) {</span>
+<span class="nc" id="L124">        Schema.Field newField = new Schema.Field(field.name(), field.schema(), field.doc(), field.defaultValue());</span>
+<span class="nc bnc" id="L125" title="All 2 branches missed.">        for (Map.Entry&lt;String, JsonNode&gt; prop : field.getJsonProps().entrySet()) {</span>
+<span class="nc" id="L126">          newField.addProp(prop.getKey(), prop.getValue());</span>
+<span class="nc" id="L127">        }</span>
+<span class="nc" id="L128">        parentFields.add(newField);</span>
+      }
+<span class="nc" id="L130">    }</span>
+
+<span class="nc" id="L132">    Schema mergedSchema = Schema.createRecord(schema.getName(), schema.getDoc(), schema.getNamespace(), false);</span>
+<span class="nc" id="L133">    mergedSchema.setFields(parentFields);</span>
+<span class="nc" id="L134">    return mergedSchema;</span>
+  }
+
+  public static String addMetadataColumnTypes(String hiveColumnTypes) {
+<span class="nc" id="L138">    return &quot;string,string,string,string,string,&quot; + hiveColumnTypes;</span>
+  }
+
+  private static Schema initRecordKeySchema() {
+<span class="nc" id="L142">    Schema.Field recordKeyField =</span>
+<span class="nc" id="L143">        new Schema.Field(HoodieRecord.RECORD_KEY_METADATA_FIELD, METADATA_FIELD_SCHEMA, &quot;&quot;, NullNode.getInstance());</span>
+<span class="nc" id="L144">    Schema recordKeySchema = Schema.createRecord(&quot;HoodieRecordKey&quot;, &quot;&quot;, &quot;&quot;, false);</span>
+<span class="nc" id="L145">    recordKeySchema.setFields(Collections.singletonList(recordKeyField));</span>
+<span class="nc" id="L146">    return recordKeySchema;</span>
+  }
+
+  public static Schema getRecordKeySchema() {
+<span class="nc" id="L150">    return RECORD_KEY_SCHEMA;</span>
+  }
+
+  public static GenericRecord addHoodieKeyToRecord(GenericRecord record, String recordKey, String partitionPath,
+      String fileName) {
+<span class="nc" id="L155">    record.put(HoodieRecord.FILENAME_METADATA_FIELD, fileName);</span>
+<span class="nc" id="L156">    record.put(HoodieRecord.PARTITION_PATH_METADATA_FIELD, partitionPath);</span>
+<span class="nc" id="L157">    record.put(HoodieRecord.RECORD_KEY_METADATA_FIELD, recordKey);</span>
+<span class="nc" id="L158">    return record;</span>
+  }
+
+  /**
+   * Add null fields to passed in schema. Caller is responsible for ensuring there is no duplicates. As different query
+   * engines have varying constraints regarding treating the case-sensitivity of fields, its best to let caller
+   * determine that.
+   *
+   * @param schema Passed in schema
+   * @param newFieldNames Null Field names to be added
+   */
+  public static Schema appendNullSchemaFields(Schema schema, List&lt;String&gt; newFieldNames) {
+<span class="nc" id="L170">    List&lt;Field&gt; newFields = schema.getFields().stream()</span>
+<span class="nc" id="L171">        .map(field -&gt; new Field(field.name(), field.schema(), field.doc(), field.defaultValue())).collect(Collectors.toList());</span>
+<span class="nc bnc" id="L172" title="All 2 branches missed.">    for (String newField : newFieldNames) {</span>
+<span class="nc" id="L173">      newFields.add(new Schema.Field(newField, METADATA_FIELD_SCHEMA, &quot;&quot;, NullNode.getInstance()));</span>
+<span class="nc" id="L174">    }</span>
+<span class="nc" id="L175">    Schema newSchema = Schema.createRecord(schema.getName(), schema.getDoc(), schema.getNamespace(), schema.isError());</span>
+<span class="nc" id="L176">    newSchema.setFields(newFields);</span>
+<span class="nc" id="L177">    return newSchema;</span>
+  }
+
+  /**
+   * Adds the Hoodie commit metadata into the provided Generic Record.
+   */
+  public static GenericRecord addCommitMetadataToRecord(GenericRecord record, String commitTime, String commitSeqno) {
+<span class="nc" id="L184">    record.put(HoodieRecord.COMMIT_TIME_METADATA_FIELD, commitTime);</span>
+<span class="nc" id="L185">    record.put(HoodieRecord.COMMIT_SEQNO_METADATA_FIELD, commitSeqno);</span>
+<span class="nc" id="L186">    return record;</span>
+  }
+
+  /**
+   * Given a avro record with a given schema, rewrites it into the new schema while setting fields only from the old
+   * schema.
+   */
+  public static GenericRecord rewriteRecord(GenericRecord record, Schema newSchema) {
+<span class="nc" id="L194">    return rewrite(record, record.getSchema(), newSchema);</span>
+  }
+
+  /**
+   * Given a avro record with a given schema, rewrites it into the new schema while setting fields only from the new
+   * schema.
+   */
+  public static GenericRecord rewriteRecordWithOnlyNewSchemaFields(GenericRecord record, Schema newSchema) {
+<span class="nc" id="L202">    return rewrite(record, newSchema, newSchema);</span>
+  }
+
+  private static GenericRecord rewrite(GenericRecord record, Schema schemaWithFields, Schema newSchema) {
+<span class="nc" id="L206">    GenericRecord newRecord = new GenericData.Record(newSchema);</span>
+<span class="nc bnc" id="L207" title="All 2 branches missed.">    for (Schema.Field f : schemaWithFields.getFields()) {</span>
+<span class="nc" id="L208">      newRecord.put(f.name(), record.get(f.name()));</span>
+<span class="nc" id="L209">    }</span>
+<span class="nc bnc" id="L210" title="All 2 branches missed.">    if (!GenericData.get().validate(newSchema, newRecord)) {</span>
+<span class="nc" id="L211">      throw new SchemaCompatabilityException(</span>
+          &quot;Unable to validate the rewritten record &quot; + record + &quot; against schema &quot; + newSchema);
+    }
+<span class="nc" id="L214">    return newRecord;</span>
+  }
+
+  public static byte[] compress(String text) {
+<span class="nc" id="L218">    ByteArrayOutputStream baos = new ByteArrayOutputStream();</span>
+    try {
+<span class="nc" id="L220">      OutputStream out = new DeflaterOutputStream(baos);</span>
+<span class="nc" id="L221">      out.write(text.getBytes(StandardCharsets.UTF_8));</span>
+<span class="nc" id="L222">      out.close();</span>
+<span class="nc" id="L223">    } catch (IOException e) {</span>
+<span class="nc" id="L224">      throw new HoodieIOException(&quot;IOException while compressing text &quot; + text, e);</span>
+<span class="nc" id="L225">    }</span>
+<span class="nc" id="L226">    return baos.toByteArray();</span>
+  }
+
+  public static String decompress(byte[] bytes) {
+<span class="nc" id="L230">    InputStream in = new InflaterInputStream(new ByteArrayInputStream(bytes));</span>
+<span class="nc" id="L231">    ByteArrayOutputStream baos = new ByteArrayOutputStream();</span>
+    try {
+<span class="nc" id="L233">      byte[] buffer = new byte[8192];</span>
+      int len;
+<span class="nc bnc" id="L235" title="All 2 branches missed.">      while ((len = in.read(buffer)) &gt; 0) {</span>
+<span class="nc" id="L236">        baos.write(buffer, 0, len);</span>
+      }
+<span class="nc" id="L238">      return new String(baos.toByteArray(), StandardCharsets.UTF_8);</span>
+<span class="nc" id="L239">    } catch (IOException e) {</span>
+<span class="nc" id="L240">      throw new HoodieIOException(&quot;IOException while decompressing text&quot;, e);</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

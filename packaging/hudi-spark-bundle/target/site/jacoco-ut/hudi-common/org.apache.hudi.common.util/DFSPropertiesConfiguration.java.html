@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>DFSPropertiesConfiguration.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.util</a> &gt; <span class="el_source">DFSPropertiesConfiguration.java</span></div><h1>DFSPropertiesConfiguration.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.util;
+
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.util.HashSet;
+import java.util.Set;
+
+/**
+ * A simplified versions of Apache commons - PropertiesConfiguration, that supports limited field types and hierarchical
+ * configurations within the same folder as the root file.
+ *
+ * Includes denoted by the same include=filename.properties syntax, with relative path from root file's folder. Lines
+ * beginning with '#' are ignored as comments. Final values for properties are resolved by the order in which they are
+ * specified in the files, with included files treated as if they are inline.
+ *
+ * Note: Not reusing commons-configuration since it has too many conflicting runtime deps.
+ */
+public class DFSPropertiesConfiguration {
+
+<span class="nc" id="L44">  private static final Logger LOG = LogManager.getLogger(DFSPropertiesConfiguration.class);</span>
+
+  private final FileSystem fs;
+
+  private final Path rootFile;
+
+  private final TypedProperties props;
+
+  // Keep track of files visited, to detect loops
+  private final Set&lt;String&gt; visitedFiles;
+
+<span class="nc" id="L55">  public DFSPropertiesConfiguration(FileSystem fs, Path rootFile, TypedProperties defaults) {</span>
+<span class="nc" id="L56">    this.fs = fs;</span>
+<span class="nc" id="L57">    this.rootFile = rootFile;</span>
+<span class="nc" id="L58">    this.props = defaults;</span>
+<span class="nc" id="L59">    this.visitedFiles = new HashSet&lt;&gt;();</span>
+<span class="nc" id="L60">    visitFile(rootFile);</span>
+<span class="nc" id="L61">  }</span>
+
+  public DFSPropertiesConfiguration(FileSystem fs, Path rootFile) {
+<span class="nc" id="L64">    this(fs, rootFile, new TypedProperties());</span>
+<span class="nc" id="L65">  }</span>
+
+<span class="nc" id="L67">  public DFSPropertiesConfiguration() {</span>
+<span class="nc" id="L68">    this.fs = null;</span>
+<span class="nc" id="L69">    this.rootFile = null;</span>
+<span class="nc" id="L70">    this.props = new TypedProperties();</span>
+<span class="nc" id="L71">    this.visitedFiles = new HashSet&lt;&gt;();</span>
+<span class="nc" id="L72">  }</span>
+
+  private String[] splitProperty(String line) {
+<span class="nc" id="L75">    int ind = line.indexOf('=');</span>
+<span class="nc" id="L76">    String k = line.substring(0, ind).trim();</span>
+<span class="nc" id="L77">    String v = line.substring(ind + 1).trim();</span>
+<span class="nc" id="L78">    return new String[] {k, v};</span>
+  }
+
+  private void visitFile(Path file) {
+    try {
+<span class="nc bnc" id="L83" title="All 2 branches missed.">      if (visitedFiles.contains(file.getName())) {</span>
+<span class="nc" id="L84">        throw new IllegalStateException(&quot;Loop detected; file &quot; + file + &quot; already referenced&quot;);</span>
+      }
+<span class="nc" id="L86">      visitedFiles.add(file.getName());</span>
+<span class="nc" id="L87">      BufferedReader reader = new BufferedReader(new InputStreamReader(fs.open(file)));</span>
+<span class="nc" id="L88">      addProperties(reader);</span>
+<span class="nc" id="L89">    } catch (IOException ioe) {</span>
+<span class="nc" id="L90">      LOG.error(&quot;Error reading in properies from dfs&quot;, ioe);</span>
+<span class="nc" id="L91">      throw new IllegalArgumentException(&quot;Cannot read properties from dfs&quot;, ioe);</span>
+<span class="nc" id="L92">    }</span>
+<span class="nc" id="L93">  }</span>
+
+  /**
+   * Add properties from input stream.
+   * 
+   * @param reader Buffered Reader
+   * @throws IOException
+   */
+  public void addProperties(BufferedReader reader) throws IOException {
+    try {
+      String line;
+<span class="nc bnc" id="L104" title="All 2 branches missed.">      while ((line = reader.readLine()) != null) {</span>
+<span class="nc bnc" id="L105" title="All 6 branches missed.">        if (line.startsWith(&quot;#&quot;) || line.equals(&quot;&quot;) || !line.contains(&quot;=&quot;)) {</span>
+<span class="nc" id="L106">          continue;</span>
+        }
+<span class="nc" id="L108">        String[] split = splitProperty(line);</span>
+<span class="nc bnc" id="L109" title="All 4 branches missed.">        if (line.startsWith(&quot;include=&quot;) || line.startsWith(&quot;include =&quot;)) {</span>
+<span class="nc" id="L110">          visitFile(new Path(rootFile.getParent(), split[1]));</span>
+        } else {
+<span class="nc" id="L112">          props.setProperty(split[0], split[1]);</span>
+        }
+<span class="nc" id="L114">      }</span>
+    } finally {
+<span class="nc" id="L116">      reader.close();</span>
+    }
+<span class="nc" id="L118">  }</span>
+
+  public TypedProperties getConfig() {
+<span class="nc" id="L121">    return props;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

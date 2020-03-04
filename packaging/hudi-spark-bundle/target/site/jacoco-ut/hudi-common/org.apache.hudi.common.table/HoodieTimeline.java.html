@@ -1,0 +1,363 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieTimeline.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.table</a> &gt; <span class="el_source">HoodieTimeline.java</span></div><h1>HoodieTimeline.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.table;
+
+import org.apache.hudi.common.model.HoodieTableType;
+import org.apache.hudi.common.table.timeline.HoodieDefaultTimeline;
+import org.apache.hudi.common.table.timeline.HoodieInstant;
+import org.apache.hudi.common.table.timeline.HoodieInstant.State;
+import org.apache.hudi.common.util.Option;
+import org.apache.hudi.common.util.StringUtils;
+
+import java.io.Serializable;
+import java.util.function.BiPredicate;
+import java.util.function.Predicate;
+import java.util.stream.Stream;
+
+/**
+ * HoodieTimeline is a view of meta-data instants in the hoodie table. Instants are specific points in time
+ * represented as HoodieInstant.
+ * &lt;p&gt;
+ * Timelines are immutable once created and operations create new instance of timelines which filter on the instants and
+ * this can be chained.
+ *
+ * @see HoodieTableMetaClient
+ * @see HoodieDefaultTimeline
+ * @see HoodieInstant
+ * @since 0.3.0
+ */
+public interface HoodieTimeline extends Serializable {
+
+  String COMMIT_ACTION = &quot;commit&quot;;
+  String DELTA_COMMIT_ACTION = &quot;deltacommit&quot;;
+  String CLEAN_ACTION = &quot;clean&quot;;
+  String ROLLBACK_ACTION = &quot;rollback&quot;;
+  String SAVEPOINT_ACTION = &quot;savepoint&quot;;
+  String INFLIGHT_EXTENSION = &quot;.inflight&quot;;
+  // With Async Compaction, compaction instant can be in 3 states :
+  // (compaction-requested), (compaction-inflight), (completed)
+  String COMPACTION_ACTION = &quot;compaction&quot;;
+  String REQUESTED_EXTENSION = &quot;.requested&quot;;
+  String RESTORE_ACTION = &quot;restore&quot;;
+
+<span class="nc" id="L59">  String[] VALID_ACTIONS_IN_TIMELINE = {COMMIT_ACTION, DELTA_COMMIT_ACTION,</span>
+      CLEAN_ACTION, SAVEPOINT_ACTION, RESTORE_ACTION, ROLLBACK_ACTION,
+      COMPACTION_ACTION};
+
+  String COMMIT_EXTENSION = &quot;.&quot; + COMMIT_ACTION;
+  String DELTA_COMMIT_EXTENSION = &quot;.&quot; + DELTA_COMMIT_ACTION;
+  String CLEAN_EXTENSION = &quot;.&quot; + CLEAN_ACTION;
+  String ROLLBACK_EXTENSION = &quot;.&quot; + ROLLBACK_ACTION;
+  String SAVEPOINT_EXTENSION = &quot;.&quot; + SAVEPOINT_ACTION;
+  // this is to preserve backwards compatibility on commit in-flight filenames
+  String INFLIGHT_COMMIT_EXTENSION = INFLIGHT_EXTENSION;
+  String REQUESTED_COMMIT_EXTENSION = &quot;.&quot; + COMMIT_ACTION + REQUESTED_EXTENSION;
+  String REQUESTED_DELTA_COMMIT_EXTENSION = &quot;.&quot; + DELTA_COMMIT_ACTION + REQUESTED_EXTENSION;
+  String INFLIGHT_DELTA_COMMIT_EXTENSION = &quot;.&quot; + DELTA_COMMIT_ACTION + INFLIGHT_EXTENSION;
+  String INFLIGHT_CLEAN_EXTENSION = &quot;.&quot; + CLEAN_ACTION + INFLIGHT_EXTENSION;
+  String REQUESTED_CLEAN_EXTENSION = &quot;.&quot; + CLEAN_ACTION + REQUESTED_EXTENSION;
+  String INFLIGHT_ROLLBACK_EXTENSION = &quot;.&quot; + ROLLBACK_ACTION + INFLIGHT_EXTENSION;
+  String INFLIGHT_SAVEPOINT_EXTENSION = &quot;.&quot; + SAVEPOINT_ACTION + INFLIGHT_EXTENSION;
+<span class="nc" id="L77">  String REQUESTED_COMPACTION_SUFFIX = StringUtils.join(COMPACTION_ACTION, REQUESTED_EXTENSION);</span>
+<span class="nc" id="L78">  String REQUESTED_COMPACTION_EXTENSION = StringUtils.join(&quot;.&quot;, REQUESTED_COMPACTION_SUFFIX);</span>
+<span class="nc" id="L79">  String INFLIGHT_COMPACTION_EXTENSION = StringUtils.join(&quot;.&quot;, COMPACTION_ACTION, INFLIGHT_EXTENSION);</span>
+  String INFLIGHT_RESTORE_EXTENSION = &quot;.&quot; + RESTORE_ACTION + INFLIGHT_EXTENSION;
+  String RESTORE_EXTENSION = &quot;.&quot; + RESTORE_ACTION;
+
+  String INVALID_INSTANT_TS = &quot;0&quot;;
+
+  /**
+   * Filter this timeline to just include the in-flights.
+   *
+   * @return New instance of HoodieTimeline with just in-flights
+   */
+  HoodieTimeline filterInflights();
+
+  /**
+   * Filter this timeline to include requested and in-flights.
+   *
+   * @return New instance of HoodieTimeline with just in-flights and requested instants
+   */
+  HoodieTimeline filterInflightsAndRequested();
+
+  /**
+   * Filter this timeline to just include the in-flights excluding compaction instants.
+   *
+   * @return New instance of HoodieTimeline with just in-flights excluding compaction inflights
+   */
+  HoodieTimeline filterPendingExcludingCompaction();
+
+  /**
+   * Filter this timeline to just include the completed instants.
+   *
+   * @return New instance of HoodieTimeline with just completed instants
+   */
+  HoodieTimeline filterCompletedInstants();
+
+  /**
+   * Filter this timeline to just include the completed + compaction (inflight + requested) instants A RT filesystem
+   * view is constructed with this timeline so that file-slice after pending compaction-requested instant-time is also
+   * considered valid. A RT file-system view for reading must then merge the file-slices before and after pending
+   * compaction instant so that all delta-commits are read.
+   * 
+   * @return New instance of HoodieTimeline with just completed instants
+   */
+  HoodieTimeline filterCompletedAndCompactionInstants();
+
+  /**
+   * Timeline to just include commits (commit/deltacommit) and compaction actions.
+   * 
+   * @return
+   */
+  HoodieTimeline getCommitsAndCompactionTimeline();
+
+  /**
+   * Filter this timeline to just include requested and inflight compaction instants.
+   * 
+   * @return
+   */
+  HoodieTimeline filterPendingCompactionTimeline();
+
+  /**
+   * Create a new Timeline with instants after startTs and before or on endTs.
+   */
+  HoodieTimeline findInstantsInRange(String startTs, String endTs);
+
+  /**
+   * Create a new Timeline with all the instants after startTs.
+   */
+  HoodieTimeline findInstantsAfter(String commitTime, int numCommits);
+
+  /**
+   * Custom Filter of Instants.
+   */
+  HoodieTimeline filter(Predicate&lt;HoodieInstant&gt; filter);
+
+  /**
+   * If the timeline has any instants.
+   *
+   * @return true if timeline is empty
+   */
+  boolean empty();
+
+  /**
+   * @return total number of completed instants
+   */
+  int countInstants();
+
+  /**
+   * @return first completed instant if available
+   */
+  Option&lt;HoodieInstant&gt; firstInstant();
+
+  /**
+   * @return nth completed instant from the first completed instant
+   */
+  Option&lt;HoodieInstant&gt; nthInstant(int n);
+
+  /**
+   * @return last completed instant if available
+   */
+  Option&lt;HoodieInstant&gt; lastInstant();
+
+
+  /**
+   * Get hash of timeline.
+   * 
+   * @return
+   */
+  String getTimelineHash();
+
+  /**
+   * @return nth completed instant going back from the last completed instant
+   */
+  Option&lt;HoodieInstant&gt; nthFromLastInstant(int n);
+
+  /**
+   * @return true if the passed instant is present as a completed instant on the timeline
+   */
+  boolean containsInstant(HoodieInstant instant);
+
+  /**
+   * @return true if the passed instant is present as a completed instant on the timeline or if the instant is before
+   *         the first completed instant in the timeline
+   */
+  boolean containsOrBeforeTimelineStarts(String ts);
+
+  /**
+   * @return Get the stream of completed instants
+   */
+  Stream&lt;HoodieInstant&gt; getInstants();
+
+  /**
+   * @return Get the stream of completed instants in reverse order TODO Change code references to getInstants() that
+   *         reverse the instants later on to use this method instead.
+   */
+  Stream&lt;HoodieInstant&gt; getReverseOrderedInstants();
+
+  /**
+   * @return true if the passed in instant is before the first completed instant in the timeline
+   */
+  boolean isBeforeTimelineStarts(String ts);
+
+  /**
+   * Read the completed instant details.
+   */
+  Option&lt;byte[]&gt; getInstantDetails(HoodieInstant instant);
+
+  /**
+   * Helper methods to compare instants.
+   **/
+<span class="nc bnc" id="L227" title="All 2 branches missed.">  BiPredicate&lt;String, String&gt; EQUAL = (commit1, commit2) -&gt; commit1.compareTo(commit2) == 0;</span>
+<span class="nc bnc" id="L228" title="All 2 branches missed.">  BiPredicate&lt;String, String&gt; GREATER_OR_EQUAL = (commit1, commit2) -&gt; commit1.compareTo(commit2) &gt;= 0;</span>
+<span class="nc bnc" id="L229" title="All 2 branches missed.">  BiPredicate&lt;String, String&gt; GREATER = (commit1, commit2) -&gt; commit1.compareTo(commit2) &gt; 0;</span>
+<span class="nc bnc" id="L230" title="All 2 branches missed.">  BiPredicate&lt;String, String&gt; LESSER_OR_EQUAL = (commit1, commit2) -&gt; commit1.compareTo(commit2) &lt;= 0;</span>
+<span class="nc bnc" id="L231" title="All 2 branches missed.">  BiPredicate&lt;String, String&gt; LESSER = (commit1, commit2) -&gt; commit1.compareTo(commit2) &lt; 0;</span>
+
+  static boolean compareTimestamps(String commit1, String commit2, BiPredicate&lt;String, String&gt; predicateToApply) {
+<span class="nc" id="L234">    return predicateToApply.test(commit1, commit2);</span>
+  }
+
+  /**
+   * Return true if specified timestamp is in range (startTs, endTs].
+   */
+  static boolean isInRange(String timestamp, String startTs, String endTs) {
+<span class="nc bnc" id="L241" title="All 2 branches missed.">    return HoodieTimeline.compareTimestamps(timestamp, startTs, GREATER)</span>
+<span class="nc bnc" id="L242" title="All 2 branches missed.">            &amp;&amp; HoodieTimeline.compareTimestamps(timestamp, endTs, LESSER_OR_EQUAL);</span>
+  }
+
+  static HoodieInstant getCompletedInstant(final HoodieInstant instant) {
+<span class="nc" id="L246">    return new HoodieInstant(State.COMPLETED, instant.getAction(), instant.getTimestamp());</span>
+  }
+
+  static HoodieInstant getRequestedInstant(final HoodieInstant instant) {
+<span class="nc" id="L250">    return new HoodieInstant(State.REQUESTED, instant.getAction(), instant.getTimestamp());</span>
+  }
+
+  static HoodieInstant getCleanRequestedInstant(final String timestamp) {
+<span class="nc" id="L254">    return new HoodieInstant(State.REQUESTED, CLEAN_ACTION, timestamp);</span>
+  }
+
+  static HoodieInstant getCleanInflightInstant(final String timestamp) {
+<span class="nc" id="L258">    return new HoodieInstant(State.INFLIGHT, CLEAN_ACTION, timestamp);</span>
+  }
+
+  static HoodieInstant getCompactionRequestedInstant(final String timestamp) {
+<span class="nc" id="L262">    return new HoodieInstant(State.REQUESTED, COMPACTION_ACTION, timestamp);</span>
+  }
+
+  static HoodieInstant getCompactionInflightInstant(final String timestamp) {
+<span class="nc" id="L266">    return new HoodieInstant(State.INFLIGHT, COMPACTION_ACTION, timestamp);</span>
+  }
+
+  /**
+   * Returns the inflight instant corresponding to the instant being passed. Takes care of changes in action names
+   * between inflight and completed instants (compaction &lt;=&gt; commit).
+   * @param instant Hoodie Instant
+   * @param tableType Hoodie Table Type
+   * @return Inflight Hoodie Instant
+   */
+  static HoodieInstant getInflightInstant(final HoodieInstant instant, final HoodieTableType tableType) {
+<span class="nc bnc" id="L277" title="All 4 branches missed.">    if ((tableType == HoodieTableType.MERGE_ON_READ) &amp;&amp; instant.getAction().equals(COMMIT_ACTION)) {</span>
+<span class="nc" id="L278">      return new HoodieInstant(true, COMPACTION_ACTION, instant.getTimestamp());</span>
+    }
+<span class="nc" id="L280">    return new HoodieInstant(true, instant.getAction(), instant.getTimestamp());</span>
+  }
+
+  static String makeCommitFileName(String commitTime) {
+<span class="nc" id="L284">    return StringUtils.join(commitTime, HoodieTimeline.COMMIT_EXTENSION);</span>
+  }
+
+  static String makeInflightCommitFileName(String commitTime) {
+<span class="nc" id="L288">    return StringUtils.join(commitTime, HoodieTimeline.INFLIGHT_COMMIT_EXTENSION);</span>
+  }
+
+  static String makeRequestedCommitFileName(String commitTime) {
+<span class="nc" id="L292">    return StringUtils.join(commitTime, HoodieTimeline.REQUESTED_COMMIT_EXTENSION);</span>
+  }
+
+  static String makeCleanerFileName(String instant) {
+<span class="nc" id="L296">    return StringUtils.join(instant, HoodieTimeline.CLEAN_EXTENSION);</span>
+  }
+
+  static String makeRequestedCleanerFileName(String instant) {
+<span class="nc" id="L300">    return StringUtils.join(instant, HoodieTimeline.REQUESTED_CLEAN_EXTENSION);</span>
+  }
+
+  static String makeInflightCleanerFileName(String instant) {
+<span class="nc" id="L304">    return StringUtils.join(instant, HoodieTimeline.INFLIGHT_CLEAN_EXTENSION);</span>
+  }
+
+  static String makeRollbackFileName(String instant) {
+<span class="nc" id="L308">    return StringUtils.join(instant, HoodieTimeline.ROLLBACK_EXTENSION);</span>
+  }
+
+  static String makeInflightRollbackFileName(String instant) {
+<span class="nc" id="L312">    return StringUtils.join(instant, HoodieTimeline.INFLIGHT_ROLLBACK_EXTENSION);</span>
+  }
+
+  static String makeInflightSavePointFileName(String commitTime) {
+<span class="nc" id="L316">    return StringUtils.join(commitTime, HoodieTimeline.INFLIGHT_SAVEPOINT_EXTENSION);</span>
+  }
+
+  static String makeSavePointFileName(String commitTime) {
+<span class="nc" id="L320">    return StringUtils.join(commitTime, HoodieTimeline.SAVEPOINT_EXTENSION);</span>
+  }
+
+  static String makeInflightDeltaFileName(String commitTime) {
+<span class="nc" id="L324">    return StringUtils.join(commitTime, HoodieTimeline.INFLIGHT_DELTA_COMMIT_EXTENSION);</span>
+  }
+
+  static String makeRequestedDeltaFileName(String commitTime) {
+<span class="nc" id="L328">    return StringUtils.join(commitTime, HoodieTimeline.REQUESTED_DELTA_COMMIT_EXTENSION);</span>
+  }
+
+  static String makeInflightCompactionFileName(String commitTime) {
+<span class="nc" id="L332">    return StringUtils.join(commitTime, HoodieTimeline.INFLIGHT_COMPACTION_EXTENSION);</span>
+  }
+
+  static String makeRequestedCompactionFileName(String commitTime) {
+<span class="nc" id="L336">    return StringUtils.join(commitTime, HoodieTimeline.REQUESTED_COMPACTION_EXTENSION);</span>
+  }
+
+  static String makeRestoreFileName(String instant) {
+<span class="nc" id="L340">    return StringUtils.join(instant, HoodieTimeline.RESTORE_EXTENSION);</span>
+  }
+
+  static String makeInflightRestoreFileName(String instant) {
+<span class="nc" id="L344">    return StringUtils.join(instant, HoodieTimeline.INFLIGHT_RESTORE_EXTENSION);</span>
+  }
+
+  static String makeDeltaFileName(String commitTime) {
+<span class="nc" id="L348">    return commitTime + HoodieTimeline.DELTA_COMMIT_EXTENSION;</span>
+  }
+
+  static String getCommitFromCommitFile(String commitFileName) {
+<span class="nc" id="L352">    return commitFileName.split(&quot;\\.&quot;)[0];</span>
+  }
+
+  static String makeFileNameAsComplete(String fileName) {
+<span class="nc" id="L356">    return fileName.replace(HoodieTimeline.INFLIGHT_EXTENSION, &quot;&quot;);</span>
+  }
+
+  static String makeFileNameAsInflight(String fileName) {
+<span class="nc" id="L360">    return StringUtils.join(fileName, HoodieTimeline.INFLIGHT_EXTENSION);</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

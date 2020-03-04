@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>TimelineLayoutVersion.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.model</a> &gt; <span class="el_source">TimelineLayoutVersion.java</span></div><h1>TimelineLayoutVersion.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.model;
+
+import com.google.common.base.Preconditions;
+
+import java.io.Serializable;
+import java.util.Objects;
+
+/**
+ * Metadata Layout Version. Add new version when timeline format changes
+ */
+public class TimelineLayoutVersion implements Serializable, Comparable&lt;TimelineLayoutVersion&gt; {
+
+<span class="nc" id="L31">  public static final Integer VERSION_0 = 0; // pre 0.5.1  version format</span>
+<span class="nc" id="L32">  public static final Integer VERSION_1 = 1; // current version with no renames</span>
+
+<span class="nc" id="L34">  public static final Integer CURR_VERSION = VERSION_1;</span>
+<span class="nc" id="L35">  public static final TimelineLayoutVersion CURR_LAYOUT_VERSION = new TimelineLayoutVersion(CURR_VERSION);</span>
+
+  private Integer version;
+
+<span class="nc" id="L39">  public TimelineLayoutVersion(Integer version) {</span>
+<span class="nc bnc" id="L40" title="All 2 branches missed.">    Preconditions.checkArgument(version &lt;= CURR_VERSION);</span>
+<span class="nc bnc" id="L41" title="All 2 branches missed.">    Preconditions.checkArgument(version &gt;= VERSION_0);</span>
+<span class="nc" id="L42">    this.version = version;</span>
+<span class="nc" id="L43">  }</span>
+
+  /**
+   * For Pre 0.5.1 release, there was no metadata version. This method is used to detect
+   * this case.
+   * @return
+   */
+  public boolean isNullVersion() {
+<span class="nc" id="L51">    return Objects.equals(version, VERSION_0);</span>
+  }
+
+  public Integer getVersion() {
+<span class="nc" id="L55">    return version;</span>
+  }
+
+  @Override
+  public boolean equals(Object o) {
+<span class="nc bnc" id="L60" title="All 2 branches missed.">    if (this == o) {</span>
+<span class="nc" id="L61">      return true;</span>
+    }
+<span class="nc bnc" id="L63" title="All 4 branches missed.">    if (o == null || getClass() != o.getClass()) {</span>
+<span class="nc" id="L64">      return false;</span>
+    }
+<span class="nc" id="L66">    TimelineLayoutVersion that = (TimelineLayoutVersion) o;</span>
+<span class="nc" id="L67">    return Objects.equals(version, that.version);</span>
+  }
+
+  @Override
+  public int hashCode() {
+<span class="nc" id="L72">    return Objects.hash(version);</span>
+  }
+
+  @Override
+  public int compareTo(TimelineLayoutVersion o) {
+<span class="nc" id="L77">    return Integer.compare(version, o.version);</span>
+  }
+
+  @Override
+  public String toString() {
+<span class="nc" id="L82">    return String.valueOf(version);</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

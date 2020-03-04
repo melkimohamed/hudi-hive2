@@ -1,0 +1,289 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>ExternalSpillableMap.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.util.collection</a> &gt; <span class="el_source">ExternalSpillableMap.java</span></div><h1>ExternalSpillableMap.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.util.collection;
+
+import org.apache.hudi.common.util.ObjectSizeCalculator;
+import org.apache.hudi.common.util.SizeEstimator;
+import org.apache.hudi.exception.HoodieIOException;
+
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+import java.io.IOException;
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Stream;
+
+/**
+ * An external map that spills content to disk when there is insufficient space for it to grow.
+ * &lt;p&gt;
+ * This map holds 2 types of data structures :
+ * &lt;p&gt;
+ * (1) Key-Value pairs in a in-memory map (2) Key-ValueMetadata pairs in an in-memory map which keeps a marker to the
+ * values spilled to disk
+ * &lt;p&gt;
+ * NOTE : Values are only appended to disk. If a remove() is called, the entry is marked removed from the in-memory
+ * key-valueMetadata map but it's values will be lying around in the temp file on disk until the file is cleaned.
+ * &lt;p&gt;
+ * The setting of the spill threshold faces the following trade-off: If the spill threshold is too high, the in-memory
+ * map may occupy more memory than is available, resulting in OOM. However, if the spill threshold is too low, we spill
+ * frequently and incur unnecessary disk writes.
+ */
+public class ExternalSpillableMap&lt;T extends Serializable, R extends Serializable&gt; implements Map&lt;T, R&gt; {
+
+  // Find the actual estimated payload size after inserting N records
+  private static final int NUMBER_OF_RECORDS_TO_ESTIMATE_PAYLOAD_SIZE = 100;
+<span class="nc" id="L59">  private static final Logger LOG = LogManager.getLogger(ExternalSpillableMap.class);</span>
+  // maximum space allowed in-memory for this map
+  private final long maxInMemorySizeInBytes;
+  // Map to store key-values in memory until it hits maxInMemorySizeInBytes
+  private final Map&lt;T, R&gt; inMemoryMap;
+  // Map to store key-valuemetadata important to find the values spilled to disk
+  private transient volatile DiskBasedMap&lt;T, R&gt; diskBasedMap;
+  // TODO(na) : a dynamic sizing factor to ensure we have space for other objects in memory and
+  // incorrect payload estimation
+<span class="nc" id="L68">  private final Double sizingFactorForInMemoryMap = 0.8;</span>
+  // Size Estimator for key type
+  private final SizeEstimator&lt;T&gt; keySizeEstimator;
+  // Size Estimator for key types
+  private final SizeEstimator&lt;R&gt; valueSizeEstimator;
+  // current space occupied by this map in-memory
+  private Long currentInMemoryMapSize;
+  // An estimate of the size of each payload written to this map
+<span class="nc" id="L76">  private volatile long estimatedPayloadSize = 0;</span>
+  // Flag to determine whether to stop re-estimating payload size
+<span class="nc" id="L78">  private boolean shouldEstimatePayloadSize = true;</span>
+  // Base File Path
+  private final String baseFilePath;
+
+  public ExternalSpillableMap(Long maxInMemorySizeInBytes, String baseFilePath, SizeEstimator&lt;T&gt; keySizeEstimator,
+<span class="nc" id="L83">      SizeEstimator&lt;R&gt; valueSizeEstimator) throws IOException {</span>
+<span class="nc" id="L84">    this.inMemoryMap = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L85">    this.baseFilePath = baseFilePath;</span>
+<span class="nc" id="L86">    this.diskBasedMap = new DiskBasedMap&lt;&gt;(baseFilePath);</span>
+<span class="nc" id="L87">    this.maxInMemorySizeInBytes = (long) Math.floor(maxInMemorySizeInBytes * sizingFactorForInMemoryMap);</span>
+<span class="nc" id="L88">    this.currentInMemoryMapSize = 0L;</span>
+<span class="nc" id="L89">    this.keySizeEstimator = keySizeEstimator;</span>
+<span class="nc" id="L90">    this.valueSizeEstimator = valueSizeEstimator;</span>
+<span class="nc" id="L91">  }</span>
+
+  private DiskBasedMap&lt;T, R&gt; getDiskBasedMap() {
+<span class="nc bnc" id="L94" title="All 2 branches missed.">    if (null == diskBasedMap) {</span>
+<span class="nc" id="L95">      synchronized (this) {</span>
+<span class="nc bnc" id="L96" title="All 2 branches missed.">        if (null == diskBasedMap) {</span>
+          try {
+<span class="nc" id="L98">            diskBasedMap = new DiskBasedMap&lt;&gt;(baseFilePath);</span>
+<span class="nc" id="L99">          } catch (IOException e) {</span>
+<span class="nc" id="L100">            throw new HoodieIOException(e.getMessage(), e);</span>
+<span class="nc" id="L101">          }</span>
+        }
+<span class="nc" id="L103">      }</span>
+    }
+<span class="nc" id="L105">    return diskBasedMap;</span>
+  }
+
+  /**
+   * A custom iterator to wrap over iterating in-memory + disk spilled data.
+   */
+  public Iterator&lt;R&gt; iterator() {
+<span class="nc" id="L112">    return new IteratorWrapper&lt;&gt;(inMemoryMap.values().iterator(), getDiskBasedMap().iterator());</span>
+  }
+
+  /**
+   * Number of entries in DiskBasedMap.
+   */
+  public int getDiskBasedMapNumEntries() {
+<span class="nc" id="L119">    return getDiskBasedMap().size();</span>
+  }
+
+  /**
+   * Number of bytes spilled to disk.
+   */
+  public long getSizeOfFileOnDiskInBytes() {
+<span class="nc" id="L126">    return getDiskBasedMap().sizeOfFileOnDiskInBytes();</span>
+  }
+
+  /**
+   * Number of entries in InMemoryMap.
+   */
+  public int getInMemoryMapNumEntries() {
+<span class="nc" id="L133">    return inMemoryMap.size();</span>
+  }
+
+  /**
+   * Approximate memory footprint of the in-memory map.
+   */
+  public long getCurrentInMemoryMapSize() {
+<span class="nc" id="L140">    return currentInMemoryMapSize;</span>
+  }
+
+  @Override
+  public int size() {
+<span class="nc" id="L145">    return inMemoryMap.size() + getDiskBasedMap().size();</span>
+  }
+
+  @Override
+  public boolean isEmpty() {
+<span class="nc bnc" id="L150" title="All 4 branches missed.">    return inMemoryMap.isEmpty() &amp;&amp; getDiskBasedMap().isEmpty();</span>
+  }
+
+  @Override
+  public boolean containsKey(Object key) {
+<span class="nc bnc" id="L155" title="All 4 branches missed.">    return inMemoryMap.containsKey(key) || getDiskBasedMap().containsKey(key);</span>
+  }
+
+  @Override
+  public boolean containsValue(Object value) {
+<span class="nc bnc" id="L160" title="All 4 branches missed.">    return inMemoryMap.containsValue(value) || getDiskBasedMap().containsValue(value);</span>
+  }
+
+  @Override
+  public R get(Object key) {
+<span class="nc bnc" id="L165" title="All 2 branches missed.">    if (inMemoryMap.containsKey(key)) {</span>
+<span class="nc" id="L166">      return inMemoryMap.get(key);</span>
+<span class="nc bnc" id="L167" title="All 2 branches missed.">    } else if (getDiskBasedMap().containsKey(key)) {</span>
+<span class="nc" id="L168">      return getDiskBasedMap().get(key);</span>
+    }
+<span class="nc" id="L170">    return null;</span>
+  }
+
+  @Override
+  public R put(T key, R value) {
+<span class="nc bnc" id="L175" title="All 4 branches missed.">    if (this.currentInMemoryMapSize &lt; maxInMemorySizeInBytes || inMemoryMap.containsKey(key)) {</span>
+<span class="nc bnc" id="L176" title="All 4 branches missed.">      if (shouldEstimatePayloadSize &amp;&amp; estimatedPayloadSize == 0) {</span>
+        // At first, use the sizeEstimate of a record being inserted into the spillable map.
+        // Note, the converter may over estimate the size of a record in the JVM
+<span class="nc" id="L179">        this.estimatedPayloadSize = keySizeEstimator.sizeEstimate(key) + valueSizeEstimator.sizeEstimate(value);</span>
+<span class="nc" id="L180">        LOG.info(&quot;Estimated Payload size =&gt; &quot; + estimatedPayloadSize);</span>
+<span class="nc bnc" id="L181" title="All 4 branches missed.">      } else if (shouldEstimatePayloadSize &amp;&amp; inMemoryMap.size() % NUMBER_OF_RECORDS_TO_ESTIMATE_PAYLOAD_SIZE == 0) {</span>
+        // Re-estimate the size of a record by calculating the size of the entire map containing
+        // N entries and then dividing by the number of entries present (N). This helps to get a
+        // correct estimation of the size of each record in the JVM.
+<span class="nc" id="L185">        long totalMapSize = ObjectSizeCalculator.getObjectSize(inMemoryMap);</span>
+<span class="nc" id="L186">        this.currentInMemoryMapSize = totalMapSize;</span>
+<span class="nc" id="L187">        this.estimatedPayloadSize = totalMapSize / inMemoryMap.size();</span>
+<span class="nc" id="L188">        shouldEstimatePayloadSize = false;</span>
+<span class="nc" id="L189">        LOG.info(&quot;New Estimated Payload size =&gt; &quot; + this.estimatedPayloadSize);</span>
+      }
+<span class="nc bnc" id="L191" title="All 2 branches missed.">      if (!inMemoryMap.containsKey(key)) {</span>
+        // TODO : Add support for adjusting payloadSize for updates to the same key
+<span class="nc" id="L193">        currentInMemoryMapSize += this.estimatedPayloadSize;</span>
+      }
+<span class="nc" id="L195">      inMemoryMap.put(key, value);</span>
+    } else {
+<span class="nc" id="L197">      getDiskBasedMap().put(key, value);</span>
+    }
+<span class="nc" id="L199">    return value;</span>
+  }
+
+  @Override
+  public R remove(Object key) {
+    // NOTE : getDiskBasedMap().remove does not delete the data from disk
+<span class="nc bnc" id="L205" title="All 2 branches missed.">    if (inMemoryMap.containsKey(key)) {</span>
+<span class="nc" id="L206">      currentInMemoryMapSize -= estimatedPayloadSize;</span>
+<span class="nc" id="L207">      return inMemoryMap.remove(key);</span>
+<span class="nc bnc" id="L208" title="All 2 branches missed.">    } else if (getDiskBasedMap().containsKey(key)) {</span>
+<span class="nc" id="L209">      return getDiskBasedMap().remove(key);</span>
+    }
+<span class="nc" id="L211">    return null;</span>
+  }
+
+  @Override
+  public void putAll(Map&lt;? extends T, ? extends R&gt; m) {
+<span class="nc bnc" id="L216" title="All 2 branches missed.">    for (Map.Entry&lt;? extends T, ? extends R&gt; entry : m.entrySet()) {</span>
+<span class="nc" id="L217">      put(entry.getKey(), entry.getValue());</span>
+<span class="nc" id="L218">    }</span>
+<span class="nc" id="L219">  }</span>
+
+  @Override
+  public void clear() {
+<span class="nc" id="L223">    inMemoryMap.clear();</span>
+<span class="nc" id="L224">    getDiskBasedMap().clear();</span>
+<span class="nc" id="L225">    currentInMemoryMapSize = 0L;</span>
+<span class="nc" id="L226">  }</span>
+
+  @Override
+  public Set&lt;T&gt; keySet() {
+<span class="nc" id="L230">    Set&lt;T&gt; keySet = new HashSet&lt;T&gt;();</span>
+<span class="nc" id="L231">    keySet.addAll(inMemoryMap.keySet());</span>
+<span class="nc" id="L232">    keySet.addAll(getDiskBasedMap().keySet());</span>
+<span class="nc" id="L233">    return keySet;</span>
+  }
+
+  @Override
+  public Collection&lt;R&gt; values() {
+<span class="nc bnc" id="L238" title="All 2 branches missed.">    if (getDiskBasedMap().isEmpty()) {</span>
+<span class="nc" id="L239">      return inMemoryMap.values();</span>
+    }
+<span class="nc" id="L241">    List&lt;R&gt; result = new ArrayList&lt;&gt;(inMemoryMap.values());</span>
+<span class="nc" id="L242">    result.addAll(getDiskBasedMap().values());</span>
+<span class="nc" id="L243">    return result;</span>
+  }
+
+  public Stream&lt;R&gt; valueStream() {
+<span class="nc" id="L247">    return Stream.concat(inMemoryMap.values().stream(), getDiskBasedMap().valueStream());</span>
+  }
+
+  @Override
+  public Set&lt;Entry&lt;T, R&gt;&gt; entrySet() {
+<span class="nc" id="L252">    Set&lt;Entry&lt;T, R&gt;&gt; entrySet = new HashSet&lt;&gt;();</span>
+<span class="nc" id="L253">    entrySet.addAll(inMemoryMap.entrySet());</span>
+<span class="nc" id="L254">    entrySet.addAll(getDiskBasedMap().entrySet());</span>
+<span class="nc" id="L255">    return entrySet;</span>
+  }
+
+  /**
+   * Iterator that wraps iterating over all the values for this map 1) inMemoryIterator - Iterates over all the data
+   * in-memory map 2) diskLazyFileIterator - Iterates over all the data spilled to disk.
+   */
+  private class IteratorWrapper&lt;R&gt; implements Iterator&lt;R&gt; {
+
+    private Iterator&lt;R&gt; inMemoryIterator;
+    private Iterator&lt;R&gt; diskLazyFileIterator;
+
+<span class="nc" id="L267">    public IteratorWrapper(Iterator&lt;R&gt; inMemoryIterator, Iterator&lt;R&gt; diskLazyFileIterator) {</span>
+<span class="nc" id="L268">      this.inMemoryIterator = inMemoryIterator;</span>
+<span class="nc" id="L269">      this.diskLazyFileIterator = diskLazyFileIterator;</span>
+<span class="nc" id="L270">    }</span>
+
+    @Override
+    public boolean hasNext() {
+<span class="nc bnc" id="L274" title="All 2 branches missed.">      if (inMemoryIterator.hasNext()) {</span>
+<span class="nc" id="L275">        return true;</span>
+      }
+<span class="nc" id="L277">      return diskLazyFileIterator.hasNext();</span>
+    }
+
+    @Override
+    public R next() {
+<span class="nc bnc" id="L282" title="All 2 branches missed.">      if (inMemoryIterator.hasNext()) {</span>
+<span class="nc" id="L283">        return inMemoryIterator.next();</span>
+      }
+<span class="nc" id="L285">      return diskLazyFileIterator.next();</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

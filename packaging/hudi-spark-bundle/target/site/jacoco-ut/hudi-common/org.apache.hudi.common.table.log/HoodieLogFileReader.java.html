@@ -1,0 +1,415 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieLogFileReader.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.table.log</a> &gt; <span class="el_source">HoodieLogFileReader.java</span></div><h1>HoodieLogFileReader.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.table.log;
+
+import org.apache.hudi.common.model.HoodieLogFile;
+import org.apache.hudi.common.table.log.block.HoodieAvroDataBlock;
+import org.apache.hudi.common.table.log.block.HoodieCommandBlock;
+import org.apache.hudi.common.table.log.block.HoodieCorruptBlock;
+import org.apache.hudi.common.table.log.block.HoodieDeleteBlock;
+import org.apache.hudi.common.table.log.block.HoodieLogBlock;
+import org.apache.hudi.common.table.log.block.HoodieLogBlock.HeaderMetadataType;
+import org.apache.hudi.common.table.log.block.HoodieLogBlock.HoodieLogBlockType;
+import org.apache.hudi.common.util.FSUtils;
+import org.apache.hudi.common.util.Option;
+import org.apache.hudi.exception.CorruptedLogFileException;
+import org.apache.hudi.exception.HoodieIOException;
+import org.apache.hudi.exception.HoodieNotSupportedException;
+
+import com.google.common.base.Preconditions;
+import org.apache.avro.Schema;
+import org.apache.hadoop.fs.BufferedFSInputStream;
+import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FSInputStream;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+import java.io.EOFException;
+import java.io.IOException;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
+
+/**
+ * Scans a log file and provides block level iterator on the log file Loads the entire block contents in memory Can emit
+ * either a DataBlock, CommandBlock, DeleteBlock or CorruptBlock (if one is found).
+ */
+class HoodieLogFileReader implements HoodieLogFormat.Reader {
+
+  public static final int DEFAULT_BUFFER_SIZE = 16 * 1024 * 1024; // 16 MB
+<span class="nc" id="L58">  private static final Logger LOG = LogManager.getLogger(HoodieLogFileReader.class);</span>
+
+  private final FSDataInputStream inputStream;
+  private final HoodieLogFile logFile;
+<span class="nc" id="L62">  private static final byte[] MAGIC_BUFFER = new byte[6];</span>
+  private final Schema readerSchema;
+  private HoodieLogFormat.LogFormatVersion nextBlockVersion;
+  private boolean readBlockLazily;
+  private long reverseLogFilePosition;
+  private long lastReverseLogFilePosition;
+  private boolean reverseReader;
+<span class="nc" id="L69">  private boolean closed = false;</span>
+
+  HoodieLogFileReader(FileSystem fs, HoodieLogFile logFile, Schema readerSchema, int bufferSize,
+<span class="nc" id="L72">      boolean readBlockLazily, boolean reverseReader) throws IOException {</span>
+<span class="nc" id="L73">    FSDataInputStream fsDataInputStream = fs.open(logFile.getPath(), bufferSize);</span>
+<span class="nc bnc" id="L74" title="All 2 branches missed.">    if (fsDataInputStream.getWrappedStream() instanceof FSInputStream) {</span>
+<span class="nc" id="L75">      this.inputStream = new FSDataInputStream(</span>
+<span class="nc" id="L76">          new BufferedFSInputStream((FSInputStream) fsDataInputStream.getWrappedStream(), bufferSize));</span>
+    } else {
+      // fsDataInputStream.getWrappedStream() maybe a BufferedFSInputStream
+      // need to wrap in another BufferedFSInputStream the make bufferSize work?
+<span class="nc" id="L80">      this.inputStream = fsDataInputStream;</span>
+    }
+
+<span class="nc" id="L83">    this.logFile = logFile;</span>
+<span class="nc" id="L84">    this.readerSchema = readerSchema;</span>
+<span class="nc" id="L85">    this.readBlockLazily = readBlockLazily;</span>
+<span class="nc" id="L86">    this.reverseReader = reverseReader;</span>
+<span class="nc bnc" id="L87" title="All 2 branches missed.">    if (this.reverseReader) {</span>
+<span class="nc" id="L88">      this.reverseLogFilePosition = this.lastReverseLogFilePosition = fs.getFileStatus(logFile.getPath()).getLen();</span>
+    }
+<span class="nc" id="L90">    addShutDownHook();</span>
+<span class="nc" id="L91">  }</span>
+
+  HoodieLogFileReader(FileSystem fs, HoodieLogFile logFile, Schema readerSchema, boolean readBlockLazily,
+      boolean reverseReader) throws IOException {
+<span class="nc" id="L95">    this(fs, logFile, readerSchema, DEFAULT_BUFFER_SIZE, readBlockLazily, reverseReader);</span>
+<span class="nc" id="L96">  }</span>
+
+  HoodieLogFileReader(FileSystem fs, HoodieLogFile logFile, Schema readerSchema) throws IOException {
+<span class="nc" id="L99">    this(fs, logFile, readerSchema, DEFAULT_BUFFER_SIZE, false, false);</span>
+<span class="nc" id="L100">  }</span>
+
+  @Override
+  public HoodieLogFile getLogFile() {
+<span class="nc" id="L104">    return logFile;</span>
+  }
+
+  /**
+   * Close the inputstream if not closed when the JVM exits.
+   */
+  private void addShutDownHook() {
+<span class="nc" id="L111">    Runtime.getRuntime().addShutdownHook(new Thread(() -&gt; {</span>
+      try {
+<span class="nc" id="L113">        close();</span>
+<span class="nc" id="L114">      } catch (Exception e) {</span>
+<span class="nc" id="L115">        LOG.warn(&quot;unable to close input stream for log file &quot; + logFile, e);</span>
+        // fail silently for any sort of exception
+<span class="nc" id="L117">      }</span>
+<span class="nc" id="L118">    }));</span>
+<span class="nc" id="L119">  }</span>
+
+  // TODO : convert content and block length to long by using ByteBuffer, raw byte [] allows
+  // for max of Integer size
+  private HoodieLogBlock readBlock() throws IOException {
+
+    int blocksize;
+    int type;
+<span class="nc" id="L127">    HoodieLogBlockType blockType = null;</span>
+<span class="nc" id="L128">    Map&lt;HeaderMetadataType, String&gt; header = null;</span>
+
+    try {
+      // 1 Read the total size of the block
+<span class="nc" id="L132">      blocksize = (int) inputStream.readLong();</span>
+<span class="nc" id="L133">    } catch (EOFException | CorruptedLogFileException e) {</span>
+      // An exception reading any of the above indicates a corrupt block
+      // Create a corrupt block by finding the next MAGIC marker or EOF
+<span class="nc" id="L136">      return createCorruptBlock();</span>
+<span class="nc" id="L137">    }</span>
+
+    // We may have had a crash which could have written this block partially
+    // Skip blocksize in the stream and we should either find a sync marker (start of the next
+    // block) or EOF. If we did not find either of it, then this block is a corrupted block.
+<span class="nc" id="L142">    boolean isCorrupted = isBlockCorrupt(blocksize);</span>
+<span class="nc bnc" id="L143" title="All 2 branches missed.">    if (isCorrupted) {</span>
+<span class="nc" id="L144">      return createCorruptBlock();</span>
+    }
+
+    // 2. Read the version for this log format
+<span class="nc" id="L148">    this.nextBlockVersion = readVersion();</span>
+
+    // 3. Read the block type for a log block
+<span class="nc bnc" id="L151" title="All 2 branches missed.">    if (nextBlockVersion.getVersion() != HoodieLogFormatVersion.DEFAULT_VERSION) {</span>
+<span class="nc" id="L152">      type = inputStream.readInt();</span>
+
+<span class="nc bnc" id="L154" title="All 2 branches missed.">      Preconditions.checkArgument(type &lt; HoodieLogBlockType.values().length, &quot;Invalid block byte type found &quot; + type);</span>
+<span class="nc" id="L155">      blockType = HoodieLogBlockType.values()[type];</span>
+    }
+
+    // 4. Read the header for a log block, if present
+<span class="nc bnc" id="L159" title="All 2 branches missed.">    if (nextBlockVersion.hasHeader()) {</span>
+<span class="nc" id="L160">      header = HoodieLogBlock.getLogMetadata(inputStream);</span>
+    }
+
+<span class="nc" id="L163">    int contentLength = blocksize;</span>
+    // 5. Read the content length for the content
+<span class="nc bnc" id="L165" title="All 2 branches missed.">    if (nextBlockVersion.getVersion() != HoodieLogFormatVersion.DEFAULT_VERSION) {</span>
+<span class="nc" id="L166">      contentLength = (int) inputStream.readLong();</span>
+    }
+
+    // 6. Read the content or skip content based on IO vs Memory trade-off by client
+    // TODO - have a max block size and reuse this buffer in the ByteBuffer
+    // (hard to guess max block size for now)
+<span class="nc" id="L172">    long contentPosition = inputStream.getPos();</span>
+<span class="nc" id="L173">    byte[] content = HoodieLogBlock.readOrSkipContent(inputStream, contentLength, readBlockLazily);</span>
+
+    // 7. Read footer if any
+<span class="nc" id="L176">    Map&lt;HeaderMetadataType, String&gt; footer = null;</span>
+<span class="nc bnc" id="L177" title="All 2 branches missed.">    if (nextBlockVersion.hasFooter()) {</span>
+<span class="nc" id="L178">      footer = HoodieLogBlock.getLogMetadata(inputStream);</span>
+    }
+
+    // 8. Read log block length, if present. This acts as a reverse pointer when traversing a
+    // log file in reverse
+<span class="nc" id="L183">    long logBlockLength = 0;</span>
+<span class="nc bnc" id="L184" title="All 2 branches missed.">    if (nextBlockVersion.hasLogBlockLength()) {</span>
+<span class="nc" id="L185">      logBlockLength = inputStream.readLong();</span>
+    }
+
+    // 9. Read the log block end position in the log file
+<span class="nc" id="L189">    long blockEndPos = inputStream.getPos();</span>
+
+<span class="nc bnc" id="L191" title="All 4 branches missed.">    switch (Objects.requireNonNull(blockType)) {</span>
+      // based on type read the block
+      case AVRO_DATA_BLOCK:
+<span class="nc bnc" id="L194" title="All 2 branches missed.">        if (nextBlockVersion.getVersion() == HoodieLogFormatVersion.DEFAULT_VERSION) {</span>
+<span class="nc" id="L195">          return HoodieAvroDataBlock.getBlock(content, readerSchema);</span>
+        } else {
+<span class="nc" id="L197">          return HoodieAvroDataBlock.getBlock(logFile, inputStream, Option.ofNullable(content), readBlockLazily,</span>
+              contentPosition, contentLength, blockEndPos, readerSchema, header, footer);
+        }
+      case DELETE_BLOCK:
+<span class="nc" id="L201">        return HoodieDeleteBlock.getBlock(logFile, inputStream, Option.ofNullable(content), readBlockLazily,</span>
+            contentPosition, contentLength, blockEndPos, header, footer);
+      case COMMAND_BLOCK:
+<span class="nc" id="L204">        return HoodieCommandBlock.getBlock(logFile, inputStream, Option.ofNullable(content), readBlockLazily,</span>
+            contentPosition, contentLength, blockEndPos, header, footer);
+      default:
+<span class="nc" id="L207">        throw new HoodieNotSupportedException(&quot;Unsupported Block &quot; + blockType);</span>
+    }
+  }
+
+  private HoodieLogBlock createCorruptBlock() throws IOException {
+<span class="nc" id="L212">    LOG.info(&quot;Log &quot; + logFile + &quot; has a corrupted block at &quot; + inputStream.getPos());</span>
+<span class="nc" id="L213">    long currentPos = inputStream.getPos();</span>
+<span class="nc" id="L214">    long nextBlockOffset = scanForNextAvailableBlockOffset();</span>
+    // Rewind to the initial start and read corrupted bytes till the nextBlockOffset
+<span class="nc" id="L216">    inputStream.seek(currentPos);</span>
+<span class="nc" id="L217">    LOG.info(&quot;Next available block in &quot; + logFile + &quot; starts at &quot; + nextBlockOffset);</span>
+<span class="nc" id="L218">    int corruptedBlockSize = (int) (nextBlockOffset - currentPos);</span>
+<span class="nc" id="L219">    long contentPosition = inputStream.getPos();</span>
+<span class="nc" id="L220">    byte[] corruptedBytes = HoodieLogBlock.readOrSkipContent(inputStream, corruptedBlockSize, readBlockLazily);</span>
+<span class="nc" id="L221">    return HoodieCorruptBlock.getBlock(logFile, inputStream, Option.ofNullable(corruptedBytes), readBlockLazily,</span>
+        contentPosition, corruptedBlockSize, corruptedBlockSize, new HashMap&lt;&gt;(), new HashMap&lt;&gt;());
+  }
+
+  private boolean isBlockCorrupt(int blocksize) throws IOException {
+<span class="nc" id="L226">    long currentPos = inputStream.getPos();</span>
+    try {
+<span class="nc bnc" id="L228" title="All 2 branches missed.">      if (FSUtils.isGCSInputStream(inputStream)) {</span>
+<span class="nc" id="L229">        inputStream.seek(currentPos + blocksize - 1);</span>
+      } else {
+<span class="nc" id="L231">        inputStream.seek(currentPos + blocksize);</span>
+      }
+<span class="nc" id="L233">    } catch (EOFException e) {</span>
+<span class="nc" id="L234">      LOG.info(&quot;Found corrupted block in file &quot; + logFile + &quot; with block size(&quot; + blocksize + &quot;) running past EOF&quot;);</span>
+      // this is corrupt
+      // This seek is required because contract of seek() is different for naked DFSInputStream vs BufferedFSInputStream
+      // release-3.1.0-RC1/DFSInputStream.java#L1455
+      // release-3.1.0-RC1/BufferedFSInputStream.java#L73
+<span class="nc" id="L239">      inputStream.seek(currentPos);</span>
+<span class="nc" id="L240">      return true;</span>
+<span class="nc" id="L241">    }</span>
+
+    // check if the blocksize mentioned in the footer is the same as the header; by seeking back the length of a long
+    // the backward seek does not incur additional IO as {@link org.apache.hadoop.hdfs.DFSInputStream#seek()}
+    // only moves the index. actual IO happens on the next read operation
+<span class="nc" id="L246">    inputStream.seek(inputStream.getPos() - Long.BYTES);</span>
+    // Block size in the footer includes the magic header, which the header does not include.
+    // So we have to shorten the footer block size by the size of magic hash
+<span class="nc" id="L249">    long blockSizeFromFooter = inputStream.readLong() - MAGIC_BUFFER.length;</span>
+<span class="nc bnc" id="L250" title="All 2 branches missed.">    if (blocksize != blockSizeFromFooter) {</span>
+<span class="nc" id="L251">      LOG.info(&quot;Found corrupted block in file &quot; + logFile + &quot;. Header block size(&quot; + blocksize</span>
+              + &quot;) did not match the footer block size(&quot; + blockSizeFromFooter + &quot;)&quot;);
+<span class="nc" id="L253">      inputStream.seek(currentPos);</span>
+<span class="nc" id="L254">      return true;</span>
+    }
+    try {
+<span class="nc" id="L257">      readMagic();</span>
+      // all good - either we found the sync marker or EOF. Reset position and continue
+<span class="nc" id="L259">      return false;</span>
+<span class="nc" id="L260">    } catch (CorruptedLogFileException e) {</span>
+      // This is a corrupted block
+<span class="nc" id="L262">      LOG.info(&quot;Found corrupted block in file &quot; + logFile + &quot;. No magic hash found right after footer block size entry&quot;);</span>
+<span class="nc" id="L263">      return true;</span>
+    } finally {
+<span class="nc" id="L265">      inputStream.seek(currentPos);</span>
+    }
+  }
+
+  private long scanForNextAvailableBlockOffset() throws IOException {
+    while (true) {
+<span class="nc" id="L271">      long currentPos = inputStream.getPos();</span>
+      try {
+<span class="nc" id="L273">        boolean hasNextMagic = hasNextMagic();</span>
+<span class="nc bnc" id="L274" title="All 2 branches missed.">        if (hasNextMagic) {</span>
+<span class="nc" id="L275">          return currentPos;</span>
+        } else {
+          // No luck - advance and try again
+<span class="nc" id="L278">          inputStream.seek(currentPos + 1);</span>
+        }
+<span class="nc" id="L280">      } catch (EOFException e) {</span>
+<span class="nc" id="L281">        return inputStream.getPos();</span>
+<span class="nc" id="L282">      }</span>
+<span class="nc" id="L283">    }</span>
+  }
+
+  @Override
+  public void close() throws IOException {
+<span class="nc bnc" id="L288" title="All 2 branches missed.">    if (!closed) {</span>
+<span class="nc" id="L289">      this.inputStream.close();</span>
+<span class="nc" id="L290">      closed = true;</span>
+    }
+<span class="nc" id="L292">  }</span>
+
+  /*
+   * hasNext is not idempotent. TODO - Fix this. It is okay for now - PR
+   */
+  @Override
+  public boolean hasNext() {
+    try {
+<span class="nc" id="L300">      return readMagic();</span>
+<span class="nc" id="L301">    } catch (IOException e) {</span>
+<span class="nc" id="L302">      throw new HoodieIOException(&quot;IOException when reading logfile &quot; + logFile, e);</span>
+    }
+  }
+
+  /**
+   * Read log format version from log file.
+   */
+  private HoodieLogFormat.LogFormatVersion readVersion() throws IOException {
+<span class="nc" id="L310">    return new HoodieLogFormatVersion(inputStream.readInt());</span>
+  }
+
+  private boolean readMagic() throws IOException {
+    try {
+<span class="nc" id="L315">      boolean hasMagic = hasNextMagic();</span>
+<span class="nc bnc" id="L316" title="All 2 branches missed.">      if (!hasMagic) {</span>
+<span class="nc" id="L317">        throw new CorruptedLogFileException(</span>
+            logFile + &quot;could not be read. Did not find the magic bytes at the start of the block&quot;);
+      }
+<span class="nc" id="L320">      return hasMagic;</span>
+<span class="nc" id="L321">    } catch (EOFException e) {</span>
+      // We have reached the EOF
+<span class="nc" id="L323">      return false;</span>
+    }
+  }
+
+  private boolean hasNextMagic() throws IOException {
+    // 1. Read magic header from the start of the block
+<span class="nc" id="L329">    inputStream.readFully(MAGIC_BUFFER, 0, 6);</span>
+<span class="nc" id="L330">    return Arrays.equals(MAGIC_BUFFER, HoodieLogFormat.MAGIC);</span>
+  }
+
+  @Override
+  public HoodieLogBlock next() {
+    try {
+      // hasNext() must be called before next()
+<span class="nc" id="L337">      return readBlock();</span>
+<span class="nc" id="L338">    } catch (IOException io) {</span>
+<span class="nc" id="L339">      throw new HoodieIOException(&quot;IOException when reading logblock from log file &quot; + logFile, io);</span>
+    }
+  }
+
+  /**
+   * hasPrev is not idempotent.
+   */
+  @Override
+  public boolean hasPrev() {
+    try {
+<span class="nc bnc" id="L349" title="All 2 branches missed.">      if (!this.reverseReader) {</span>
+<span class="nc" id="L350">        throw new HoodieNotSupportedException(&quot;Reverse log reader has not been enabled&quot;);</span>
+      }
+<span class="nc" id="L352">      reverseLogFilePosition = lastReverseLogFilePosition;</span>
+<span class="nc" id="L353">      reverseLogFilePosition -= Long.BYTES;</span>
+<span class="nc" id="L354">      lastReverseLogFilePosition = reverseLogFilePosition;</span>
+<span class="nc" id="L355">      inputStream.seek(reverseLogFilePosition);</span>
+<span class="nc" id="L356">    } catch (Exception e) {</span>
+      // Either reached EOF while reading backwards or an exception
+<span class="nc" id="L358">      return false;</span>
+<span class="nc" id="L359">    }</span>
+<span class="nc" id="L360">    return true;</span>
+  }
+
+  /**
+   * This is a reverse iterator Note: At any point, an instance of HoodieLogFileReader should either iterate reverse
+   * (prev) or forward (next). Doing both in the same instance is not supported WARNING : Every call to prev() should be
+   * preceded with hasPrev()
+   */
+  @Override
+  public HoodieLogBlock prev() throws IOException {
+
+<span class="nc bnc" id="L371" title="All 2 branches missed.">    if (!this.reverseReader) {</span>
+<span class="nc" id="L372">      throw new HoodieNotSupportedException(&quot;Reverse log reader has not been enabled&quot;);</span>
+    }
+<span class="nc" id="L374">    long blockSize = inputStream.readLong();</span>
+<span class="nc" id="L375">    long blockEndPos = inputStream.getPos();</span>
+    // blocksize should read everything about a block including the length as well
+    try {
+<span class="nc" id="L378">      inputStream.seek(reverseLogFilePosition - blockSize);</span>
+<span class="nc" id="L379">    } catch (Exception e) {</span>
+      // this could be a corrupt block
+<span class="nc" id="L381">      inputStream.seek(blockEndPos);</span>
+<span class="nc" id="L382">      throw new CorruptedLogFileException(&quot;Found possible corrupted block, cannot read log file in reverse, &quot;</span>
+          + &quot;fallback to forward reading of logfile&quot;);
+<span class="nc" id="L384">    }</span>
+<span class="nc" id="L385">    boolean hasNext = hasNext();</span>
+<span class="nc" id="L386">    reverseLogFilePosition -= blockSize;</span>
+<span class="nc" id="L387">    lastReverseLogFilePosition = reverseLogFilePosition;</span>
+<span class="nc" id="L388">    return next();</span>
+  }
+
+  /**
+   * Reverse pointer, does not read the block. Return the current position of the log file (in reverse) If the pointer
+   * (inputstream) is moved in any way, it is the job of the client of this class to seek/reset it back to the file
+   * position returned from the method to expect correct results
+   */
+  public long moveToPrev() throws IOException {
+
+<span class="nc bnc" id="L398" title="All 2 branches missed.">    if (!this.reverseReader) {</span>
+<span class="nc" id="L399">      throw new HoodieNotSupportedException(&quot;Reverse log reader has not been enabled&quot;);</span>
+    }
+<span class="nc" id="L401">    inputStream.seek(lastReverseLogFilePosition);</span>
+<span class="nc" id="L402">    long blockSize = inputStream.readLong();</span>
+    // blocksize should be everything about a block including the length as well
+<span class="nc" id="L404">    inputStream.seek(reverseLogFilePosition - blockSize);</span>
+<span class="nc" id="L405">    reverseLogFilePosition -= blockSize;</span>
+<span class="nc" id="L406">    lastReverseLogFilePosition = reverseLogFilePosition;</span>
+<span class="nc" id="L407">    return reverseLogFilePosition;</span>
+  }
+
+  @Override
+  public void remove() {
+<span class="nc" id="L412">    throw new UnsupportedOperationException(&quot;Remove not supported for HoodieLogFileReader&quot;);</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

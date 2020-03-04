@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>Option.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.util</a> &gt; <span class="el_source">Option.java</span></div><h1>Option.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.util;
+
+import java.io.Serializable;
+import java.util.NoSuchElementException;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.Supplier;
+
+/**
+ * Provides functionality same as java.util.Optional but is also made Serializable. Additional APIs are provided to
+ * convert to/from java.util.Optional
+ */
+public final class Option&lt;T&gt; implements Serializable {
+
+  private static final long serialVersionUID = 0L;
+
+<span class="nc" id="L37">  private static final Option&lt;?&gt; NULL_VAL = new Option&lt;&gt;();</span>
+
+  private final T val;
+
+  /**
+   * Convert to java Optional.
+   */
+  public Optional&lt;T&gt; toJavaOptional() {
+<span class="nc" id="L45">    return Optional.ofNullable(val);</span>
+  }
+
+  /**
+   * Convert from java.util.Optional.
+   * 
+   * @param v java.util.Optional object
+   * @param &lt;T&gt; type of the value stored in java.util.Optional object
+   * @return Option
+   */
+  public static &lt;T&gt; Option&lt;T&gt; fromJavaOptional(Optional&lt;T&gt; v) {
+<span class="nc" id="L56">    return Option.ofNullable(v.orElse(null));</span>
+  }
+
+<span class="nc" id="L59">  private Option() {</span>
+<span class="nc" id="L60">    this.val = null;</span>
+<span class="nc" id="L61">  }</span>
+
+<span class="nc" id="L63">  private Option(T val) {</span>
+<span class="nc bnc" id="L64" title="All 2 branches missed.">    if (null == val) {</span>
+<span class="nc" id="L65">      throw new NullPointerException(&quot;Expected a non-null value. Got null&quot;);</span>
+    }
+<span class="nc" id="L67">    this.val = val;</span>
+<span class="nc" id="L68">  }</span>
+
+  public static &lt;T&gt; Option&lt;T&gt; empty() {
+<span class="nc" id="L71">    return (Option&lt;T&gt;) NULL_VAL;</span>
+  }
+
+  public static &lt;T&gt; Option&lt;T&gt; of(T value) {
+<span class="nc" id="L75">    return new Option&lt;&gt;(value);</span>
+  }
+
+  public static &lt;T&gt; Option&lt;T&gt; ofNullable(T value) {
+<span class="nc bnc" id="L79" title="All 2 branches missed.">    return null == value ? empty() : of(value);</span>
+  }
+
+  public boolean isPresent() {
+<span class="nc bnc" id="L83" title="All 2 branches missed.">    return null != val;</span>
+  }
+
+  public T get() {
+<span class="nc bnc" id="L87" title="All 2 branches missed.">    if (null == val) {</span>
+<span class="nc" id="L88">      throw new NoSuchElementException(&quot;No value present in Option&quot;);</span>
+    }
+<span class="nc" id="L90">    return val;</span>
+  }
+
+  public void ifPresent(Consumer&lt;? super T&gt; consumer) {
+<span class="nc bnc" id="L94" title="All 2 branches missed.">    if (val != null) {</span>
+      // process the value
+<span class="nc" id="L96">      consumer.accept(val);</span>
+    }
+<span class="nc" id="L98">  }</span>
+
+  public &lt;U&gt; Option&lt;U&gt; map(Function&lt;? super T, ? extends U&gt; mapper) {
+<span class="nc bnc" id="L101" title="All 2 branches missed.">    if (!isPresent()) {</span>
+<span class="nc" id="L102">      return empty();</span>
+    } else {
+<span class="nc" id="L104">      return Option.ofNullable(mapper.apply(val));</span>
+    }
+  }
+
+  public T orElse(T other) {
+<span class="nc bnc" id="L109" title="All 2 branches missed.">    return val != null ? val : other;</span>
+  }
+
+  public T orElseGet(Supplier&lt;? extends T&gt; other) {
+<span class="nc bnc" id="L113" title="All 2 branches missed.">    return val != null ? val : other.get();</span>
+  }
+
+  public &lt;X extends Throwable&gt; T orElseThrow(Supplier&lt;? extends X&gt; exceptionSupplier) throws X {
+<span class="nc bnc" id="L117" title="All 2 branches missed.">    if (val != null) {</span>
+<span class="nc" id="L118">      return val;</span>
+    } else {
+<span class="nc" id="L120">      throw exceptionSupplier.get();</span>
+    }
+  }
+
+  @Override
+  public boolean equals(Object o) {
+<span class="nc bnc" id="L126" title="All 2 branches missed.">    if (this == o) {</span>
+<span class="nc" id="L127">      return true;</span>
+    }
+<span class="nc bnc" id="L129" title="All 4 branches missed.">    if (o == null || getClass() != o.getClass()) {</span>
+<span class="nc" id="L130">      return false;</span>
+    }
+<span class="nc" id="L132">    Option&lt;?&gt; option = (Option&lt;?&gt;) o;</span>
+<span class="nc" id="L133">    return Objects.equals(val, option.val);</span>
+  }
+
+  @Override
+  public int hashCode() {
+<span class="nc" id="L138">    return Objects.hash(val);</span>
+  }
+
+  @Override
+  public String toString() {
+<span class="nc" id="L143">    return &quot;Option{val=&quot; + val + '}';</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

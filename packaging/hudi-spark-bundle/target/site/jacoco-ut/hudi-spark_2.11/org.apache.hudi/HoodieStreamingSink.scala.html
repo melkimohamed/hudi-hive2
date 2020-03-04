@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieStreamingSink.scala</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-spark_2.11</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi</a> &gt; <span class="el_source">HoodieStreamingSink.scala</span></div><h1>HoodieStreamingSink.scala</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.hudi
+
+import org.apache.hudi.exception.HoodieCorruptedDataException
+import org.apache.log4j.LogManager
+import org.apache.spark.sql.execution.streaming.Sink
+import org.apache.spark.sql.streaming.OutputMode
+import org.apache.spark.sql.{DataFrame, SQLContext, SaveMode}
+
+import scala.util.{Failure, Success, Try}
+
+<span class="nc" id="L27">class HoodieStreamingSink(sqlContext: SQLContext,</span>
+<span class="nc" id="L28">                          options: Map[String, String],</span>
+                          partitionColumns: Seq[String],
+                          outputMode: OutputMode)
+<span class="nc" id="L31">  extends Sink</span>
+    with Serializable {
+<span class="nc" id="L33">  @volatile private var latestBatchId = -1L</span>
+
+<span class="nc" id="L35">  private val log = LogManager.getLogger(classOf[HoodieStreamingSink])</span>
+
+<span class="nc" id="L37">  private val retryCnt = options(DataSourceWriteOptions.STREAMING_RETRY_CNT_OPT_KEY).toInt</span>
+<span class="nc" id="L38">  private val retryIntervalMs = options(DataSourceWriteOptions.STREAMING_RETRY_INTERVAL_MS_OPT_KEY).toLong</span>
+<span class="nc" id="L39">  private val ignoreFailedBatch = options(DataSourceWriteOptions.STREAMING_IGNORE_FAILED_BATCH_OPT_KEY).toBoolean</span>
+
+<span class="nc" id="L41">  private val mode =</span>
+<span class="nc bnc" id="L42" title="All 6 branches missed.">    if (outputMode == OutputMode.Append()) {</span>
+<span class="nc" id="L43">      SaveMode.Append</span>
+    } else {
+<span class="nc" id="L45">      SaveMode.Overwrite</span>
+    }
+
+  override def addBatch(batchId: Long, data: DataFrame): Unit = {
+<span class="nc" id="L49">    retry(retryCnt, retryIntervalMs)(</span>
+<span class="nc bnc" id="L50" title="All 6 branches missed.">      Try(</span>
+<span class="nc bnc" id="L51" title="All 2 branches missed.">        HoodieSparkSqlWriter.write(</span>
+<span class="nc" id="L52">          sqlContext,</span>
+<span class="nc" id="L53">          mode,</span>
+<span class="nc" id="L54">          options,</span>
+<span class="nc" id="L55">          data)</span>
+      ) match {
+<span class="nc bnc" id="L57" title="All 6 branches missed.">        case Success((true, commitOps)) =&gt;</span>
+<span class="nc" id="L58">          log.info(s&quot;Micro batch id=$batchId succeeded&quot;</span>
+<span class="nc" id="L59">            + (commitOps.isPresent match {</span>
+<span class="nc bnc" id="L60" title="All 2 branches missed.">                case true =&gt; s&quot; for commit=${commitOps.get()}&quot;</span>
+<span class="nc" id="L61">                case _ =&gt; s&quot; with no new commits&quot;</span>
+            }))
+<span class="nc" id="L63">          Success((true, commitOps))</span>
+<span class="nc bnc" id="L64" title="All 2 branches missed.">        case Failure(e) =&gt;</span>
+          // clean up persist rdds in the write process
+<span class="nc" id="L66">          data.sparkSession.sparkContext.getPersistentRDDs</span>
+<span class="nc bnc" id="L67" title="All 2 branches missed.">            .foreach {</span>
+<span class="nc" id="L68">              case (id, rdd) =&gt;</span>
+<span class="nc" id="L69">                rdd.unpersist()</span>
+            }
+<span class="nc" id="L71">          log.error(s&quot;Micro batch id=$batchId threw following expection: &quot;, e)</span>
+<span class="nc bnc" id="L72" title="All 2 branches missed.">          if (ignoreFailedBatch) {</span>
+<span class="nc" id="L73">            log.info(s&quot;Ignore the exception and move on streaming as per &quot; +</span>
+<span class="nc" id="L74">              s&quot;${DataSourceWriteOptions.STREAMING_IGNORE_FAILED_BATCH_OPT_KEY} configuration&quot;)</span>
+<span class="nc" id="L75">            Success((true, None))</span>
+          } else {
+<span class="nc bnc" id="L77" title="All 2 branches missed.">            if (retryCnt &gt; 1) log.info(s&quot;Retrying the failed micro batch id=$batchId ...&quot;)</span>
+<span class="nc" id="L78">            Failure(e)</span>
+          }
+<span class="nc bnc" id="L80" title="All 2 branches missed.">        case Success((false, commitOps)) =&gt;</span>
+<span class="nc" id="L81">          log.error(s&quot;Micro batch id=$batchId ended up with errors&quot;</span>
+<span class="nc" id="L82">            + (commitOps.isPresent match {</span>
+<span class="nc bnc" id="L83" title="All 2 branches missed.">              case true =&gt;  s&quot; for commit=${commitOps.get()}&quot;</span>
+<span class="nc" id="L84">              case _ =&gt; s&quot;&quot;</span>
+            }))
+<span class="nc bnc" id="L86" title="All 2 branches missed.">          if (ignoreFailedBatch) {</span>
+<span class="nc" id="L87">            log.info(s&quot;Ignore the errors and move on streaming as per &quot; +</span>
+<span class="nc" id="L88">              s&quot;${DataSourceWriteOptions.STREAMING_IGNORE_FAILED_BATCH_OPT_KEY} configuration&quot;)</span>
+<span class="nc" id="L89">            Success((true, None))</span>
+          } else {
+<span class="nc bnc" id="L91" title="All 2 branches missed.">            if (retryCnt &gt; 1) log.info(s&quot;Retrying the failed micro batch id=$batchId ...&quot;)</span>
+<span class="nc" id="L92">            Failure(new HoodieCorruptedDataException(s&quot;Micro batch id=$batchId ended up with errors&quot;))</span>
+          }
+      }
+    ) match {
+<span class="nc bnc" id="L96" title="All 2 branches missed.">      case Failure(e) =&gt;</span>
+<span class="nc bnc" id="L97" title="All 2 branches missed.">        if (!ignoreFailedBatch) {</span>
+<span class="nc" id="L98">          log.error(s&quot;Micro batch id=$batchId threw following expections,&quot; +</span>
+<span class="nc" id="L99">            s&quot;aborting streaming app to avoid data loss: &quot;, e)</span>
+          // spark sometimes hangs upon exceptions and keep on hold of the executors
+          // this is to force exit upon errors / exceptions and release all executors
+          // will require redeployment / supervise mode to restart the streaming
+<span class="nc" id="L103">          System.exit(1)</span>
+        }
+<span class="nc bnc" id="L105" title="All 2 branches missed.">      case Success(_) =&gt;</span>
+<span class="nc" id="L106">        log.info(s&quot;Micro batch id=$batchId succeeded&quot;)</span>
+    }
+  }
+
+<span class="nc" id="L110">  override def toString: String = s&quot;HoodieStreamingSink[${options(&quot;path&quot;)}]&quot;</span>
+
+  @annotation.tailrec
+  private def retry[T](n: Int, waitInMillis: Long)(fn: =&gt; Try[T]): Try[T] = {
+<span class="nc" id="L114">    fn match {</span>
+<span class="nc bnc" id="L115" title="All 2 branches missed.">      case x: util.Success[T] =&gt; x</span>
+<span class="nc bnc" id="L116" title="All 2 branches missed.">      case _ if n &gt; 1 =&gt;</span>
+<span class="nc" id="L117">        Thread.sleep(waitInMillis)</span>
+<span class="nc" id="L118">        retry(n - 1, waitInMillis * 2)(fn)</span>
+<span class="nc" id="L119">      case f =&gt; f</span>
+    }
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

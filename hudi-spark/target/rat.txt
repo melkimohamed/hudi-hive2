@@ -1,0 +1,55 @@
+
+*****************************************************
+Summary
+-------
+Generated at: 2020-03-04T21:53:54+01:00
+
+Notes: 0
+Binaries: 0
+Archives: 0
+Standards: 29
+
+Apache Licensed: 0
+Generated Documents: 0
+
+JavaDocs are generated, thus a license header is optional.
+Generated files do not require license headers.
+
+0 Unknown Licenses
+
+*****************************************************
+  Files with Apache License headers will be marked AL
+  Binary files (which do not require any license headers) will be marked B
+  Compressed archives will be marked A
+  Notices, licenses etc. will be marked N
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/pom.xml
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/run_hoodie_app.sh
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/src/main/java/org/apache/hudi/DataSourceUtils.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/src/main/java/org/apache/hudi/HoodieDataSourceHelpers.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/src/main/java/org/apache/hudi/QuickstartUtils.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/src/main/java/org/apache/hudi/keygen/ComplexKeyGenerator.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/src/main/java/org/apache/hudi/keygen/GlobalDeleteKeyGenerator.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/src/main/java/org/apache/hudi/keygen/KeyGenerator.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/src/main/java/org/apache/hudi/keygen/NonpartitionedKeyGenerator.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/src/main/java/org/apache/hudi/keygen/SimpleKeyGenerator.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/src/main/java/org/apache/hudi/payload/AWSDmsAvroPayload.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/src/main/resources/META-INF/services/org.apache.spark.sql.sources.DataSourceRegister
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/src/main/scala/org/apache/hudi/AvroConversionHelper.scala
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/src/main/scala/org/apache/hudi/AvroConversionUtils.scala
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/src/main/scala/org/apache/hudi/DataSourceOptions.scala
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/src/main/scala/org/apache/hudi/DefaultSource.scala
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/src/main/scala/org/apache/hudi/HoodieSparkSqlWriter.scala
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/src/main/scala/org/apache/hudi/HoodieStreamingSink.scala
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/src/main/scala/org/apache/hudi/IncrementalRelation.scala
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/src/main/scala/org/apache/hudi/package.scala
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/src/test/java/DataSourceTestUtils.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/src/test/java/DataSourceUtilsTest.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/src/test/java/HoodieJavaApp.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/src/test/java/HoodieJavaStreamingApp.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/src/test/resources/log4j-surefire-quiet.properties
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/src/test/resources/log4j-surefire.properties
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/src/test/scala/TestDataSource.scala
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/src/test/scala/TestDataSourceDefaults.scala
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-spark/src/test/scala/org/apache/hudi/HoodieSparkSqlWriterSuite.scala
+ 
+*****************************************************

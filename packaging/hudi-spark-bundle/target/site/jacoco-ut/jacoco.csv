@@ -1,0 +1,489 @@
+GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.log.block,HoodieAvroDataBlock,539,0,30,0,123,0,27,0,12,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.log.block,HoodieDeleteBlock,145,0,14,0,33,0,13,0,6,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.log.block,HoodieLogBlockVersion,9,0,0,0,4,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.log.block,HoodieDeleteBlockVersion,4,0,0,0,2,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.log.block,HoodieCommandBlock.HoodieCommandBlockTypeEnum,14,0,0,0,2,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.log.block,HoodieCommandBlockVersion,4,0,0,0,2,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.log.block,HoodieLogBlock.HoodieLogBlockContentLocation,27,0,0,0,10,0,5,0,5,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.log.block,HoodieAvroDataBlockVersion,11,0,2,0,5,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.log.block,HoodieLogBlock.FooterMetadataType,4,0,0,0,1,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.log.block,HoodieLogBlock,236,0,8,0,63,0,20,0,16,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.log.block,HoodieCommandBlock,54,0,0,0,11,0,6,0,6,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.log.block,HoodieLogBlock.HeaderMetadataType,44,0,0,0,2,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.log.block,HoodieLogBlock.HoodieLogBlockType,44,0,0,0,2,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.log.block,HoodieCorruptBlock,42,0,4,0,8,0,6,0,4,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common,HoodieCleanStat.Builder,57,0,2,0,15,0,9,0,8,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common,HoodieJsonPayload,121,0,2,0,25,0,11,0,10,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common,HoodieRollbackStat.Builder,77,0,2,0,11,0,10,0,9,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common,HoodieCleanStat,84,0,0,0,16,0,9,0,9,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common,SerializableConfiguration,75,0,0,0,17,0,8,0,8,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common,HoodieRollbackStat,31,0,0,0,11,0,6,0,6,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,NumericUtils,56,0,2,0,6,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,FSUtils,1186,0,84,0,192,0,101,0,59,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,SerializationUtils.KryoInstantiator,21,0,0,0,5,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,FileIOUtils,125,0,10,0,29,0,14,0,9,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,TimelineDiffHelper,185,0,20,0,36,0,18,0,8,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,NoOpConsistencyGuard,7,0,0,0,5,0,5,0,5,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,ObjectSizeCalculator.CurrentLayout,3,0,0,0,1,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,ConsistencyGuardConfig.Builder,126,0,8,0,23,0,12,0,8,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,DefaultSizeEstimator,6,0,0,0,2,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,CompactionUtils,309,0,12,0,60,0,23,0,17,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,ReflectionUtils,113,0,2,0,24,0,10,0,9,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,SerializationUtils,26,0,2,0,7,0,5,0,4,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,SpillableMapUtils,178,0,4,0,38,0,11,0,9,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,ParquetUtils.RecordKeysFilterFunction,12,0,0,0,4,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,HoodieTimer,33,0,2,0,7,0,4,0,3,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,ConsistencyGuardConfig,39,0,0,0,10,0,7,0,7,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,ObjectSizeCalculator.ArrayElementsVisitor,29,0,4,0,7,0,4,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,AvroUtils,246,0,6,0,46,0,22,0,19,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,HoodieTimer.TimeInfo,26,0,0,0,8,0,4,0,4,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,TypedProperties,138,0,14,0,25,0,21,0,14,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,Option,159,0,24,0,37,0,30,0,18,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,StringUtils,89,0,16,0,14,0,17,0,9,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,SerializationUtils.KryoSerializerInstance,53,0,0,0,13,0,3,0,3,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,HoodieAvroUtils,484,0,24,0,97,0,32,0,20,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,HoodieRecordSizeEstimator,34,0,2,0,8,0,4,0,3,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,ObjectSizeCalculator,360,0,53,0,81,0,39,0,12,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,NetworkUtils,36,0,2,0,11,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,BufferedRandomAccessFile,514,0,44,0,114,0,48,0,26,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,LogReaderUtils,118,0,12,0,28,0,11,0,5,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,RocksDBDAO,817,0,38,0,179,0,44,0,25,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,ConsistencyGuard.FileVisibility,24,0,0,0,2,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,TimelineDiffHelper.TimelineDiffResult,51,0,0,0,10,0,6,0,6,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,ConsistencyGuard,21,0,3,0,7,0,3,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,ParquetUtils,361,0,32,0,72,0,26,0,10,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,RocksDBDAO.new Logger() {...},18,0,0,0,3,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,DFSPropertiesConfiguration,191,0,14,0,41,0,15,0,8,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,ObjectSizeCalculator.ClassSizeInfo,150,0,10,0,30,0,8,0,3,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,ObjectSizeCalculator.new ObjectSizeCalculator.MemoryLayoutSpecification() {...},13,0,0,0,6,0,6,0,6,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,ObjectSizeCalculator.new ObjectSizeCalculator.MemoryLayoutSpecification() {...},13,0,0,0,6,0,6,0,6,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,ObjectSizeCalculator.new ObjectSizeCalculator.MemoryLayoutSpecification() {...},13,0,0,0,6,0,6,0,6,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,RocksDBSchemaHelper,195,0,0,0,22,0,16,0,16,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,CleanerUtils,108,0,4,0,24,0,8,0,6,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util,FailSafeConsistencyGuard,294,0,20,0,71,0,24,0,14,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.versioning.compaction,CompactionV2MigrationHandler,106,0,4,0,20,0,9,0,7,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.versioning.compaction,CompactionPlanMigrator,21,0,0,0,3,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.versioning.compaction,CompactionV1MigrationHandler,132,0,8,0,25,0,12,0,8,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util.collection.io.storage,SizeAwareDataOutputStream,78,0,0,0,21,0,8,0,8,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro,MercifulJsonConverter,262,0,22,0,52,0,32,0,21,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro,MercifulJsonConverter.HoodieJsonToAvroConversionException,32,0,0,0,6,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro,MercifulJsonConverter.new MercifulJsonConverter.JsonToAvroFieldProcessor() {...},17,0,0,0,3,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro,MercifulJsonConverter.new MercifulJsonConverter.JsonToAvroFieldProcessor() {...},34,0,2,0,7,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro,MercifulJsonConverter.new MercifulJsonConverter.JsonToAvroFieldProcessor() {...},39,0,2,0,7,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro,MercifulJsonConverter.new MercifulJsonConverter.JsonToAvroFieldProcessor() {...},27,0,0,0,5,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro,MercifulJsonConverter.new MercifulJsonConverter.JsonToAvroFieldProcessor() {...},11,0,0,0,2,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro,MercifulJsonConverter.new MercifulJsonConverter.JsonToAvroFieldProcessor() {...},36,0,2,0,5,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro,MercifulJsonConverter.new MercifulJsonConverter.JsonToAvroFieldProcessor() {...},30,0,4,0,6,0,4,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro,MercifulJsonConverter.new MercifulJsonConverter.JsonToAvroFieldProcessor() {...},30,0,4,0,6,0,4,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro,MercifulJsonConverter.new MercifulJsonConverter.JsonToAvroFieldProcessor() {...},10,0,0,0,2,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro,MercifulJsonConverter.new MercifulJsonConverter.JsonToAvroFieldProcessor() {...},30,0,4,0,6,0,4,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro,MercifulJsonConverter.new MercifulJsonConverter.JsonToAvroFieldProcessor() {...},30,0,4,0,6,0,4,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro,MercifulJsonConverter.new MercifulJsonConverter.JsonToAvroFieldProcessor() {...},17,0,2,0,4,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro,HoodieAvroWriteSupport,101,0,16,0,20,0,11,0,3,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro,MercifulJsonConverter.JsonToAvroFieldProcessor,21,0,2,0,4,0,2,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,HoodieRecordPayload,2,0,0,0,1,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,HoodieDeltaWriteStat,17,0,0,0,7,0,5,0,5,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,HoodieWriteStat.RuntimeStats,24,0,0,0,10,0,7,0,7,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,HoodieFileFormat,37,0,0,0,6,0,3,0,3,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,HoodieArchivedLogFile,20,0,0,0,5,0,3,0,3,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,WriteOperationType,129,0,8,0,21,0,10,0,3,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,HoodieLogFile.LogFileComparator,47,0,6,0,11,0,6,0,3,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,TimelineLayoutVersion,90,0,10,0,20,0,13,0,8,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,BaseAvroPayload,37,0,4,0,9,0,3,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,EmptyHoodieRecordPayload,12,0,0,0,7,0,5,0,5,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,OverwriteWithLatestAvroPayload,70,0,12,0,16,0,12,0,6,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,HoodieRecord,298,0,38,0,64,0,39,0,20,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,FileSlice,179,0,18,0,35,0,24,0,15,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,HoodieRollingStatMetadata.RollingStatsHashMap,55,0,4,0,13,0,4,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,HoodieWriteStat,305,0,8,0,76,0,49,0,45,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,HoodieBaseFile,107,0,6,0,27,0,16,0,13,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,HoodieLogFile,190,0,6,0,46,0,24,0,21,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,ActionType,54,0,0,0,2,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,HoodieFileGroup,280,0,12,0,50,0,33,0,27,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,HoodieCleaningPolicy,24,0,0,0,2,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,HoodieRollingStatMetadata,122,0,8,0,26,0,13,0,9,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,HoodieKey,88,0,10,0,18,0,11,0,6,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,HoodieCommitMetadata,867,0,100,0,177,0,88,0,38,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,HoodieTableType,24,0,0,0,2,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,HoodieFileGroupId,83,0,10,0,14,0,11,0,6,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,HoodieRollingStat,79,0,0,0,28,0,14,0,14,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,HoodiePartitionMetadata,210,0,10,0,45,0,12,0,7,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,HoodieAvroPayload,43,0,4,0,13,0,6,0,4,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,CompactionOperation,334,0,26,0,53,0,33,0,20,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.model,HoodieRecordLocation,90,0,10,0,18,0,11,0,6,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.bloom.filter,InternalDynamicBloomFilter,513,0,64,0,88,0,45,0,13,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.bloom.filter,BloomFilterUtils,32,0,0,0,4,0,4,0,4,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.bloom.filter,InternalFilter,165,0,16,0,41,0,15,0,7,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.bloom.filter,BloomFilterTypeCode,24,0,0,0,3,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.bloom.filter,SimpleBloomFilter,148,0,4,0,41,0,12,0,10,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.bloom.filter,BloomFilterFactory,73,0,8,0,11,0,7,0,3,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.bloom.filter,HoodieDynamicBoundedBloomFilter,104,0,0,0,27,0,6,0,6,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.log,HoodieMergedLogRecordScanner,185,0,2,0,32,0,9,0,8,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.log,AbstractHoodieLogRecordScanner,586,0,49,0,123,0,41,0,14,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.log,HoodieLogFormat.WriterBuilder,288,0,24,0,61,0,26,0,14,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.log,HoodieLogFormat.LogFormatVersion,9,0,0,0,4,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.log,HoodieLogFormatVersion,57,0,16,0,25,0,17,0,8,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.log,HoodieLogFormat,52,0,0,0,4,0,4,0,4,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.log,HoodieLogFormatWriter,484,0,24,0,98,0,26,0,14,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.log,HoodieUnMergedLogRecordScanner,24,0,0,0,6,0,3,0,3,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.log,HoodieLogFileReader,743,0,40,0,154,0,42,0,21,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.log,HoodieLogFormatWriter.new Thread() {...},29,0,2,0,7,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.log,HoodieLogFormatReader,165,0,14,0,41,0,16,0,9,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.timeline,HoodieArchivedTimeline.TimeRangeFilter,17,0,0,0,5,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.timeline,HoodieInstant.State,44,0,0,0,5,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.timeline,HoodieArchivedTimeline,295,0,20,0,60,0,29,0,17,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.timeline,HoodieDefaultTimeline,551,0,30,0,64,0,65,0,50,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.timeline,HoodieArchivedTimeline.ArchiveFileVersionComparator,40,0,2,0,9,0,4,0,3,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.timeline,HoodieInstant,411,0,66,0,76,0,50,0,17,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.timeline,HoodieActiveTimeline,1061,0,38,0,188,0,55,0,36,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro.model,HoodieActionInstant.Builder,336,0,18,0,58,0,25,0,16,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro.model,HoodieCleanerPlan.Builder,501,0,34,0,90,0,40,0,23,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro.model,HoodieWriteStat.Builder,1792,0,102,0,282,0,123,0,72,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro.model,HoodieArchivedMetaEntry.Builder,1595,0,136,0,298,0,137,0,69,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro.model,HoodieSavepointPartitionMetadata.Builder,232,0,12,0,42,0,18,0,12,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro.model,HoodieCompactionWriteStat.Builder,605,0,40,0,106,0,47,0,27,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro.model,HoodieCleanPartitionMetadata.Builder,544,0,30,0,90,0,39,0,24,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro.model,HoodieCommitMetadata.Builder,440,0,24,0,74,0,32,0,20,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro.model,HoodieCompactionMetadata.Builder,128,0,6,0,26,0,11,0,8,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro.model,HoodieCompactionPlan.Builder,336,0,18,0,58,0,25,0,16,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro.model,HoodieRestoreMetadata.Builder,550,0,30,0,89,0,39,0,24,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro.model,HoodieCompactionOperation.Builder,648,0,36,0,106,0,46,0,28,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro.model,HoodieCleanMetadata.Builder,660,0,36,0,104,0,46,0,28,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro.model,HoodieSavepointMetadata.Builder,550,0,30,0,89,0,39,0,24,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro.model,HoodieRollbackMetadata.Builder,660,0,36,0,104,0,46,0,28,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.avro.model,HoodieRollbackPartitionMetadata.Builder,336,0,18,0,58,0,25,0,16,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.versioning,MetadataMigrator,170,0,20,0,36,0,18,0,8,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.versioning,AbstractMigratorBase,6,0,0,0,3,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util.queue,IteratorBasedQueueProducer,27,0,2,0,9,0,4,0,3,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util.queue,BoundedInMemoryQueue.new DefaultSizeEstimator() {...},3,0,0,0,1,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util.queue,BoundedInMemoryExecutor,186,0,2,0,49,0,15,0,14,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util.queue,BoundedInMemoryQueueConsumer,19,0,2,0,6,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util.queue,FunctionBasedQueueProducer,22,0,0,0,8,0,3,0,3,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util.queue,BoundedInMemoryQueue.QueueIterator,43,0,8,0,9,0,7,0,3,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util.queue,BoundedInMemoryQueue,281,0,26,0,70,0,25,0,12,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,PriorityBasedFileSystemView,464,0,8,0,67,0,33,0,29,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,FileSystemViewManager,332,0,12,0,58,0,25,0,16,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,FileSystemViewStorageConfig.Builder,258,0,20,0,43,0,23,0,13,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,AbstractTableFileSystemView,1330,0,58,0,259,0,110,0,81,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,FileSystemViewStorageType,54,0,0,0,6,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,IncrementalTimelineSyncFileSystemView,964,0,31,0,175,0,59,0,43,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,SpillableMapBasedFileSystemView,155,0,0,0,27,0,10,0,10,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,RemoteHoodieTableFileSystemView.RequestMethod,24,0,0,0,2,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,RocksDbBasedFileSystemView,955,0,29,0,151,0,64,0,49,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,RemoteHoodieTableFileSystemView.new TypeReference() {...},6,0,0,0,1,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,RemoteHoodieTableFileSystemView.new TypeReference() {...},6,0,0,0,1,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,RemoteHoodieTableFileSystemView.new TypeReference() {...},6,0,0,0,1,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,RemoteHoodieTableFileSystemView.new TypeReference() {...},6,0,0,0,1,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,RemoteHoodieTableFileSystemView.new TypeReference() {...},6,0,0,0,1,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,RemoteHoodieTableFileSystemView.new TypeReference() {...},6,0,0,0,1,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,RemoteHoodieTableFileSystemView.new TypeReference() {...},6,0,0,0,1,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,RemoteHoodieTableFileSystemView.new TypeReference() {...},6,0,0,0,1,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,RemoteHoodieTableFileSystemView.new TypeReference() {...},6,0,0,0,1,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,HoodieTableFileSystemView,255,0,2,0,61,0,29,0,28,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,RemoteHoodieTableFileSystemView.new TypeReference() {...},6,0,0,0,1,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,RemoteHoodieTableFileSystemView.new TypeReference() {...},6,0,0,0,1,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,RemoteHoodieTableFileSystemView.new TypeReference() {...},6,0,0,0,1,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,RemoteHoodieTableFileSystemView.new TypeReference() {...},6,0,0,0,1,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,RemoteHoodieTableFileSystemView.new TypeReference() {...},6,0,0,0,1,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,RemoteHoodieTableFileSystemView.new TypeReference() {...},6,0,0,0,1,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,IncrementalTimelineSyncFileSystemView.DeltaApplyMode,24,0,0,0,2,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,RemoteHoodieTableFileSystemView,1021,0,8,0,173,0,38,0,34,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.view,FileSystemViewStorageConfig,92,0,0,0,20,0,12,0,12,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.storage,SizeAwareDataInputStream,63,0,0,0,17,0,7,0,7,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.storage,StorageSchemes,221,0,6,0,21,0,11,0,8,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util.collection,DiskBasedMap.ValueMetadata,40,0,0,0,11,0,6,0,6,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util.collection,LazyFileIterable,25,0,0,0,7,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util.collection,DiskBasedMap,394,0,14,0,89,0,32,0,25,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util.collection,Pair,149,0,18,0,25,0,19,0,10,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util.collection,ImmutableTriple,28,0,0,0,9,0,5,0,5,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util.collection,LazyFileIterable.LazyFileIterator.new Thread() {...},10,0,0,0,3,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util.collection,DiskBasedMap.FileEntry,47,0,0,0,14,0,7,0,7,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util.collection,ExternalSpillableMap,429,0,42,0,79,0,42,0,21,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util.collection,DiskBasedMap.new Thread() {...},56,0,6,0,17,0,5,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util.collection,Triple,173,0,24,0,25,0,20,0,8,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util.collection,RocksDBBasedMap,158,0,8,0,28,0,22,0,18,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util.collection,ExternalSpillableMap.IteratorWrapper,34,0,4,0,10,0,5,0,3,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util.collection,ImmutablePair,25,0,0,0,8,0,5,0,5,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.util.collection,LazyFileIterable.LazyFileIterator,115,0,6,0,31,0,11,0,8,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.versioning.clean,CleanMetadataMigrator,21,0,0,0,3,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.versioning.clean,CleanV2MigrationHandler,150,0,2,0,39,0,9,0,8,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.versioning.clean,CleanV1MigrationHandler,168,0,6,0,41,0,13,0,10,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table,TimelineLayout,35,0,0,0,6,0,3,0,3,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table,TimelineLayout.TimelineLayoutV0,2,0,0,0,1,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table,TimelineLayout.TimelineLayoutV1,34,0,2,0,7,0,5,0,4,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table,HoodieTimeline,436,0,18,0,41,0,44,0,35,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table,HoodieTableConfig,316,0,32,0,64,0,31,0,15,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table,HoodieTableMetaClient,861,0,63,0,155,0,79,0,46,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.exception,HoodieCorruptedDataException,9,0,0,0,4,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.exception,HoodieNotSupportedException,4,0,0,0,2,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.exception,HoodieSerializationException,20,0,0,0,8,0,4,0,4,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.exception,HoodieIOException,15,0,0,0,6,0,3,0,3,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.exception,HoodieRecordMissingException,24,0,0,0,3,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.exception,HoodieRemoteException,6,0,0,0,2,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.exception,HoodieIndexException,9,0,0,0,4,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.exception,MetadataNotFoundException,9,0,0,0,4,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.exception,InvalidHoodiePathException,15,0,0,0,2,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.exception,HoodieException,41,0,2,0,12,0,6,0,5,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.exception,CorruptedLogFileException,4,0,0,0,2,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.exception,TableNotFoundException,67,0,8,0,13,0,7,0,3,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.exception,HoodieKeyException,9,0,0,0,4,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.exception,SchemaCompatabilityException,13,0,0,0,6,0,3,0,3,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.exception,InvalidTableException,14,0,0,0,3,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.timeline.dto,InstantDTO,43,0,4,0,11,0,5,0,3,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.timeline.dto,FileStatusDTO,113,0,6,0,28,0,7,0,4,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.timeline.dto,LogFileDTO,46,0,2,0,10,0,4,0,3,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.timeline.dto,CompactionOpDTO,82,0,2,0,13,0,4,0,3,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.timeline.dto,FilePathDTO,39,0,4,0,11,0,5,0,3,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.timeline.dto,TimelineDTO,33,0,0,0,6,0,3,0,3,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.timeline.dto,FileGroupDTO,58,0,0,0,11,0,4,0,4,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.timeline.dto,BaseFileDTO,56,0,6,0,15,0,6,0,3,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.timeline.dto,FileSliceDTO,67,0,0,0,12,0,4,0,4,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.table.timeline.dto,FSPermissionDTO,47,0,4,0,12,0,5,0,3,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.config,DefaultHoodieConfig,24,0,4,0,10,0,6,0,4,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.io.storage,HoodieWrapperFileSystem,1587,0,22,0,282,0,142,0,131,0
+hudi-spark-bundle_2.11/hudi-common,org.apache.hudi.common.io.storage,SizeAwareFSDataOutputStream,65,0,0,0,20,0,5,0,5,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.index.bloom,HoodieBloomIndexCheckFunction,15,0,0,0,5,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.index.bloom,ListBasedGlobalIndexFileFilter,38,0,2,0,8,0,5,0,4,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.index.bloom,IntervalTreeBasedGlobalIndexFileFilter,112,0,2,0,23,0,7,0,6,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.index.bloom,HoodieBloomIndex,606,0,26,0,114,0,47,0,34,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.index.bloom,KeyRangeLookupTree,188,0,36,0,44,0,24,0,6,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.index.bloom,BloomIndexFileInfo,174,0,30,0,32,0,26,0,11,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.index.bloom,KeyRangeNode,164,0,2,0,40,0,20,0,19,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.index.bloom,HoodieGlobalBloomIndex,206,0,8,0,36,0,14,0,10,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.index.bloom,ListBasedIndexFileFilter,54,0,10,0,12,0,8,0,3,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.index.bloom,KeyLookupResult,21,0,0,0,8,0,4,0,4,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.index.bloom,BucketizedBloomCheckPartitioner,340,0,20,0,47,0,17,0,7,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.index.bloom,IntervalTreeBasedIndexFileFilter,124,0,8,0,25,0,10,0,6,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.index.bloom,HoodieBloomIndexCheckFunction.LazyKeyCheckIterator,115,0,10,0,29,0,9,0,4,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.io,HoodieWriteHandle,246,0,6,0,44,0,16,0,13,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.io,HoodieIOHandle,16,0,0,0,6,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.io,HoodieKeyLookupHandle.KeyLookupResult,27,0,0,0,10,0,5,0,5,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.io,HoodieRangeInfoHandle,20,0,0,0,4,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.io,HoodieCreateHandle,388,0,10,0,78,0,13,0,8,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.io,HoodieAppendHandle,795,0,24,0,154,0,27,0,15,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.io,HoodieKeyLookupHandle,254,0,10,0,40,0,10,0,5,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.io,HoodieReadHandle,37,0,0,0,8,0,5,0,5,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.io,HoodieMergeHandle,897,0,30,0,157,0,33,0,18,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.table,HoodieMergeOnReadTable.MergeOnReadUpsertPartitioner,295,0,26,0,51,0,23,0,10,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.table,HoodieCopyOnWriteTable.BucketInfo,34,0,0,0,6,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.table,HoodieCopyOnWriteTable.InsertBucket,34,0,0,0,6,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.table,WorkloadProfile,160,0,6,0,31,0,10,0,7,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.table,WorkloadStat,78,0,0,0,16,0,7,0,7,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.table,HoodieCopyOnWriteTable,922,0,46,0,171,0,58,0,35,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.table,HoodieCopyOnWriteTable.UpdateHandler,14,0,0,0,7,0,4,0,4,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.table,HoodieMergeOnReadTable,606,0,40,0,111,0,36,0,15,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.table,HoodieCopyOnWriteTable.PartitionCleanStat,86,0,4,0,19,0,6,0,4,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.table,HoodieCopyOnWriteTable.BucketType,24,0,0,0,2,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.table,HoodieCopyOnWriteTable.SmallFile,31,0,0,0,6,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.table,HoodieCommitArchiveLog,762,0,49,0,156,0,48,0,21,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.table,CleanHelper,612,0,72,0,117,0,53,0,17,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.table,HoodieCopyOnWriteTable.UpsertPartitioner,642,0,34,0,108,0,26,0,9,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.table,HoodieTable,549,0,23,0,105,0,47,0,35,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.table.compact.strategy,LogFileSizeBasedCompactionStrategy,73,0,2,0,10,0,6,0,5,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.table.compact.strategy,UnBoundedPartitionAwareCompactionStrategy,61,0,0,0,15,0,5,0,5,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.table.compact.strategy,DayBasedCompactionStrategy,119,0,6,0,21,0,13,0,10,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.table.compact.strategy,CompactionStrategy,116,0,6,0,21,0,9,0,6,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.table.compact.strategy,BoundedPartitionAwareCompactionStrategy,105,0,4,0,16,0,11,0,9,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.table.compact.strategy,UnBoundedCompactionStrategy,5,0,0,0,2,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.table.compact.strategy,BoundedIOCompactionStrategy,45,0,4,0,11,0,4,0,2,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.index,InMemoryHashIndex.new Function() {...},45,0,6,0,10,0,5,0,2,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.index,HoodieIndex.IndexType,44,0,0,0,2,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.index,HoodieIndex,46,0,5,0,10,0,7,0,3,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.index,InMemoryHashIndex.LocationTagFunction,42,0,4,0,11,0,4,0,2,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.index,InMemoryHashIndex,45,0,2,0,13,0,9,0,8,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.io.storage,HoodieStorageWriterFactory,85,0,4,0,16,0,5,0,3,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.io.storage,HoodieParquetConfig,45,0,0,0,16,0,8,0,8,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.io.storage,HoodieParquetWriter,152,0,2,0,31,0,7,0,6,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.execution,BulkInsertMapFunction,32,0,0,0,8,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.execution,CopyOnWriteLazyInsertIterable,118,0,12,0,24,0,15,0,9,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.execution,CopyOnWriteLazyInsertIterable.CopyOnWriteInsertHandler,127,0,12,0,19,0,11,0,5,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.execution,MergeOnReadLazyInsertIterable,13,0,0,0,3,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.execution,MergeOnReadLazyInsertIterable.MergeOnReadInsertHandler,90,0,4,0,12,0,4,0,2,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.execution,CopyOnWriteLazyInsertIterable.HoodieInsertValueGenResult,21,0,0,0,8,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.execution,SparkBoundedInMemoryExecutor,28,0,0,0,7,0,3,0,3,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.client.embedded,EmbeddedTimelineService,155,0,10,0,35,0,13,0,8,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.table.rollback,RollbackRequest.RollbackAction,34,0,0,0,4,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.table.rollback,RollbackHelper,489,0,28,0,92,0,25,0,10,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.table.rollback,RollbackRequest,62,0,0,0,15,0,9,0,9,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.metrics,MetricsReporter,3,0,0,0,1,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.metrics,MetricsGraphiteReporter,106,0,8,0,24,0,10,0,6,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.metrics,HoodieMetrics,567,0,58,0,104,0,46,0,17,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.metrics,InMemoryMetricsReporter,7,0,0,0,4,0,4,0,4,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.metrics,MetricsReporterType,34,0,0,0,2,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.metrics,JmxMetricsReporter,104,0,4,0,27,0,7,0,5,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.metrics,MetricsReporterFactory,49,0,4,0,13,0,6,0,3,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.metrics,Metrics,111,0,10,0,35,0,14,0,9,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.client,HoodieWriteClient,2327,0,103,0,450,0,124,0,72,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.client,AbstractHoodieClient,141,0,12,0,38,0,15,0,9,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.client,AbstractHoodieWriteClient.OperationType,84,0,0,0,9,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.client,CompactionAdminClient.CompactionValidationException,4,0,0,0,2,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.client,CompactionAdminClient.RenameInfo,15,0,0,0,6,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.client,HoodieReadClient,292,0,6,0,55,0,24,0,21,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.client,CompactionAdminClient,1277,0,74,0,210,0,76,0,39,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.client,WriteStatus,235,0,10,0,56,0,27,0,22,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.client,AbstractHoodieWriteClient,938,0,52,0,180,0,51,0,25,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.client,CompactionAdminClient.RenameOpResult,48,0,0,0,7,0,3,0,3,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.client,CompactionAdminClient.ValidationOpResult,9,0,0,0,3,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.client,HoodieCleanClient,324,0,20,0,65,0,20,0,10,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.table.compact,OperationResult,72,0,0,0,18,0,8,0,8,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.table.compact,HoodieMergeOnReadTableCompactor,593,0,20,0,90,0,24,0,14,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.exception,HoodieCommitException,9,0,0,0,4,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.exception,HoodieRollbackException,9,0,0,0,4,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.exception,HoodieCompactionException,9,0,0,0,4,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.exception,HoodieUpsertException,9,0,0,0,4,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.exception,HoodieInsertException,5,0,0,0,2,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.exception,HoodieSavepointException,9,0,0,0,4,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.exception,HoodieAppendException,9,0,0,0,4,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.exception,HoodieDependentSystemUnavailableException,19,0,0,0,3,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.index.hbase,DefaultHBaseQPSResourceAllocator,29,0,0,0,9,0,5,0,5,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.index.hbase,HBaseIndex,887,0,56,0,193,0,59,0,31,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.index.hbase,HBaseIndex.HbasePutBatchSizeCalculator,126,0,0,0,16,0,3,0,3,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.config,HoodieMemoryConfig,15,0,0,0,5,0,3,0,3,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.config,HoodieMetricsConfig,11,0,0,0,4,0,3,0,3,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.config,HoodieWriteConfig,638,0,0,0,120,0,106,0,106,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.config,HoodieIndexConfig,15,0,0,0,5,0,3,0,3,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.config,HoodieCompactionConfig,42,0,0,0,14,0,3,0,3,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.config,HoodieHBaseIndexConfig.Builder,369,0,24,0,70,0,35,0,23,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.config,HoodieIndexConfig.Builder,351,0,26,0,55,0,33,0,20,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.config,HoodieMemoryConfig.Builder,246,0,16,0,45,0,18,0,10,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.config,HoodieWriteConfig.Builder,649,0,52,0,109,0,53,0,27,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.config,HoodieStorageConfig.Builder,213,0,16,0,33,0,20,0,12,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.config,HoodieCompactionConfig.Builder,567,0,46,0,86,0,48,0,25,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.config,HoodieHBaseIndexConfig,14,0,0,0,5,0,3,0,3,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.config,HoodieStorageConfig,29,0,0,0,10,0,3,0,3,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.config,HoodieMetricsConfig.Builder,149,0,10,0,27,0,14,0,9,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.client.utils,LazyIterableIterator,86,0,8,0,33,0,11,0,7,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.client.utils,ClientUtils,20,0,0,0,4,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-client,org.apache.hudi.client.utils,ParquetReaderIterator,60,0,8,0,18,0,8,0,4,0
+hudi-spark-bundle_2.11/hudi-hadoop-mr,org.apache.hudi.hadoop.realtime,AbstractRealtimeRecordReader,971,0,61,0,158,0,56,0,19,0
+hudi-spark-bundle_2.11/hudi-hadoop-mr,org.apache.hudi.hadoop.realtime,RealtimeUnmergedRecordReader,166,0,2,0,33,0,12,0,11,0
+hudi-spark-bundle_2.11/hudi-hadoop-mr,org.apache.hudi.hadoop.realtime,RealtimeCompactedRecordReader,255,0,14,0,47,0,16,0,9,0
+hudi-spark-bundle_2.11/hudi-hadoop-mr,org.apache.hudi.hadoop.realtime,HoodieRealtimeRecordReader,77,0,2,0,19,0,11,0,10,0
+hudi-spark-bundle_2.11/hudi-hadoop-mr,org.apache.hudi.hadoop.realtime,HoodieParquetRealtimeInputFormat,515,0,24,0,93,0,31,0,19,0
+hudi-spark-bundle_2.11/hudi-hadoop-mr,org.apache.hudi.hadoop.realtime,HoodieParquetSerde,3,0,0,0,2,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-hadoop-mr,org.apache.hudi.hadoop.realtime,HoodieRealtimeFileSplit,154,0,4,0,34,0,12,0,10,0
+hudi-spark-bundle_2.11/hudi-hadoop-mr,com.uber.hoodie.hadoop,HoodieInputFormat,3,0,0,0,1,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-hadoop-mr,org.apache.hudi.hadoop,HoodieParquetInputFormat,626,0,50,0,121,0,38,0,13,0
+hudi-spark-bundle_2.11/hudi-hadoop-mr,org.apache.hudi.hadoop,SafeParquetRecordReaderWrapper,53,0,0,0,14,0,7,0,7,0
+hudi-spark-bundle_2.11/hudi-hadoop-mr,org.apache.hudi.hadoop,HoodieHiveUtil,133,0,10,0,27,0,12,0,7,0
+hudi-spark-bundle_2.11/hudi-hadoop-mr,org.apache.hudi.hadoop,InputPathHandler,171,0,12,0,38,0,14,0,8,0
+hudi-spark-bundle_2.11/hudi-hadoop-mr,org.apache.hudi.hadoop,HoodieROTablePathFilter,383,0,38,0,64,0,23,0,4,0
+hudi-spark-bundle_2.11/hudi-hadoop-mr,org.apache.hudi.hadoop,RecordReaderValueIterator,69,0,6,0,24,0,8,0,5,0
+hudi-spark-bundle_2.11/hudi-hadoop-mr,com.uber.hoodie.hadoop.realtime,HoodieRealtimeInputFormat,3,0,0,0,1,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-hive,org.apache.hudi.hive,HoodieHiveClient.PartitionEvent,21,0,0,0,6,0,3,0,3,0
+hudi-spark-bundle_2.11/hudi-hive,org.apache.hudi.hive,SchemaDifference,118,0,6,0,19,0,10,0,7,0
+hudi-spark-bundle_2.11/hudi-hive,org.apache.hudi.hive,HoodieHiveClient,1802,0,78,0,321,0,87,0,47,0
+hudi-spark-bundle_2.11/hudi-hive,org.apache.hudi.hive,HiveSyncTool,478,0,26,0,89,0,24,0,10,0
+hudi-spark-bundle_2.11/hudi-hive,org.apache.hudi.hive,SchemaDifference.Builder,62,0,0,0,14,0,5,0,5,0
+hudi-spark-bundle_2.11/hudi-hive,org.apache.hudi.hive,HoodieHiveSyncException,22,0,0,0,9,0,5,0,5,0
+hudi-spark-bundle_2.11/hudi-hive,org.apache.hudi.hive,NonPartitionedExtractor,7,0,0,0,2,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-hive,org.apache.hudi.hive,HiveSyncConfig,159,0,0,0,27,0,3,0,3,0
+hudi-spark-bundle_2.11/hudi-hive,org.apache.hudi.hive,MultiPartKeysValueExtractor,47,0,4,0,9,0,5,0,3,0
+hudi-spark-bundle_2.11/hudi-hive,org.apache.hudi.hive,HoodieHiveClient.PartitionEvent.PartitionEventType,24,0,0,0,2,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-hive,org.apache.hudi.hive,SlashEncodedDayPartitionValueExtractor,111,0,10,0,14,0,8,0,3,0
+hudi-spark-bundle_2.11/hudi-hive,org.apache.hudi.hive.util,SchemaUtil.new PrimitiveType.PrimitiveTypeNameConverter() {...},32,0,4,0,11,0,11,0,9,0
+hudi-spark-bundle_2.11/hudi-hive,org.apache.hudi.hive.util,SchemaUtil,998,0,122,0,186,0,81,0,19,0
+hudi-spark-bundle_2.11/hudi-hive,org.apache.hudi.hive.util,ColumnNameXLator,46,0,4,0,10,0,7,0,5,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.createConverterToAvro.new Serializable() {...},15,0,0,0,2,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionUtils.,173,0,4,0,18,0,11,0,9,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,HoodieDataSourceHelpers,70,0,4,0,12,0,7,0,5,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.createConverterToAvro.new Serializable() {...},42,0,4,0,11,0,4,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.createConverterToAvro.new Serializable() {...},25,0,0,0,3,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.createConverterToAvro.new Serializable() {...},15,0,0,0,2,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.createConverterToAvro.new Serializable() {...},14,0,2,0,2,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,HoodieSparkSqlWriter..anonfun.buildSyncConfig.new Serializable() {...},6,0,0,0,1,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.createConverterToAvro.new Serializable() {...},14,0,2,0,2,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,HoodieSparkSqlWriter..anonfun.buildSyncConfig.new Serializable() {...},11,0,0,0,1,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.createConverterToAvro.new Serializable() {...},26,0,4,0,4,0,4,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.createConverterToAvro.new Serializable() {...},7,0,0,0,1,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,HoodieSparkSqlWriter..anonfun.buildSyncConfig.new Serializable() {...},10,0,2,0,1,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.org.apache.hudi.AvroConversionHelper..createConverter.1.new Serializable() {...},7,0,0,0,1,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.org.apache.hudi.AvroConversionHelper..createConverter.1.new Serializable() {...},10,0,2,0,1,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionUtils,41,0,0,0,0,0,7,0,7,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,DataSourceWriteOptions,172,0,0,0,0,0,57,0,57,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,DataSourceUtils,438,0,30,0,89,0,33,0,18,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.createConverterToAvro.new Serializable() {...},24,0,2,0,6,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.createConverterToAvro.new Serializable() {...},62,0,4,0,11,0,4,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.org.apache.hudi.AvroConversionHelper..createConverter.1.10..anonfun.apply.new Serializable() {...},62,0,6,0,5,0,5,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper.,1477,0,204,0,109,0,108,0,6,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionUtils..anonfun.createDataFrame.1..anonfun.apply.new Serializable() {...},12,0,0,0,1,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper,12,0,0,0,0,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,package.AvroDataFrameWriter,17,0,0,0,3,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.org.apache.hudi.AvroConversionHelper..createConverter.1.11..anonfun.apply.new Serializable() {...},70,0,6,0,5,0,5,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,DataSourceReadOptions.,209,0,4,0,26,0,22,0,20,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,DataSourceWriteOptions.,412,0,4,0,62,0,62,0,60,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,QuickstartUtils,127,0,0,0,21,0,8,0,8,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,HoodieSparkSqlWriter..anonfun.new Serializable() {...},11,0,0,0,1,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,HoodieSparkSqlWriter..anonfun.new Serializable() {...},17,0,0,0,2,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,package,8,0,0,0,0,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionUtils..anonfun.new Serializable() {...},47,0,2,0,5,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionUtils..anonfun.new Serializable() {...},12,0,0,0,1,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,HoodieSparkSqlWriter.,1449,0,74,0,155,0,46,0,9,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,package.AvroDataFrameWriter..anonfun.avro.new Serializable() {...},11,0,0,0,1,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,IncrementalRelation..anonfun.new Serializable() {...},6,0,0,0,1,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,HoodieSparkSqlWriter,15,0,0,0,0,0,3,0,3,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,IncrementalRelation,434,0,12,0,59,0,22,0,16,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,IncrementalRelation..anonfun.new Serializable() {...},10,0,2,0,1,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,IncrementalRelation..anonfun.new Serializable() {...},13,0,2,0,1,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,IncrementalRelation..anonfun.new Serializable() {...},13,0,0,0,1,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,IncrementalRelation..anonfun.new Serializable() {...},15,0,2,0,1,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.createConverterToAvro.6..anonfun.apply.new Serializable() {...},9,0,0,0,1,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,IncrementalRelation..anonfun.new Serializable() {...},6,0,0,0,1,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,IncrementalRelation..anonfun.buildScan.new Serializable() {...},39,0,2,0,4,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,HoodieStreamingSink..anonfun.1..anonfun.new Serializable() {...},28,0,2,0,5,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,IncrementalRelation..anonfun.new Serializable() {...},14,0,2,0,1,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,IncrementalRelation..anonfun.buildScan.new Serializable() {...},7,0,0,0,1,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,package.,18,0,0,0,3,0,4,0,4,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,QuickstartUtils.DataGenerator,322,0,4,0,57,0,19,0,17,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,DataSourceReadOptions,52,0,0,0,0,0,17,0,17,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionUtils..anonfun.2..anonfun.apply.new Serializable() {...},12,0,0,0,1,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionUtils..anonfun.createDataFrame.new Serializable() {...},37,0,2,0,6,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionUtils..anonfun.createRddForDeletes.new Serializable() {...},23,0,0,0,1,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,HoodieStreamingSink..anonfun.1..anonfun.apply.new Serializable() {...},23,0,2,0,3,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,package.AvroDataFrameReader,17,0,0,0,3,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.createConverterToAvro.9..anonfun.apply.new Serializable() {...},41,0,4,0,2,0,4,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,HoodieSparkSqlWriter..anonfun.new Serializable() {...},33,0,0,0,5,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,HoodieSparkSqlWriter..anonfun.new Serializable() {...},6,0,0,0,1,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,HoodieSparkSqlWriter..anonfun.new Serializable() {...},11,0,0,0,1,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,HoodieSparkSqlWriter..anonfun.checkWriteStatus.new Serializable() {...},24,0,2,0,4,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,HoodieStreamingSink,278,0,16,0,28,0,19,0,11,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,HoodieSparkSqlWriter..anonfun.checkWriteStatus.new Serializable() {...},6,0,0,0,1,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.new Serializable() {...},29,0,0,0,6,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.new Serializable() {...},6,0,0,0,1,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.new Serializable() {...},49,0,2,0,3,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.createConverterToAvro.5..anonfun.apply.new Serializable() {...},46,0,2,0,5,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.new Serializable() {...},20,0,6,0,1,0,5,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,HoodieSparkSqlWriter..anonfun.toProperties.new Serializable() {...},16,0,0,0,1,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,DefaultSource,192,0,6,0,34,0,10,0,7,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,package.AvroDataFrameReader..anonfun.avro.new Serializable() {...},11,0,0,0,1,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.org.apache.hudi.AvroConversionHelper..createConverter.1.new Serializable() {...},38,0,2,0,7,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.org.apache.hudi.AvroConversionHelper..createConverter.1.new Serializable() {...},38,0,6,0,5,0,5,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.org.apache.hudi.AvroConversionHelper..createConverter.1.new Serializable() {...},61,0,6,0,12,0,5,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.org.apache.hudi.AvroConversionHelper..createConverter.1.new Serializable() {...},38,0,6,0,5,0,5,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.org.apache.hudi.AvroConversionHelper..createConverter.1.new Serializable() {...},77,0,8,0,12,0,6,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,HoodieStreamingSink..anonfun.new Serializable() {...},552,0,28,0,29,0,16,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.org.apache.hudi.AvroConversionHelper..createConverter.1.new Serializable() {...},20,0,6,0,1,0,5,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.org.apache.hudi.AvroConversionHelper..createConverter.1.new Serializable() {...},13,0,2,0,4,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.org.apache.hudi.AvroConversionHelper..createConverter.1.new Serializable() {...},34,0,2,0,5,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.org.apache.hudi.AvroConversionHelper..createConverter.1.new Serializable() {...},41,0,2,0,7,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.org.apache.hudi.AvroConversionHelper..createConverter.1.new Serializable() {...},30,0,2,0,4,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.org.apache.hudi.AvroConversionHelper..createConverter.1.new Serializable() {...},41,0,2,0,7,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.org.apache.hudi.AvroConversionHelper..createConverter.1.new Serializable() {...},20,0,2,0,7,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.org.apache.hudi.AvroConversionHelper..createConverter.1.new Serializable() {...},12,0,2,0,4,0,3,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,AvroConversionHelper..anonfun.createConverterToAvro.7..anonfun.apply.new Serializable() {...},9,0,0,0,1,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi,HoodieSparkSqlWriter..anonfun.checkWriteStatus.2..anonfun.apply.new Serializable() {...},36,0,0,0,2,0,2,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi.payload,AWSDmsAvroPayload,50,0,8,0,10,0,8,0,4,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi.keygen,KeyGenerator,6,0,0,0,3,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi.keygen,SimpleKeyGenerator,96,0,14,0,17,0,9,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi.keygen,NonpartitionedKeyGenerator,40,0,4,0,6,0,4,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi.keygen,GlobalDeleteKeyGenerator,133,0,10,0,21,0,7,0,2,0
+hudi-spark-bundle_2.11/hudi-spark_2.11,org.apache.hudi.keygen,ComplexKeyGenerator,244,0,22,0,38,0,15,0,4,0
+hudi-spark-bundle_2.11/hudi-timeline-service,org.apache.hudi.timeline.service.handlers,BaseFileHandler,112,0,0,0,18,0,9,0,9,0
+hudi-spark-bundle_2.11/hudi-timeline-service,org.apache.hudi.timeline.service.handlers,FileSliceHandler,142,0,0,0,24,0,13,0,13,0
+hudi-spark-bundle_2.11/hudi-timeline-service,org.apache.hudi.timeline.service.handlers,TimelineHandler,35,0,0,0,5,0,4,0,4,0
+hudi-spark-bundle_2.11/hudi-timeline-service,org.apache.hudi.timeline.service.handlers,Handler,13,0,0,0,5,0,1,0,1,0
+hudi-spark-bundle_2.11/hudi-timeline-service,org.apache.hudi.timeline.service,TimelineService,241,0,6,0,57,0,17,0,13,0
+hudi-spark-bundle_2.11/hudi-timeline-service,org.apache.hudi.timeline.service,FileSystemViewHandler.ViewHandler,177,0,10,0,39,0,7,0,2,0
+hudi-spark-bundle_2.11/hudi-timeline-service,org.apache.hudi.timeline.service,FileSystemViewHandler,837,0,18,0,174,0,38,0,29,0
+hudi-spark-bundle_2.11/hudi-timeline-service,org.apache.hudi.timeline.service,TimelineService.Config,28,0,0,0,12,0,1,0,1,0

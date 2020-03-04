@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>RollbackRequest.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-client</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.table.rollback</a> &gt; <span class="el_source">RollbackRequest.java</span></div><h1>RollbackRequest.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.table.rollback;
+
+import org.apache.hudi.common.table.timeline.HoodieInstant;
+import org.apache.hudi.common.util.Option;
+
+/**
+ * Request for performing one rollback action.
+ */
+public class RollbackRequest {
+
+  /**
+   * Rollback Action Types.
+   */
+<span class="nc" id="L32">  public enum RollbackAction {</span>
+<span class="nc" id="L33">    DELETE_DATA_FILES_ONLY,</span>
+<span class="nc" id="L34">    DELETE_DATA_AND_LOG_FILES,</span>
+<span class="nc" id="L35">    APPEND_ROLLBACK_BLOCK</span>
+  }
+
+  /**
+   * Partition path that needs to be rolled-back.
+   */
+  private final String partitionPath;
+
+  /**
+   * Rollback Instant.
+   */
+  private final HoodieInstant rollbackInstant;
+
+  /**
+   * FileId in case of appending rollback block.
+   */
+  private final Option&lt;String&gt; fileId;
+
+  /**
+   * Latest base instant needed for appending rollback block instant.
+   */
+  private final Option&lt;String&gt; latestBaseInstant;
+
+  /**
+   * Rollback Action.
+   */
+  private final RollbackAction rollbackAction;
+
+  public RollbackRequest(String partitionPath, HoodieInstant rollbackInstant, Option&lt;String&gt; fileId,
+<span class="nc" id="L64">      Option&lt;String&gt; latestBaseInstant, RollbackAction rollbackAction) {</span>
+<span class="nc" id="L65">    this.partitionPath = partitionPath;</span>
+<span class="nc" id="L66">    this.rollbackInstant = rollbackInstant;</span>
+<span class="nc" id="L67">    this.fileId = fileId;</span>
+<span class="nc" id="L68">    this.latestBaseInstant = latestBaseInstant;</span>
+<span class="nc" id="L69">    this.rollbackAction = rollbackAction;</span>
+<span class="nc" id="L70">  }</span>
+
+  public static RollbackRequest createRollbackRequestWithDeleteDataFilesOnlyAction(String partitionPath,
+      HoodieInstant rollbackInstant) {
+<span class="nc" id="L74">    return new RollbackRequest(partitionPath, rollbackInstant, Option.empty(), Option.empty(),</span>
+        RollbackAction.DELETE_DATA_FILES_ONLY);
+  }
+
+  public static RollbackRequest createRollbackRequestWithDeleteDataAndLogFilesAction(String partitionPath,
+      HoodieInstant rollbackInstant) {
+<span class="nc" id="L80">    return new RollbackRequest(partitionPath, rollbackInstant, Option.empty(), Option.empty(),</span>
+        RollbackAction.DELETE_DATA_AND_LOG_FILES);
+  }
+
+  public static RollbackRequest createRollbackRequestWithAppendRollbackBlockAction(String partitionPath, String fileId,
+      String baseInstant, HoodieInstant rollbackInstant) {
+<span class="nc" id="L86">    return new RollbackRequest(partitionPath, rollbackInstant, Option.of(fileId), Option.of(baseInstant),</span>
+        RollbackAction.APPEND_ROLLBACK_BLOCK);
+  }
+
+  public String getPartitionPath() {
+<span class="nc" id="L91">    return partitionPath;</span>
+  }
+
+  public HoodieInstant getRollbackInstant() {
+<span class="nc" id="L95">    return rollbackInstant;</span>
+  }
+
+  public Option&lt;String&gt; getFileId() {
+<span class="nc" id="L99">    return fileId;</span>
+  }
+
+  public Option&lt;String&gt; getLatestBaseInstant() {
+<span class="nc" id="L103">    return latestBaseInstant;</span>
+  }
+
+  public RollbackAction getRollbackAction() {
+<span class="nc" id="L107">    return rollbackAction;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

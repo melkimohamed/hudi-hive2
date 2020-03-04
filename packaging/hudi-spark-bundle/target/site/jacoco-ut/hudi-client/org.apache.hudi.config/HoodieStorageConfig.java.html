@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieStorageConfig.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-client</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.config</a> &gt; <span class="el_source">HoodieStorageConfig.java</span></div><h1>HoodieStorageConfig.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.config;
+
+import javax.annotation.concurrent.Immutable;
+
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.Properties;
+
+/**
+ * Storage related config.
+ */
+@Immutable
+public class HoodieStorageConfig extends DefaultHoodieConfig {
+
+  public static final String PARQUET_FILE_MAX_BYTES = &quot;hoodie.parquet.max.file.size&quot;;
+<span class="nc" id="L35">  public static final String DEFAULT_PARQUET_FILE_MAX_BYTES = String.valueOf(120 * 1024 * 1024);</span>
+  public static final String PARQUET_BLOCK_SIZE_BYTES = &quot;hoodie.parquet.block.size&quot;;
+<span class="nc" id="L37">  public static final String DEFAULT_PARQUET_BLOCK_SIZE_BYTES = DEFAULT_PARQUET_FILE_MAX_BYTES;</span>
+  public static final String PARQUET_PAGE_SIZE_BYTES = &quot;hoodie.parquet.page.size&quot;;
+<span class="nc" id="L39">  public static final String DEFAULT_PARQUET_PAGE_SIZE_BYTES = String.valueOf(1 * 1024 * 1024);</span>
+  // used to size log files
+  public static final String LOGFILE_SIZE_MAX_BYTES = &quot;hoodie.logfile.max.size&quot;;
+<span class="nc" id="L42">  public static final String DEFAULT_LOGFILE_SIZE_MAX_BYTES = String.valueOf(1024 * 1024 * 1024); // 1 GB</span>
+  // used to size data blocks in log file
+  public static final String LOGFILE_DATA_BLOCK_SIZE_MAX_BYTES = &quot;hoodie.logfile.data.block.max.size&quot;;
+<span class="nc" id="L45">  public static final String DEFAULT_LOGFILE_DATA_BLOCK_SIZE_MAX_BYTES = String.valueOf(256 * 1024 * 1024); // 256 MB</span>
+  public static final String PARQUET_COMPRESSION_RATIO = &quot;hoodie.parquet.compression.ratio&quot;;
+  // Default compression ratio for parquet
+<span class="nc" id="L48">  public static final String DEFAULT_STREAM_COMPRESSION_RATIO = String.valueOf(0.1);</span>
+  public static final String PARQUET_COMPRESSION_CODEC = &quot;hoodie.parquet.compression.codec&quot;;
+  // Default compression codec for parquet
+  public static final String DEFAULT_PARQUET_COMPRESSION_CODEC = &quot;gzip&quot;;
+  public static final String LOGFILE_TO_PARQUET_COMPRESSION_RATIO = &quot;hoodie.logfile.to.parquet.compression.ratio&quot;;
+  // Default compression ratio for log file to parquet, general 3x
+<span class="nc" id="L54">  public static final String DEFAULT_LOGFILE_TO_PARQUET_COMPRESSION_RATIO = String.valueOf(0.35);</span>
+
+  private HoodieStorageConfig(Properties props) {
+<span class="nc" id="L57">    super(props);</span>
+<span class="nc" id="L58">  }</span>
+
+  public static HoodieStorageConfig.Builder newBuilder() {
+<span class="nc" id="L61">    return new Builder();</span>
+  }
+
+<span class="nc" id="L64">  public static class Builder {</span>
+
+<span class="nc" id="L66">    private final Properties props = new Properties();</span>
+
+    public Builder fromFile(File propertiesFile) throws IOException {
+<span class="nc" id="L69">      try (FileReader reader = new FileReader(propertiesFile)) {</span>
+<span class="nc" id="L70">        this.props.load(reader);</span>
+<span class="nc" id="L71">        return this;</span>
+      }
+    }
+
+    public Builder fromProperties(Properties props) {
+<span class="nc" id="L76">      this.props.putAll(props);</span>
+<span class="nc" id="L77">      return this;</span>
+    }
+
+    public Builder limitFileSize(long maxFileSize) {
+<span class="nc" id="L81">      props.setProperty(PARQUET_FILE_MAX_BYTES, String.valueOf(maxFileSize));</span>
+<span class="nc" id="L82">      return this;</span>
+    }
+
+    public Builder parquetBlockSize(int blockSize) {
+<span class="nc" id="L86">      props.setProperty(PARQUET_BLOCK_SIZE_BYTES, String.valueOf(blockSize));</span>
+<span class="nc" id="L87">      return this;</span>
+    }
+
+    public Builder parquetPageSize(int pageSize) {
+<span class="nc" id="L91">      props.setProperty(PARQUET_PAGE_SIZE_BYTES, String.valueOf(pageSize));</span>
+<span class="nc" id="L92">      return this;</span>
+    }
+
+    public Builder logFileDataBlockMaxSize(int dataBlockSize) {
+<span class="nc" id="L96">      props.setProperty(LOGFILE_DATA_BLOCK_SIZE_MAX_BYTES, String.valueOf(dataBlockSize));</span>
+<span class="nc" id="L97">      return this;</span>
+    }
+
+    public Builder logFileMaxSize(int logFileSize) {
+<span class="nc" id="L101">      props.setProperty(LOGFILE_SIZE_MAX_BYTES, String.valueOf(logFileSize));</span>
+<span class="nc" id="L102">      return this;</span>
+    }
+
+    public Builder parquetCompressionRatio(double parquetCompressionRatio) {
+<span class="nc" id="L106">      props.setProperty(PARQUET_COMPRESSION_RATIO, String.valueOf(parquetCompressionRatio));</span>
+<span class="nc" id="L107">      return this;</span>
+    }
+
+    public Builder parquetCompressionCodec(String parquetCompressionCodec) {
+<span class="nc" id="L111">      props.setProperty(PARQUET_COMPRESSION_CODEC, parquetCompressionCodec);</span>
+<span class="nc" id="L112">      return this;</span>
+    }
+
+    public Builder logFileToParquetCompressionRatio(double logFileToParquetCompressionRatio) {
+<span class="nc" id="L116">      props.setProperty(LOGFILE_TO_PARQUET_COMPRESSION_RATIO, String.valueOf(logFileToParquetCompressionRatio));</span>
+<span class="nc" id="L117">      return this;</span>
+    }
+
+    public HoodieStorageConfig build() {
+<span class="nc" id="L121">      HoodieStorageConfig config = new HoodieStorageConfig(props);</span>
+<span class="nc bnc" id="L122" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(PARQUET_FILE_MAX_BYTES), PARQUET_FILE_MAX_BYTES,</span>
+          DEFAULT_PARQUET_FILE_MAX_BYTES);
+<span class="nc bnc" id="L124" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(PARQUET_BLOCK_SIZE_BYTES), PARQUET_BLOCK_SIZE_BYTES,</span>
+          DEFAULT_PARQUET_BLOCK_SIZE_BYTES);
+<span class="nc bnc" id="L126" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(PARQUET_PAGE_SIZE_BYTES), PARQUET_PAGE_SIZE_BYTES,</span>
+          DEFAULT_PARQUET_PAGE_SIZE_BYTES);
+<span class="nc bnc" id="L128" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(LOGFILE_DATA_BLOCK_SIZE_MAX_BYTES),</span>
+          LOGFILE_DATA_BLOCK_SIZE_MAX_BYTES, DEFAULT_LOGFILE_DATA_BLOCK_SIZE_MAX_BYTES);
+<span class="nc bnc" id="L130" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(LOGFILE_SIZE_MAX_BYTES), LOGFILE_SIZE_MAX_BYTES,</span>
+          DEFAULT_LOGFILE_SIZE_MAX_BYTES);
+<span class="nc bnc" id="L132" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(PARQUET_COMPRESSION_RATIO), PARQUET_COMPRESSION_RATIO,</span>
+          DEFAULT_STREAM_COMPRESSION_RATIO);
+<span class="nc bnc" id="L134" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(PARQUET_COMPRESSION_CODEC), PARQUET_COMPRESSION_CODEC,</span>
+          DEFAULT_PARQUET_COMPRESSION_CODEC);
+<span class="nc bnc" id="L136" title="All 2 branches missed.">      setDefaultOnCondition(props, !props.containsKey(LOGFILE_TO_PARQUET_COMPRESSION_RATIO),</span>
+          LOGFILE_TO_PARQUET_COMPRESSION_RATIO, DEFAULT_LOGFILE_TO_PARQUET_COMPRESSION_RATIO);
+<span class="nc" id="L138">      return config;</span>
+    }
+  }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

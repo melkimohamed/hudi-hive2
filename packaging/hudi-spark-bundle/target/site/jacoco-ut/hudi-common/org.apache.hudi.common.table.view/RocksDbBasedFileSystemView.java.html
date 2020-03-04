@@ -1,0 +1,345 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>RocksDbBasedFileSystemView.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.table.view</a> &gt; <span class="el_source">RocksDbBasedFileSystemView.java</span></div><h1>RocksDbBasedFileSystemView.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.table.view;
+
+import org.apache.hudi.common.model.CompactionOperation;
+import org.apache.hudi.common.model.FileSlice;
+import org.apache.hudi.common.model.HoodieBaseFile;
+import org.apache.hudi.common.model.HoodieFileGroup;
+import org.apache.hudi.common.model.HoodieFileGroupId;
+import org.apache.hudi.common.model.HoodieLogFile;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.common.table.HoodieTimeline;
+import org.apache.hudi.common.util.Option;
+import org.apache.hudi.common.util.RocksDBDAO;
+import org.apache.hudi.common.util.RocksDBSchemaHelper;
+import org.apache.hudi.common.util.collection.Pair;
+
+import com.google.common.base.Preconditions;
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.Path;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+import java.io.Serializable;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+/**
+ * A file-system view implementation on top of embedded Rocks DB store. For each table : 3 column Family is added for
+ * storing (1) File-Slices and Data Files for View lookups (2) Pending compaction operations (3) Partitions tracked
+ *
+ * Fine-grained retrieval API to fetch latest file-slice and data-file which are common operations for
+ * ingestion/compaction are supported.
+ *
+ * TODO: vb The current implementation works in embedded server mode where each restarts blows away the view stores. To
+ * support view-state preservation across restarts, Hoodie timeline also needs to be stored inorder to detect changes to
+ * timeline across restarts.
+ */
+public class RocksDbBasedFileSystemView extends IncrementalTimelineSyncFileSystemView {
+
+<span class="nc" id="L61">  private static final Logger LOG = LogManager.getLogger(RocksDbBasedFileSystemView.class);</span>
+
+  private final FileSystemViewStorageConfig config;
+
+  private final RocksDBSchemaHelper schemaHelper;
+
+  private RocksDBDAO rocksDB;
+
+<span class="nc" id="L69">  private boolean closed = false;</span>
+
+  public RocksDbBasedFileSystemView(HoodieTableMetaClient metaClient, HoodieTimeline visibleActiveTimeline,
+      FileSystemViewStorageConfig config) {
+<span class="nc" id="L73">    super(config.isIncrementalTimelineSyncEnabled());</span>
+<span class="nc" id="L74">    this.config = config;</span>
+<span class="nc" id="L75">    this.schemaHelper = new RocksDBSchemaHelper(metaClient);</span>
+<span class="nc" id="L76">    this.rocksDB = new RocksDBDAO(metaClient.getBasePath(), config.getRocksdbBasePath());</span>
+<span class="nc" id="L77">    init(metaClient, visibleActiveTimeline);</span>
+<span class="nc" id="L78">  }</span>
+
+  public RocksDbBasedFileSystemView(HoodieTableMetaClient metaClient, HoodieTimeline visibleActiveTimeline,
+      FileStatus[] fileStatuses, FileSystemViewStorageConfig config) {
+<span class="nc" id="L82">    this(metaClient, visibleActiveTimeline, config);</span>
+<span class="nc" id="L83">    addFilesToView(fileStatuses);</span>
+<span class="nc" id="L84">  }</span>
+
+  @Override
+  protected void init(HoodieTableMetaClient metaClient, HoodieTimeline visibleActiveTimeline) {
+<span class="nc" id="L88">    schemaHelper.getAllColumnFamilies().forEach(rocksDB::addColumnFamily);</span>
+<span class="nc" id="L89">    super.init(metaClient, visibleActiveTimeline);</span>
+<span class="nc" id="L90">    LOG.info(&quot;Created ROCKSDB based file-system view at &quot; + config.getRocksdbBasePath());</span>
+<span class="nc" id="L91">  }</span>
+
+  @Override
+  protected boolean isPendingCompactionScheduledForFileId(HoodieFileGroupId fgId) {
+<span class="nc" id="L95">    return getPendingCompactionOperationWithInstant(fgId).isPresent();</span>
+  }
+
+  @Override
+  protected void resetPendingCompactionOperations(Stream&lt;Pair&lt;String, CompactionOperation&gt;&gt; operations) {
+<span class="nc" id="L100">    rocksDB.writeBatch(batch -&gt; {</span>
+<span class="nc" id="L101">      operations.forEach(opPair -&gt;</span>
+<span class="nc" id="L102">          rocksDB.putInBatch(batch, schemaHelper.getColFamilyForPendingCompaction(),</span>
+<span class="nc" id="L103">              schemaHelper.getKeyForPendingCompactionLookup(opPair.getValue().getFileGroupId()), opPair)</span>
+      );
+<span class="nc" id="L105">      LOG.info(&quot;Initializing pending compaction operations. Count=&quot; + batch.count());</span>
+<span class="nc" id="L106">    });</span>
+<span class="nc" id="L107">  }</span>
+
+  @Override
+  protected void addPendingCompactionOperations(Stream&lt;Pair&lt;String, CompactionOperation&gt;&gt; operations) {
+<span class="nc" id="L111">    rocksDB.writeBatch(batch -&gt;</span>
+<span class="nc" id="L112">        operations.forEach(opInstantPair -&gt; {</span>
+<span class="nc bnc" id="L113" title="All 2 branches missed.">          Preconditions.checkArgument(!isPendingCompactionScheduledForFileId(opInstantPair.getValue().getFileGroupId()),</span>
+              &quot;Duplicate FileGroupId found in pending compaction operations. FgId :&quot;
+<span class="nc" id="L115">                  + opInstantPair.getValue().getFileGroupId());</span>
+<span class="nc" id="L116">          rocksDB.putInBatch(batch, schemaHelper.getColFamilyForPendingCompaction(),</span>
+<span class="nc" id="L117">              schemaHelper.getKeyForPendingCompactionLookup(opInstantPair.getValue().getFileGroupId()), opInstantPair);</span>
+<span class="nc" id="L118">        })</span>
+    );
+<span class="nc" id="L120">  }</span>
+
+  @Override
+  void removePendingCompactionOperations(Stream&lt;Pair&lt;String, CompactionOperation&gt;&gt; operations) {
+<span class="nc" id="L124">    rocksDB.writeBatch(batch -&gt;</span>
+<span class="nc" id="L125">        operations.forEach(opInstantPair -&gt; {</span>
+<span class="nc" id="L126">          Preconditions.checkArgument(</span>
+<span class="nc bnc" id="L127" title="All 2 branches missed.">              getPendingCompactionOperationWithInstant(opInstantPair.getValue().getFileGroupId()) != null,</span>
+              &quot;Trying to remove a FileGroupId which is not found in pending compaction operations. FgId :&quot;
+<span class="nc" id="L129">                  + opInstantPair.getValue().getFileGroupId());</span>
+<span class="nc" id="L130">          rocksDB.deleteInBatch(batch, schemaHelper.getColFamilyForPendingCompaction(),</span>
+<span class="nc" id="L131">              schemaHelper.getKeyForPendingCompactionLookup(opInstantPair.getValue().getFileGroupId()));</span>
+<span class="nc" id="L132">        })</span>
+    );
+<span class="nc" id="L134">  }</span>
+
+  @Override
+  protected void resetViewState() {
+<span class="nc" id="L138">    LOG.info(&quot;Deleting all rocksdb data associated with table filesystem view&quot;);</span>
+<span class="nc" id="L139">    rocksDB.close();</span>
+<span class="nc" id="L140">    rocksDB = new RocksDBDAO(metaClient.getBasePath(), config.getRocksdbBasePath());</span>
+<span class="nc" id="L141">  }</span>
+
+  @Override
+  protected Option&lt;Pair&lt;String, CompactionOperation&gt;&gt; getPendingCompactionOperationWithInstant(HoodieFileGroupId fgId) {
+<span class="nc" id="L145">    String lookupKey = schemaHelper.getKeyForPendingCompactionLookup(fgId);</span>
+<span class="nc" id="L146">    Pair&lt;String, CompactionOperation&gt; instantOperationPair =</span>
+<span class="nc" id="L147">        rocksDB.get(schemaHelper.getColFamilyForPendingCompaction(), lookupKey);</span>
+<span class="nc" id="L148">    return Option.ofNullable(instantOperationPair);</span>
+  }
+
+  @Override
+  protected boolean isPartitionAvailableInStore(String partitionPath) {
+<span class="nc" id="L153">    String lookupKey = schemaHelper.getKeyForPartitionLookup(partitionPath);</span>
+<span class="nc" id="L154">    Serializable obj = rocksDB.get(schemaHelper.getColFamilyForStoredPartitions(), lookupKey);</span>
+<span class="nc bnc" id="L155" title="All 2 branches missed.">    return obj != null;</span>
+  }
+
+  @Override
+  protected void storePartitionView(String partitionPath, List&lt;HoodieFileGroup&gt; fileGroups) {
+<span class="nc" id="L160">    LOG.info(&quot;Resetting and adding new partition (&quot; + partitionPath + &quot;) to ROCKSDB based file-system view at &quot;</span>
+<span class="nc" id="L161">        + config.getRocksdbBasePath() + &quot;, Total file-groups=&quot; + fileGroups.size());</span>
+
+<span class="nc" id="L163">    String lookupKey = schemaHelper.getKeyForPartitionLookup(partitionPath);</span>
+<span class="nc" id="L164">    rocksDB.delete(schemaHelper.getColFamilyForStoredPartitions(), lookupKey);</span>
+
+    // First delete partition views
+<span class="nc" id="L167">    rocksDB.prefixDelete(schemaHelper.getColFamilyForView(),</span>
+<span class="nc" id="L168">        schemaHelper.getPrefixForSliceViewByPartition(partitionPath));</span>
+<span class="nc" id="L169">    rocksDB.prefixDelete(schemaHelper.getColFamilyForView(),</span>
+<span class="nc" id="L170">        schemaHelper.getPrefixForDataFileViewByPartition(partitionPath));</span>
+
+    // Now add them
+<span class="nc" id="L173">    fileGroups.forEach(fg -&gt;</span>
+<span class="nc" id="L174">        rocksDB.writeBatch(batch -&gt;</span>
+<span class="nc" id="L175">            fg.getAllFileSlicesIncludingInflight().forEach(fs -&gt; {</span>
+<span class="nc" id="L176">              rocksDB.putInBatch(batch, schemaHelper.getColFamilyForView(), schemaHelper.getKeyForSliceView(fg, fs), fs);</span>
+<span class="nc" id="L177">              fs.getBaseFile().ifPresent(df -&gt;</span>
+<span class="nc" id="L178">                  rocksDB.putInBatch(batch, schemaHelper.getColFamilyForView(), schemaHelper.getKeyForDataFileView(fg, fs), df)</span>
+              );
+<span class="nc" id="L180">            })</span>
+        )
+    );
+
+    // record that partition is loaded.
+<span class="nc" id="L185">    rocksDB.put(schemaHelper.getColFamilyForStoredPartitions(), lookupKey, Boolean.TRUE);</span>
+<span class="nc" id="L186">    LOG.info(&quot;Finished adding new partition (&quot; + partitionPath + &quot;) to ROCKSDB based file-system view at &quot;</span>
+<span class="nc" id="L187">        + config.getRocksdbBasePath() + &quot;, Total file-groups=&quot; + fileGroups.size());</span>
+<span class="nc" id="L188">  }</span>
+
+  @Override
+  /*
+   * This is overridden to incrementally apply file-slices to rocks DB
+   */
+  protected void applyDeltaFileSlicesToPartitionView(String partition, List&lt;HoodieFileGroup&gt; deltaFileGroups,
+      DeltaApplyMode mode) {
+<span class="nc" id="L196">    rocksDB.writeBatch(batch -&gt;</span>
+<span class="nc" id="L197">        deltaFileGroups.forEach(fg -&gt;</span>
+<span class="nc" id="L198">            fg.getAllRawFileSlices().map(fs -&gt; {</span>
+<span class="nc" id="L199">              FileSlice oldSlice = getFileSlice(partition, fs.getFileId(), fs.getBaseInstantTime());</span>
+<span class="nc bnc" id="L200" title="All 2 branches missed.">              if (null == oldSlice) {</span>
+<span class="nc" id="L201">                return fs;</span>
+              } else {
+                // First remove the file-slice
+<span class="nc" id="L204">                LOG.info(&quot;Removing old Slice in DB. FS=&quot; + oldSlice);</span>
+<span class="nc" id="L205">                rocksDB.deleteInBatch(batch, schemaHelper.getColFamilyForView(), schemaHelper.getKeyForSliceView(fg, oldSlice));</span>
+<span class="nc" id="L206">                rocksDB.deleteInBatch(batch, schemaHelper.getColFamilyForView(), schemaHelper.getKeyForDataFileView(fg, oldSlice));</span>
+
+<span class="nc" id="L208">                Map&lt;String, HoodieLogFile&gt; logFiles = oldSlice.getLogFiles()</span>
+<span class="nc" id="L209">                    .map(lf -&gt; Pair.of(Path.getPathWithoutSchemeAndAuthority(lf.getPath()).toString(), lf))</span>
+<span class="nc" id="L210">                    .collect(Collectors.toMap(Pair::getKey, Pair::getValue));</span>
+<span class="nc" id="L211">                Map&lt;String, HoodieLogFile&gt; deltaLogFiles =</span>
+<span class="nc" id="L212">                    fs.getLogFiles().map(lf -&gt; Pair.of(Path.getPathWithoutSchemeAndAuthority(lf.getPath()).toString(), lf))</span>
+<span class="nc" id="L213">                        .collect(Collectors.toMap(Pair::getKey, Pair::getValue));</span>
+
+<span class="nc bnc" id="L215" title="All 3 branches missed.">                switch (mode) {</span>
+                  case ADD: {
+<span class="nc" id="L217">                    FileSlice newFileSlice = new FileSlice(oldSlice.getFileGroupId(), oldSlice.getBaseInstantTime());</span>
+<span class="nc" id="L218">                    oldSlice.getBaseFile().ifPresent(newFileSlice::setBaseFile);</span>
+<span class="nc" id="L219">                    fs.getBaseFile().ifPresent(newFileSlice::setBaseFile);</span>
+<span class="nc" id="L220">                    Map&lt;String, HoodieLogFile&gt; newLogFiles = new HashMap&lt;&gt;(logFiles);</span>
+<span class="nc bnc" id="L221" title="All 2 branches missed.">                    deltaLogFiles.entrySet().stream().filter(e -&gt; !logFiles.containsKey(e.getKey()))</span>
+<span class="nc" id="L222">                        .forEach(p -&gt; newLogFiles.put(p.getKey(), p.getValue()));</span>
+<span class="nc" id="L223">                    newLogFiles.values().forEach(newFileSlice::addLogFile);</span>
+<span class="nc" id="L224">                    LOG.info(&quot;Adding back new File Slice after add FS=&quot; + newFileSlice);</span>
+<span class="nc" id="L225">                    return newFileSlice;</span>
+                  }
+                  case REMOVE: {
+<span class="nc" id="L228">                    LOG.info(&quot;Removing old File Slice =&quot; + fs);</span>
+<span class="nc" id="L229">                    FileSlice newFileSlice = new FileSlice(oldSlice.getFileGroupId(), oldSlice.getBaseInstantTime());</span>
+<span class="nc" id="L230">                    fs.getBaseFile().orElseGet(() -&gt; {</span>
+<span class="nc" id="L231">                      oldSlice.getBaseFile().ifPresent(newFileSlice::setBaseFile);</span>
+<span class="nc" id="L232">                      return null;</span>
+                    });
+
+<span class="nc" id="L235">                    deltaLogFiles.keySet().forEach(logFiles::remove);</span>
+                    // Add remaining log files back
+<span class="nc" id="L237">                    logFiles.values().forEach(newFileSlice::addLogFile);</span>
+<span class="nc bnc" id="L238" title="All 4 branches missed.">                    if (newFileSlice.getBaseFile().isPresent() || (newFileSlice.getLogFiles().count() &gt; 0)) {</span>
+<span class="nc" id="L239">                      LOG.info(&quot;Adding back new file-slice after remove FS=&quot; + newFileSlice);</span>
+<span class="nc" id="L240">                      return newFileSlice;</span>
+                    }
+<span class="nc" id="L242">                    return null;</span>
+                  }
+                  default:
+<span class="nc" id="L245">                    throw new IllegalStateException(&quot;Unknown diff apply mode=&quot; + mode);</span>
+                }
+              }
+<span class="nc" id="L248">            }).filter(Objects::nonNull).forEach(fs -&gt; {</span>
+<span class="nc" id="L249">              rocksDB.putInBatch(batch, schemaHelper.getColFamilyForView(), schemaHelper.getKeyForSliceView(fg, fs), fs);</span>
+<span class="nc" id="L250">              fs.getBaseFile().ifPresent(df -&gt;</span>
+<span class="nc" id="L251">                  rocksDB.putInBatch(batch, schemaHelper.getColFamilyForView(), schemaHelper.getKeyForDataFileView(fg, fs), df)</span>
+              );
+<span class="nc" id="L253">            })</span>
+        )
+    );
+<span class="nc" id="L256">  }</span>
+
+  @Override
+  Stream&lt;Pair&lt;String, CompactionOperation&gt;&gt; fetchPendingCompactionOperations() {
+<span class="nc" id="L260">    return rocksDB.&lt;Pair&lt;String, CompactionOperation&gt;&gt;prefixSearch(schemaHelper.getColFamilyForPendingCompaction(), &quot;&quot;)</span>
+<span class="nc" id="L261">        .map(Pair::getValue);</span>
+  }
+
+  @Override
+  Stream&lt;HoodieBaseFile&gt; fetchAllBaseFiles(String partitionPath) {
+<span class="nc" id="L266">    return rocksDB.&lt;HoodieBaseFile&gt;prefixSearch(schemaHelper.getColFamilyForView(),</span>
+<span class="nc" id="L267">        schemaHelper.getPrefixForDataFileViewByPartition(partitionPath)).map(Pair::getValue);</span>
+  }
+
+  @Override
+  Stream&lt;HoodieFileGroup&gt; fetchAllStoredFileGroups(String partitionPath) {
+<span class="nc" id="L272">    return getFileGroups(rocksDB.&lt;FileSlice&gt;prefixSearch(schemaHelper.getColFamilyForView(),</span>
+<span class="nc" id="L273">        schemaHelper.getPrefixForSliceViewByPartition(partitionPath)).map(Pair::getValue));</span>
+  }
+
+  @Override
+  Stream&lt;HoodieFileGroup&gt; fetchAllStoredFileGroups() {
+<span class="nc" id="L278">    return getFileGroups(</span>
+<span class="nc" id="L279">        rocksDB.&lt;FileSlice&gt;prefixSearch(schemaHelper.getColFamilyForView(), schemaHelper.getPrefixForSliceView())</span>
+<span class="nc" id="L280">            .map(Pair::getValue));</span>
+  }
+
+  @Override
+  protected Option&lt;FileSlice&gt; fetchLatestFileSlice(String partitionPath, String fileId) {
+    // Retries only file-slices of the file and filters for the latest
+<span class="nc" id="L286">    return Option.ofNullable(rocksDB</span>
+<span class="nc" id="L287">        .&lt;FileSlice&gt;prefixSearch(schemaHelper.getColFamilyForView(),</span>
+<span class="nc" id="L288">            schemaHelper.getPrefixForSliceViewByPartitionFile(partitionPath, fileId))</span>
+<span class="nc" id="L289">        .map(Pair::getValue).reduce(null,</span>
+<span class="nc bnc" id="L290" title="All 4 branches missed.">            (x, y) -&gt; ((x == null) ? y</span>
+                : (y == null) ? null
+<span class="nc bnc" id="L292" title="All 2 branches missed.">                    : HoodieTimeline.compareTimestamps(x.getBaseInstantTime(), y.getBaseInstantTime(),</span>
+                        HoodieTimeline.GREATER) ? x : y)));
+  }
+
+  @Override
+  protected Option&lt;HoodieBaseFile&gt; fetchLatestBaseFile(String partitionPath, String fileId) {
+    // Retries only file-slices of the file and filters for the latest
+<span class="nc" id="L299">    return Option</span>
+<span class="nc" id="L300">        .ofNullable(rocksDB</span>
+<span class="nc" id="L301">            .&lt;HoodieBaseFile&gt;prefixSearch(schemaHelper.getColFamilyForView(),</span>
+<span class="nc" id="L302">                schemaHelper.getPrefixForDataFileViewByPartitionFile(partitionPath, fileId))</span>
+<span class="nc" id="L303">            .map(Pair::getValue).reduce(null,</span>
+<span class="nc bnc" id="L304" title="All 4 branches missed.">                (x, y) -&gt; ((x == null) ? y</span>
+                    : (y == null) ? null
+<span class="nc bnc" id="L306" title="All 2 branches missed.">                        : HoodieTimeline.compareTimestamps(x.getCommitTime(), y.getCommitTime(), HoodieTimeline.GREATER)</span>
+                            ? x
+                            : y)));
+  }
+
+  @Override
+  Option&lt;HoodieFileGroup&gt; fetchHoodieFileGroup(String partitionPath, String fileId) {
+<span class="nc" id="L313">    return Option.fromJavaOptional(getFileGroups(rocksDB.&lt;FileSlice&gt;prefixSearch(schemaHelper.getColFamilyForView(),</span>
+<span class="nc" id="L314">        schemaHelper.getPrefixForSliceViewByPartitionFile(partitionPath, fileId)).map(Pair::getValue)).findFirst());</span>
+  }
+
+  private Stream&lt;HoodieFileGroup&gt; getFileGroups(Stream&lt;FileSlice&gt; sliceStream) {
+<span class="nc" id="L318">    return sliceStream.map(s -&gt; Pair.of(Pair.of(s.getPartitionPath(), s.getFileId()), s))</span>
+<span class="nc" id="L319">        .collect(Collectors.groupingBy(Pair::getKey)).entrySet().stream().map(slicePair -&gt; {</span>
+<span class="nc" id="L320">          HoodieFileGroup fg = new HoodieFileGroup(slicePair.getKey().getKey(), slicePair.getKey().getValue(),</span>
+<span class="nc" id="L321">              getVisibleCommitsAndCompactionTimeline());</span>
+<span class="nc" id="L322">          slicePair.getValue().forEach(e -&gt; fg.addFileSlice(e.getValue()));</span>
+<span class="nc" id="L323">          return fg;</span>
+        });
+  }
+
+  private FileSlice getFileSlice(String partitionPath, String fileId, String instantTime) {
+<span class="nc" id="L328">    String key = schemaHelper.getKeyForSliceView(partitionPath, fileId, instantTime);</span>
+<span class="nc" id="L329">    return rocksDB.get(schemaHelper.getColFamilyForView(), key);</span>
+  }
+
+  @Override
+  public void close() {
+<span class="nc" id="L334">    LOG.info(&quot;Closing Rocksdb !!&quot;);</span>
+<span class="nc" id="L335">    closed = true;</span>
+<span class="nc" id="L336">    rocksDB.close();</span>
+<span class="nc" id="L337">    LOG.info(&quot;Closed Rocksdb !!&quot;);</span>
+<span class="nc" id="L338">  }</span>
+
+  @Override
+  boolean isClosed() {
+<span class="nc" id="L342">    return closed;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

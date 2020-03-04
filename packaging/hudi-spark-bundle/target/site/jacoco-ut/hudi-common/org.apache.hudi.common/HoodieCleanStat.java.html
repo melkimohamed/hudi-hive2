@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieCleanStat.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common</a> &gt; <span class="el_source">HoodieCleanStat.java</span></div><h1>HoodieCleanStat.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common;
+
+import org.apache.hudi.common.model.HoodieCleaningPolicy;
+import org.apache.hudi.common.table.timeline.HoodieInstant;
+import org.apache.hudi.common.util.Option;
+
+import java.io.Serializable;
+import java.util.List;
+
+/**
+ * Collects stats about a single partition clean operation.
+ */
+public class HoodieCleanStat implements Serializable {
+
+  // Policy used
+  private final HoodieCleaningPolicy policy;
+  // Partition path cleaned
+  private final String partitionPath;
+  // The patterns that were generated for the delete operation
+  private final List&lt;String&gt; deletePathPatterns;
+  private final List&lt;String&gt; successDeleteFiles;
+  // Files that could not be deleted
+  private final List&lt;String&gt; failedDeleteFiles;
+  // Earliest commit that was retained in this clean
+  private final String earliestCommitToRetain;
+
+  public HoodieCleanStat(HoodieCleaningPolicy policy, String partitionPath, List&lt;String&gt; deletePathPatterns,
+<span class="nc" id="L46">      List&lt;String&gt; successDeleteFiles, List&lt;String&gt; failedDeleteFiles, String earliestCommitToRetain) {</span>
+<span class="nc" id="L47">    this.policy = policy;</span>
+<span class="nc" id="L48">    this.partitionPath = partitionPath;</span>
+<span class="nc" id="L49">    this.deletePathPatterns = deletePathPatterns;</span>
+<span class="nc" id="L50">    this.successDeleteFiles = successDeleteFiles;</span>
+<span class="nc" id="L51">    this.failedDeleteFiles = failedDeleteFiles;</span>
+<span class="nc" id="L52">    this.earliestCommitToRetain = earliestCommitToRetain;</span>
+<span class="nc" id="L53">  }</span>
+
+  public HoodieCleaningPolicy getPolicy() {
+<span class="nc" id="L56">    return policy;</span>
+  }
+
+  public String getPartitionPath() {
+<span class="nc" id="L60">    return partitionPath;</span>
+  }
+
+  public List&lt;String&gt; getDeletePathPatterns() {
+<span class="nc" id="L64">    return deletePathPatterns;</span>
+  }
+
+  public List&lt;String&gt; getSuccessDeleteFiles() {
+<span class="nc" id="L68">    return successDeleteFiles;</span>
+  }
+
+  public List&lt;String&gt; getFailedDeleteFiles() {
+<span class="nc" id="L72">    return failedDeleteFiles;</span>
+  }
+
+  public String getEarliestCommitToRetain() {
+<span class="nc" id="L76">    return earliestCommitToRetain;</span>
+  }
+
+  public static HoodieCleanStat.Builder newBuilder() {
+<span class="nc" id="L80">    return new Builder();</span>
+  }
+
+  /**
+   * A builder used to build {@link HoodieCleanStat}.
+   */
+<span class="nc" id="L86">  public static class Builder {</span>
+
+    private HoodieCleaningPolicy policy;
+    private List&lt;String&gt; deletePathPatterns;
+    private List&lt;String&gt; successDeleteFiles;
+    private List&lt;String&gt; failedDeleteFiles;
+    private String partitionPath;
+    private String earliestCommitToRetain;
+
+    public Builder withPolicy(HoodieCleaningPolicy policy) {
+<span class="nc" id="L96">      this.policy = policy;</span>
+<span class="nc" id="L97">      return this;</span>
+    }
+
+    public Builder withDeletePathPattern(List&lt;String&gt; deletePathPatterns) {
+<span class="nc" id="L101">      this.deletePathPatterns = deletePathPatterns;</span>
+<span class="nc" id="L102">      return this;</span>
+    }
+
+    public Builder withSuccessfulDeletes(List&lt;String&gt; successDeleteFiles) {
+<span class="nc" id="L106">      this.successDeleteFiles = successDeleteFiles;</span>
+<span class="nc" id="L107">      return this;</span>
+    }
+
+    public Builder withFailedDeletes(List&lt;String&gt; failedDeleteFiles) {
+<span class="nc" id="L111">      this.failedDeleteFiles = failedDeleteFiles;</span>
+<span class="nc" id="L112">      return this;</span>
+    }
+
+    public Builder withPartitionPath(String partitionPath) {
+<span class="nc" id="L116">      this.partitionPath = partitionPath;</span>
+<span class="nc" id="L117">      return this;</span>
+    }
+
+    public Builder withEarliestCommitRetained(Option&lt;HoodieInstant&gt; earliestCommitToRetain) {
+<span class="nc" id="L121">      this.earliestCommitToRetain =</span>
+<span class="nc bnc" id="L122" title="All 2 branches missed.">          (earliestCommitToRetain.isPresent()) ? earliestCommitToRetain.get().getTimestamp() : &quot;&quot;;</span>
+<span class="nc" id="L123">      return this;</span>
+    }
+
+    public HoodieCleanStat build() {
+<span class="nc" id="L127">      return new HoodieCleanStat(policy, partitionPath, deletePathPatterns, successDeleteFiles, failedDeleteFiles,</span>
+          earliestCommitToRetain);
+    }
+  }
+
+  @Override
+  public String toString() {
+<span class="nc" id="L134">    return &quot;HoodieCleanStat{&quot;</span>
+        + &quot;policy=&quot; + policy
+        + &quot;, partitionPath='&quot; + partitionPath + '\''
+        + &quot;, deletePathPatterns=&quot; + deletePathPatterns
+        + &quot;, successDeleteFiles=&quot; + successDeleteFiles
+        + &quot;, failedDeleteFiles=&quot; + failedDeleteFiles
+        + &quot;, earliestCommitToRetain='&quot; + earliestCommitToRetain + '\''
+        + '}';
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

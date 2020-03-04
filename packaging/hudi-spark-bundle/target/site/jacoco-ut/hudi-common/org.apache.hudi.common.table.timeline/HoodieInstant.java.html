@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieInstant.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.table.timeline</a> &gt; <span class="el_source">HoodieInstant.java</span></div><h1>HoodieInstant.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.table.timeline;
+
+import org.apache.hudi.common.table.HoodieTimeline;
+import org.apache.hudi.common.util.FSUtils;
+
+import com.google.common.collect.ImmutableMap;
+import org.apache.hadoop.fs.FileStatus;
+
+import java.io.Serializable;
+import java.util.Comparator;
+import java.util.Map;
+import java.util.Objects;
+
+/**
+ * A Hoodie Instant represents a action done on a hoodie table. All actions start with a inflight instant and then
+ * create a completed instant after done.
+ *
+ * @see HoodieTimeline
+ */
+public class HoodieInstant implements Serializable, Comparable&lt;HoodieInstant&gt; {
+
+  /**
+   * A COMPACTION action eventually becomes COMMIT when completed. So, when grouping instants
+   * for state transitions, this needs to be taken into account
+   */
+<span class="nc" id="L44">  private static final Map&lt;String, String&gt; COMPARABLE_ACTIONS = new ImmutableMap.Builder&lt;String, String&gt;()</span>
+<span class="nc" id="L45">      .put(HoodieTimeline.COMPACTION_ACTION, HoodieTimeline.COMMIT_ACTION).build();</span>
+
+<span class="nc" id="L47">  public static final Comparator&lt;HoodieInstant&gt; ACTION_COMPARATOR =</span>
+<span class="nc" id="L48">      Comparator.comparing(instant -&gt; getComparableAction(instant.getAction()));</span>
+
+<span class="nc" id="L50">  public static final Comparator&lt;HoodieInstant&gt; COMPARATOR = Comparator.comparing(HoodieInstant::getTimestamp)</span>
+<span class="nc" id="L51">      .thenComparing(ACTION_COMPARATOR).thenComparing(HoodieInstant::getState);</span>
+
+  public static String getComparableAction(String action) {
+<span class="nc" id="L54">    return COMPARABLE_ACTIONS.getOrDefault(action, action);</span>
+  }
+
+  /**
+   * Instant State.
+   */
+<span class="nc" id="L60">  public enum State {</span>
+    // Requested State (valid state for Compaction)
+<span class="nc" id="L62">    REQUESTED,</span>
+    // Inflight instant
+<span class="nc" id="L64">    INFLIGHT,</span>
+    // Committed instant
+<span class="nc" id="L66">    COMPLETED,</span>
+    // Invalid instant
+<span class="nc" id="L68">    INVALID</span>
+  }
+
+<span class="nc" id="L71">  private State state = State.COMPLETED;</span>
+  private String action;
+  private String timestamp;
+
+  /**
+   * Load the instant from the meta FileStatus.
+   */
+<span class="nc" id="L78">  public HoodieInstant(FileStatus fileStatus) {</span>
+    // First read the instant timestamp. [==&gt;20170101193025&lt;==].commit
+<span class="nc" id="L80">    String fileName = fileStatus.getPath().getName();</span>
+<span class="nc" id="L81">    String fileExtension = FSUtils.getFileExtension(fileName);</span>
+<span class="nc" id="L82">    timestamp = fileName.replace(fileExtension, &quot;&quot;);</span>
+
+    // Next read the action for this marker
+<span class="nc" id="L85">    action = fileExtension.replaceFirst(&quot;.&quot;, &quot;&quot;);</span>
+<span class="nc bnc" id="L86" title="All 2 branches missed.">    if (action.equals(&quot;inflight&quot;)) {</span>
+      // This is to support backwards compatibility on how in-flight commit files were written
+      // General rule is inflight extension is .&lt;action&gt;.inflight, but for commit it is .inflight
+<span class="nc" id="L89">      action = &quot;commit&quot;;</span>
+<span class="nc" id="L90">      state = State.INFLIGHT;</span>
+<span class="nc bnc" id="L91" title="All 2 branches missed.">    } else if (action.contains(HoodieTimeline.INFLIGHT_EXTENSION)) {</span>
+<span class="nc" id="L92">      state = State.INFLIGHT;</span>
+<span class="nc" id="L93">      action = action.replace(HoodieTimeline.INFLIGHT_EXTENSION, &quot;&quot;);</span>
+<span class="nc bnc" id="L94" title="All 2 branches missed.">    } else if (action.contains(HoodieTimeline.REQUESTED_EXTENSION)) {</span>
+<span class="nc" id="L95">      state = State.REQUESTED;</span>
+<span class="nc" id="L96">      action = action.replace(HoodieTimeline.REQUESTED_EXTENSION, &quot;&quot;);</span>
+    }
+<span class="nc" id="L98">  }</span>
+
+<span class="nc" id="L100">  public HoodieInstant(boolean isInflight, String action, String timestamp) {</span>
+    // TODO: vb - Preserving for avoiding cascading changes. This constructor will be updated in subsequent PR
+<span class="nc bnc" id="L102" title="All 2 branches missed.">    this.state = isInflight ? State.INFLIGHT : State.COMPLETED;</span>
+<span class="nc" id="L103">    this.action = action;</span>
+<span class="nc" id="L104">    this.timestamp = timestamp;</span>
+<span class="nc" id="L105">  }</span>
+
+<span class="nc" id="L107">  public HoodieInstant(State state, String action, String timestamp) {</span>
+<span class="nc" id="L108">    this.state = state;</span>
+<span class="nc" id="L109">    this.action = action;</span>
+<span class="nc" id="L110">    this.timestamp = timestamp;</span>
+<span class="nc" id="L111">  }</span>
+
+  public boolean isCompleted() {
+<span class="nc bnc" id="L114" title="All 2 branches missed.">    return state == State.COMPLETED;</span>
+  }
+
+  public boolean isInflight() {
+<span class="nc bnc" id="L118" title="All 2 branches missed.">    return state == State.INFLIGHT;</span>
+  }
+
+  public boolean isRequested() {
+<span class="nc bnc" id="L122" title="All 2 branches missed.">    return state == State.REQUESTED;</span>
+  }
+
+  public String getAction() {
+<span class="nc" id="L126">    return action;</span>
+  }
+
+  public String getTimestamp() {
+<span class="nc" id="L130">    return timestamp;</span>
+  }
+
+  /**
+   * Get the filename for this instant.
+   */
+  public String getFileName() {
+<span class="nc bnc" id="L137" title="All 2 branches missed.">    if (HoodieTimeline.COMMIT_ACTION.equals(action)) {</span>
+<span class="nc bnc" id="L138" title="All 2 branches missed.">      return isInflight() ? HoodieTimeline.makeInflightCommitFileName(timestamp)</span>
+<span class="nc bnc" id="L139" title="All 2 branches missed.">          : isRequested() ? HoodieTimeline.makeRequestedCommitFileName(timestamp)</span>
+<span class="nc" id="L140">              : HoodieTimeline.makeCommitFileName(timestamp);</span>
+<span class="nc bnc" id="L141" title="All 2 branches missed.">    } else if (HoodieTimeline.CLEAN_ACTION.equals(action)) {</span>
+<span class="nc bnc" id="L142" title="All 2 branches missed.">      return isInflight() ? HoodieTimeline.makeInflightCleanerFileName(timestamp)</span>
+<span class="nc bnc" id="L143" title="All 2 branches missed.">          : isRequested() ? HoodieTimeline.makeRequestedCleanerFileName(timestamp)</span>
+<span class="nc" id="L144">              : HoodieTimeline.makeCleanerFileName(timestamp);</span>
+<span class="nc bnc" id="L145" title="All 2 branches missed.">    } else if (HoodieTimeline.ROLLBACK_ACTION.equals(action)) {</span>
+<span class="nc bnc" id="L146" title="All 2 branches missed.">      return isInflight() ? HoodieTimeline.makeInflightRollbackFileName(timestamp)</span>
+<span class="nc" id="L147">          : HoodieTimeline.makeRollbackFileName(timestamp);</span>
+<span class="nc bnc" id="L148" title="All 2 branches missed.">    } else if (HoodieTimeline.SAVEPOINT_ACTION.equals(action)) {</span>
+<span class="nc bnc" id="L149" title="All 2 branches missed.">      return isInflight() ? HoodieTimeline.makeInflightSavePointFileName(timestamp)</span>
+<span class="nc" id="L150">          : HoodieTimeline.makeSavePointFileName(timestamp);</span>
+<span class="nc bnc" id="L151" title="All 2 branches missed.">    } else if (HoodieTimeline.DELTA_COMMIT_ACTION.equals(action)) {</span>
+<span class="nc bnc" id="L152" title="All 2 branches missed.">      return isInflight() ? HoodieTimeline.makeInflightDeltaFileName(timestamp)</span>
+<span class="nc bnc" id="L153" title="All 2 branches missed.">          : isRequested() ? HoodieTimeline.makeRequestedDeltaFileName(timestamp)</span>
+<span class="nc" id="L154">              : HoodieTimeline.makeDeltaFileName(timestamp);</span>
+<span class="nc bnc" id="L155" title="All 2 branches missed.">    } else if (HoodieTimeline.COMPACTION_ACTION.equals(action)) {</span>
+<span class="nc bnc" id="L156" title="All 2 branches missed.">      if (isInflight()) {</span>
+<span class="nc" id="L157">        return HoodieTimeline.makeInflightCompactionFileName(timestamp);</span>
+<span class="nc bnc" id="L158" title="All 2 branches missed.">      } else if (isRequested()) {</span>
+<span class="nc" id="L159">        return HoodieTimeline.makeRequestedCompactionFileName(timestamp);</span>
+      } else {
+<span class="nc" id="L161">        return HoodieTimeline.makeCommitFileName(timestamp);</span>
+      }
+<span class="nc bnc" id="L163" title="All 2 branches missed.">    } else if (HoodieTimeline.RESTORE_ACTION.equals(action)) {</span>
+<span class="nc bnc" id="L164" title="All 2 branches missed.">      return isInflight() ? HoodieTimeline.makeInflightRestoreFileName(timestamp)</span>
+<span class="nc" id="L165">          : HoodieTimeline.makeRestoreFileName(timestamp);</span>
+    }
+<span class="nc" id="L167">    throw new IllegalArgumentException(&quot;Cannot get file name for unknown action &quot; + action);</span>
+  }
+
+  @Override
+  public boolean equals(Object o) {
+<span class="nc bnc" id="L172" title="All 2 branches missed.">    if (this == o) {</span>
+<span class="nc" id="L173">      return true;</span>
+    }
+<span class="nc bnc" id="L175" title="All 4 branches missed.">    if (o == null || getClass() != o.getClass()) {</span>
+<span class="nc" id="L176">      return false;</span>
+    }
+<span class="nc" id="L178">    HoodieInstant that = (HoodieInstant) o;</span>
+<span class="nc bnc" id="L179" title="All 6 branches missed.">    return state == that.state &amp;&amp; Objects.equals(action, that.action) &amp;&amp; Objects.equals(timestamp, that.timestamp);</span>
+  }
+
+  public State getState() {
+<span class="nc" id="L183">    return state;</span>
+  }
+
+  @Override
+  public int hashCode() {
+<span class="nc" id="L188">    return Objects.hash(state, action, timestamp);</span>
+  }
+
+  @Override
+  public int compareTo(HoodieInstant o) {
+<span class="nc" id="L193">    return COMPARATOR.compare(this, o);</span>
+  }
+
+  @Override
+  public String toString() {
+<span class="nc bnc" id="L198" title="All 4 branches missed.">    return &quot;[&quot; + ((isInflight() || isRequested()) ? &quot;==&gt;&quot; : &quot;&quot;) + timestamp + &quot;__&quot; + action + &quot;__&quot; + state + &quot;]&quot;;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

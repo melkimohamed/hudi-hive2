@@ -1,0 +1,36 @@
+
+*****************************************************
+Summary
+-------
+Generated at: 2020-03-04T21:52:45+01:00
+
+Notes: 0
+Binaries: 0
+Archives: 0
+Standards: 10
+
+Apache Licensed: 0
+Generated Documents: 0
+
+JavaDocs are generated, thus a license header is optional.
+Generated files do not require license headers.
+
+0 Unknown Licenses
+
+*****************************************************
+  Files with Apache License headers will be marked AL
+  Binary files (which do not require any license headers) will be marked B
+  Compressed archives will be marked A
+  Notices, licenses etc. will be marked N
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-timeline-service/pom.xml
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-timeline-service/src/main/java/org/apache/hudi/timeline/service/FileSystemViewHandler.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-timeline-service/src/main/java/org/apache/hudi/timeline/service/TimelineService.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-timeline-service/src/main/java/org/apache/hudi/timeline/service/handlers/BaseFileHandler.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-timeline-service/src/main/java/org/apache/hudi/timeline/service/handlers/FileSliceHandler.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-timeline-service/src/main/java/org/apache/hudi/timeline/service/handlers/Handler.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-timeline-service/src/main/java/org/apache/hudi/timeline/service/handlers/TimelineHandler.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-timeline-service/src/test/java/org/apache/hudi/timeline/table/view/TestRemoteHoodieTableFileSystemView.java
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-timeline-service/src/test/resources/log4j-surefire-quiet.properties
+  AL2 /root/hudi-incubator-build/incubator-hudi/hudi-timeline-service/src/test/resources/log4j-surefire.properties
+ 
+*****************************************************

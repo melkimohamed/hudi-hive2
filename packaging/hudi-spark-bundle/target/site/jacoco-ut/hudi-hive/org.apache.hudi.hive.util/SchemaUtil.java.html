@@ -1,0 +1,448 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>SchemaUtil.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-hive</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.hive.util</a> &gt; <span class="el_source">SchemaUtil.java</span></div><h1>SchemaUtil.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.hive.util;
+
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.hudi.common.model.HoodieLogFile;
+import org.apache.hudi.common.table.log.HoodieLogFormat;
+import org.apache.hudi.common.table.log.HoodieLogFormat.Reader;
+import org.apache.hudi.common.table.log.block.HoodieAvroDataBlock;
+import org.apache.hudi.common.table.log.block.HoodieLogBlock;
+import org.apache.hudi.hive.HiveSyncConfig;
+import org.apache.hudi.hive.HoodieHiveSyncException;
+import org.apache.hudi.hive.SchemaDifference;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+import org.apache.parquet.avro.AvroSchemaConverter;
+import org.apache.parquet.schema.DecimalMetadata;
+import org.apache.parquet.schema.GroupType;
+import org.apache.parquet.schema.MessageType;
+import org.apache.parquet.schema.OriginalType;
+import org.apache.parquet.schema.PrimitiveType;
+import org.apache.parquet.schema.Type;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * Schema Utilities.
+ */
+<span class="nc" id="L52">public class SchemaUtil {</span>
+
+<span class="nc" id="L54">  private static final Logger LOG = LogManager.getLogger(SchemaUtil.class);</span>
+  public static final String HIVE_ESCAPE_CHARACTER = &quot;`&quot;;
+
+  /**
+   * Get the schema difference between the storage schema and hive table schema.
+   */
+  public static SchemaDifference getSchemaDifference(MessageType storageSchema, Map&lt;String, String&gt; tableSchema,
+      List&lt;String&gt; partitionKeys) {
+    Map&lt;String, String&gt; newTableSchema;
+    try {
+<span class="nc" id="L64">      newTableSchema = convertParquetSchemaToHiveSchema(storageSchema);</span>
+<span class="nc" id="L65">    } catch (IOException e) {</span>
+<span class="nc" id="L66">      throw new HoodieHiveSyncException(&quot;Failed to convert parquet schema to hive schema&quot;, e);</span>
+<span class="nc" id="L67">    }</span>
+<span class="nc" id="L68">    LOG.info(&quot;Getting schema difference for &quot; + tableSchema + &quot;\r\n\r\n&quot; + newTableSchema);</span>
+<span class="nc" id="L69">    SchemaDifference.Builder schemaDiffBuilder = SchemaDifference.newBuilder(storageSchema, tableSchema);</span>
+<span class="nc" id="L70">    Set&lt;String&gt; tableColumns = new HashSet&lt;&gt;();</span>
+
+<span class="nc bnc" id="L72" title="All 2 branches missed.">    for (Map.Entry&lt;String, String&gt; field : tableSchema.entrySet()) {</span>
+<span class="nc" id="L73">      String fieldName = field.getKey().toLowerCase();</span>
+<span class="nc" id="L74">      String tickSurroundedFieldName = tickSurround(fieldName);</span>
+<span class="nc bnc" id="L75" title="All 4 branches missed.">      if (!isFieldExistsInSchema(newTableSchema, tickSurroundedFieldName) &amp;&amp; !partitionKeys.contains(fieldName)) {</span>
+<span class="nc" id="L76">        schemaDiffBuilder.deleteTableColumn(fieldName);</span>
+      } else {
+        // check type
+<span class="nc" id="L79">        String tableColumnType = field.getValue();</span>
+<span class="nc bnc" id="L80" title="All 2 branches missed.">        if (!isFieldExistsInSchema(newTableSchema, tickSurroundedFieldName)) {</span>
+<span class="nc bnc" id="L81" title="All 2 branches missed.">          if (partitionKeys.contains(fieldName)) {</span>
+            // Partition key does not have to be part of the storage schema
+<span class="nc" id="L83">            continue;</span>
+          }
+          // We will log this and continue. Hive schema is a superset of all parquet schemas
+<span class="nc" id="L86">          LOG.warn(&quot;Ignoring table column &quot; + fieldName + &quot; as its not present in the parquet schema&quot;);</span>
+<span class="nc" id="L87">          continue;</span>
+        }
+<span class="nc" id="L89">        tableColumnType = tableColumnType.replaceAll(&quot;\\s+&quot;, &quot;&quot;);</span>
+
+<span class="nc" id="L91">        String expectedType = getExpectedType(newTableSchema, tickSurroundedFieldName);</span>
+<span class="nc" id="L92">        expectedType = expectedType.replaceAll(&quot;\\s+&quot;, &quot;&quot;);</span>
+<span class="nc" id="L93">        expectedType = expectedType.replaceAll(&quot;`&quot;, &quot;&quot;);</span>
+
+<span class="nc bnc" id="L95" title="All 2 branches missed.">        if (!tableColumnType.equalsIgnoreCase(expectedType)) {</span>
+          // check for incremental queries, the schema type change is allowed as per evolution
+          // rules
+<span class="nc bnc" id="L98" title="All 2 branches missed.">          if (!isSchemaTypeUpdateAllowed(tableColumnType, expectedType)) {</span>
+<span class="nc" id="L99">            throw new HoodieHiveSyncException(&quot;Could not convert field Type from &quot; + tableColumnType + &quot; to &quot;</span>
+                + expectedType + &quot; for field &quot; + fieldName);
+          }
+<span class="nc" id="L102">          schemaDiffBuilder.updateTableColumn(fieldName, getExpectedType(newTableSchema, tickSurroundedFieldName));</span>
+        }
+      }
+<span class="nc" id="L105">      tableColumns.add(tickSurroundedFieldName);</span>
+<span class="nc" id="L106">    }</span>
+
+<span class="nc bnc" id="L108" title="All 2 branches missed.">    for (Map.Entry&lt;String, String&gt; entry : newTableSchema.entrySet()) {</span>
+<span class="nc bnc" id="L109" title="All 2 branches missed.">      if (!tableColumns.contains(entry.getKey().toLowerCase())) {</span>
+<span class="nc" id="L110">        schemaDiffBuilder.addTableColumn(entry.getKey(), entry.getValue());</span>
+      }
+<span class="nc" id="L112">    }</span>
+<span class="nc" id="L113">    LOG.info(&quot;Difference between schemas: &quot; + schemaDiffBuilder.build().toString());</span>
+
+<span class="nc" id="L115">    return schemaDiffBuilder.build();</span>
+  }
+
+  private static String getExpectedType(Map&lt;String, String&gt; newTableSchema, String fieldName) {
+<span class="nc bnc" id="L119" title="All 2 branches missed.">    for (Map.Entry&lt;String, String&gt; entry : newTableSchema.entrySet()) {</span>
+<span class="nc bnc" id="L120" title="All 2 branches missed.">      if (entry.getKey().toLowerCase().equals(fieldName)) {</span>
+<span class="nc" id="L121">        return entry.getValue();</span>
+      }
+<span class="nc" id="L123">    }</span>
+<span class="nc" id="L124">    return null;</span>
+  }
+
+  private static boolean isFieldExistsInSchema(Map&lt;String, String&gt; newTableSchema, String fieldName) {
+<span class="nc bnc" id="L128" title="All 2 branches missed.">    for (String entry : newTableSchema.keySet()) {</span>
+<span class="nc bnc" id="L129" title="All 2 branches missed.">      if (entry.toLowerCase().equals(fieldName)) {</span>
+<span class="nc" id="L130">        return true;</span>
+      }
+<span class="nc" id="L132">    }</span>
+<span class="nc" id="L133">    return false;</span>
+  }
+
+  /**
+   * Returns equivalent Hive table schema read from a parquet file.
+   *
+   * @param messageType : Parquet Schema
+   * @return : Hive Table schema read from parquet file MAP[String,String]
+   */
+  public static Map&lt;String, String&gt; convertParquetSchemaToHiveSchema(MessageType messageType) throws IOException {
+<span class="nc" id="L143">    Map&lt;String, String&gt; schema = new LinkedHashMap&lt;&gt;();</span>
+<span class="nc" id="L144">    List&lt;Type&gt; parquetFields = messageType.getFields();</span>
+<span class="nc bnc" id="L145" title="All 2 branches missed.">    for (Type parquetType : parquetFields) {</span>
+<span class="nc" id="L146">      StringBuilder result = new StringBuilder();</span>
+<span class="nc" id="L147">      String key = parquetType.getName();</span>
+<span class="nc bnc" id="L148" title="All 2 branches missed.">      if (parquetType.isRepetition(Type.Repetition.REPEATED)) {</span>
+<span class="nc" id="L149">        result.append(createHiveArray(parquetType, &quot;&quot;));</span>
+      } else {
+<span class="nc" id="L151">        result.append(convertField(parquetType));</span>
+      }
+
+<span class="nc" id="L154">      schema.put(hiveCompatibleFieldName(key, false), result.toString());</span>
+<span class="nc" id="L155">    }</span>
+<span class="nc" id="L156">    return schema;</span>
+  }
+
+  /**
+   * Convert one field data type of parquet schema into an equivalent Hive schema.
+   *
+   * @param parquetType : Single paruet field
+   * @return : Equivalent sHive schema
+   */
+  private static String convertField(final Type parquetType) {
+<span class="nc" id="L166">    StringBuilder field = new StringBuilder();</span>
+<span class="nc bnc" id="L167" title="All 2 branches missed.">    if (parquetType.isPrimitive()) {</span>
+<span class="nc" id="L168">      final PrimitiveType.PrimitiveTypeName parquetPrimitiveTypeName =</span>
+<span class="nc" id="L169">          parquetType.asPrimitiveType().getPrimitiveTypeName();</span>
+<span class="nc" id="L170">      final OriginalType originalType = parquetType.getOriginalType();</span>
+<span class="nc bnc" id="L171" title="All 2 branches missed.">      if (originalType == OriginalType.DECIMAL) {</span>
+<span class="nc" id="L172">        final DecimalMetadata decimalMetadata = parquetType.asPrimitiveType().getDecimalMetadata();</span>
+<span class="nc" id="L173">        return field.append(&quot;DECIMAL(&quot;).append(decimalMetadata.getPrecision()).append(&quot; , &quot;)</span>
+<span class="nc" id="L174">            .append(decimalMetadata.getScale()).append(&quot;)&quot;).toString();</span>
+<span class="nc bnc" id="L175" title="All 2 branches missed.">      } else if (originalType == OriginalType.DATE) {</span>
+<span class="nc" id="L176">        return field.append(&quot;DATE&quot;).toString();</span>
+      }
+      // TODO - fix the method naming here
+<span class="nc" id="L179">      return parquetPrimitiveTypeName.convert(new PrimitiveType.PrimitiveTypeNameConverter&lt;String, RuntimeException&gt;() {</span>
+        @Override
+        public String convertBOOLEAN(PrimitiveType.PrimitiveTypeName primitiveTypeName) {
+<span class="nc" id="L182">          return &quot;boolean&quot;;</span>
+        }
+
+        @Override
+        public String convertINT32(PrimitiveType.PrimitiveTypeName primitiveTypeName) {
+<span class="nc" id="L187">          return &quot;int&quot;;</span>
+        }
+
+        @Override
+        public String convertINT64(PrimitiveType.PrimitiveTypeName primitiveTypeName) {
+<span class="nc" id="L192">          return &quot;bigint&quot;;</span>
+        }
+
+        @Override
+        public String convertINT96(PrimitiveType.PrimitiveTypeName primitiveTypeName) {
+<span class="nc" id="L197">          return &quot;timestamp-millis&quot;;</span>
+        }
+
+        @Override
+        public String convertFLOAT(PrimitiveType.PrimitiveTypeName primitiveTypeName) {
+<span class="nc" id="L202">          return &quot;float&quot;;</span>
+        }
+
+        @Override
+        public String convertDOUBLE(PrimitiveType.PrimitiveTypeName primitiveTypeName) {
+<span class="nc" id="L207">          return &quot;double&quot;;</span>
+        }
+
+        @Override
+        public String convertFIXED_LEN_BYTE_ARRAY(PrimitiveType.PrimitiveTypeName primitiveTypeName) {
+<span class="nc" id="L212">          return &quot;binary&quot;;</span>
+        }
+
+        @Override
+        public String convertBINARY(PrimitiveType.PrimitiveTypeName primitiveTypeName) {
+<span class="nc bnc" id="L217" title="All 4 branches missed.">          if (originalType == OriginalType.UTF8 || originalType == OriginalType.ENUM) {</span>
+<span class="nc" id="L218">            return &quot;string&quot;;</span>
+          } else {
+<span class="nc" id="L220">            return &quot;binary&quot;;</span>
+          }
+        }
+      });
+    } else {
+<span class="nc" id="L225">      GroupType parquetGroupType = parquetType.asGroupType();</span>
+<span class="nc" id="L226">      OriginalType originalType = parquetGroupType.getOriginalType();</span>
+<span class="nc bnc" id="L227" title="All 2 branches missed.">      if (originalType != null) {</span>
+<span class="nc bnc" id="L228" title="All 4 branches missed.">        switch (originalType) {</span>
+          case LIST:
+<span class="nc bnc" id="L230" title="All 2 branches missed.">            if (parquetGroupType.getFieldCount() != 1) {</span>
+<span class="nc" id="L231">              throw new UnsupportedOperationException(&quot;Invalid list type &quot; + parquetGroupType);</span>
+            }
+<span class="nc" id="L233">            Type elementType = parquetGroupType.getType(0);</span>
+<span class="nc bnc" id="L234" title="All 2 branches missed.">            if (!elementType.isRepetition(Type.Repetition.REPEATED)) {</span>
+<span class="nc" id="L235">              throw new UnsupportedOperationException(&quot;Invalid list type &quot; + parquetGroupType);</span>
+            }
+<span class="nc" id="L237">            return createHiveArray(elementType, parquetGroupType.getName());</span>
+          case MAP:
+<span class="nc bnc" id="L239" title="All 4 branches missed.">            if (parquetGroupType.getFieldCount() != 1 || parquetGroupType.getType(0).isPrimitive()) {</span>
+<span class="nc" id="L240">              throw new UnsupportedOperationException(&quot;Invalid map type &quot; + parquetGroupType);</span>
+            }
+<span class="nc" id="L242">            GroupType mapKeyValType = parquetGroupType.getType(0).asGroupType();</span>
+<span class="nc bnc" id="L243" title="All 2 branches missed.">            if (!mapKeyValType.isRepetition(Type.Repetition.REPEATED)</span>
+<span class="nc bnc" id="L244" title="All 2 branches missed.">                || !mapKeyValType.getOriginalType().equals(OriginalType.MAP_KEY_VALUE)</span>
+<span class="nc bnc" id="L245" title="All 2 branches missed.">                || mapKeyValType.getFieldCount() != 2) {</span>
+<span class="nc" id="L246">              throw new UnsupportedOperationException(&quot;Invalid map type &quot; + parquetGroupType);</span>
+            }
+<span class="nc" id="L248">            Type keyType = mapKeyValType.getType(0);</span>
+<span class="nc bnc" id="L249" title="All 2 branches missed.">            if (!keyType.isPrimitive()</span>
+<span class="nc bnc" id="L250" title="All 2 branches missed.">                || !keyType.asPrimitiveType().getPrimitiveTypeName().equals(PrimitiveType.PrimitiveTypeName.BINARY)</span>
+<span class="nc bnc" id="L251" title="All 2 branches missed.">                || !keyType.getOriginalType().equals(OriginalType.UTF8)) {</span>
+<span class="nc" id="L252">              throw new UnsupportedOperationException(&quot;Map key type must be binary (UTF8): &quot; + keyType);</span>
+            }
+<span class="nc" id="L254">            Type valueType = mapKeyValType.getType(1);</span>
+<span class="nc" id="L255">            return createHiveMap(convertField(keyType), convertField(valueType));</span>
+          case ENUM:
+          case UTF8:
+<span class="nc" id="L258">            return &quot;string&quot;;</span>
+          case MAP_KEY_VALUE:
+            // MAP_KEY_VALUE was supposed to be used to annotate key and
+            // value group levels in a
+            // MAP. However, that is always implied by the structure of
+            // MAP. Hence, PARQUET-113
+            // dropped the requirement for having MAP_KEY_VALUE.
+          default:
+<span class="nc" id="L266">            throw new UnsupportedOperationException(&quot;Cannot convert Parquet type &quot; + parquetType);</span>
+        }
+      } else {
+        // if no original type then it's a record
+<span class="nc" id="L270">        return createHiveStruct(parquetGroupType.getFields());</span>
+      }
+    }
+  }
+
+  /**
+   * Return a 'struct' Hive schema from a list of Parquet fields.
+   *
+   * @param parquetFields : list of parquet fields
+   * @return : Equivalent 'struct' Hive schema
+   */
+  private static String createHiveStruct(List&lt;Type&gt; parquetFields) {
+<span class="nc" id="L282">    StringBuilder struct = new StringBuilder();</span>
+<span class="nc" id="L283">    struct.append(&quot;STRUCT&lt; &quot;);</span>
+<span class="nc bnc" id="L284" title="All 2 branches missed.">    for (Type field : parquetFields) {</span>
+      // TODO: struct field name is only translated to support special char($)
+      // We will need to extend it to other collection type
+<span class="nc" id="L287">      struct.append(hiveCompatibleFieldName(field.getName(), true)).append(&quot; : &quot;);</span>
+<span class="nc" id="L288">      struct.append(convertField(field)).append(&quot;, &quot;);</span>
+<span class="nc" id="L289">    }</span>
+<span class="nc" id="L290">    struct.delete(struct.length() - 2, struct.length()); // Remove the last</span>
+    // &quot;, &quot;
+<span class="nc" id="L292">    struct.append(&quot;&gt;&quot;);</span>
+<span class="nc" id="L293">    String finalStr = struct.toString();</span>
+    // Struct cannot have - in them. userstore_udr_entities has uuid in struct. This breaks the
+    // schema.
+    // HDrone sync should not fail because of this.
+<span class="nc" id="L297">    finalStr = finalStr.replaceAll(&quot;-&quot;, &quot;_&quot;);</span>
+<span class="nc" id="L298">    return finalStr;</span>
+  }
+
+  private static String hiveCompatibleFieldName(String fieldName, boolean isNested) {
+<span class="nc" id="L302">    String result = fieldName;</span>
+<span class="nc bnc" id="L303" title="All 2 branches missed.">    if (isNested) {</span>
+<span class="nc" id="L304">      result = ColumnNameXLator.translateNestedColumn(fieldName);</span>
+    }
+<span class="nc" id="L306">    return tickSurround(result);</span>
+  }
+
+  private static String tickSurround(String result) {
+<span class="nc bnc" id="L310" title="All 2 branches missed.">    if (!result.startsWith(&quot;`&quot;)) {</span>
+<span class="nc" id="L311">      result = &quot;`&quot; + result;</span>
+    }
+<span class="nc bnc" id="L313" title="All 2 branches missed.">    if (!result.endsWith(&quot;`&quot;)) {</span>
+<span class="nc" id="L314">      result = result + &quot;`&quot;;</span>
+    }
+<span class="nc" id="L316">    return result;</span>
+  }
+
+  private static String removeSurroundingTick(String result) {
+<span class="nc bnc" id="L320" title="All 4 branches missed.">    if (result.startsWith(&quot;`&quot;) &amp;&amp; result.endsWith(&quot;`&quot;)) {</span>
+<span class="nc" id="L321">      result = result.substring(1, result.length() - 1);</span>
+    }
+
+<span class="nc" id="L324">    return result;</span>
+  }
+
+  /**
+   * Create a 'Map' schema from Parquet map field.
+   */
+  private static String createHiveMap(String keyType, String valueType) {
+<span class="nc" id="L331">    return &quot;MAP&lt; &quot; + keyType + &quot;, &quot; + valueType + &quot;&gt;&quot;;</span>
+  }
+
+  /**
+   * Create an Array Hive schema from equivalent parquet list type.
+   */
+  private static String createHiveArray(Type elementType, String elementName) {
+<span class="nc" id="L338">    StringBuilder array = new StringBuilder();</span>
+<span class="nc" id="L339">    array.append(&quot;ARRAY&lt; &quot;);</span>
+<span class="nc bnc" id="L340" title="All 2 branches missed.">    if (elementType.isPrimitive()) {</span>
+<span class="nc" id="L341">      array.append(convertField(elementType));</span>
+    } else {
+<span class="nc" id="L343">      final GroupType groupType = elementType.asGroupType();</span>
+<span class="nc" id="L344">      final List&lt;Type&gt; groupFields = groupType.getFields();</span>
+<span class="nc bnc" id="L345" title="All 4 branches missed.">      if (groupFields.size() &gt; 1 || (groupFields.size() == 1</span>
+<span class="nc bnc" id="L346" title="All 4 branches missed.">          &amp;&amp; (elementType.getName().equals(&quot;array&quot;) || elementType.getName().equals(elementName + &quot;_tuple&quot;)))) {</span>
+<span class="nc" id="L347">        array.append(convertField(elementType));</span>
+      } else {
+<span class="nc" id="L349">        array.append(convertField(groupType.getFields().get(0)));</span>
+      }
+    }
+<span class="nc" id="L352">    array.append(&quot;&gt;&quot;);</span>
+<span class="nc" id="L353">    return array.toString();</span>
+  }
+
+  public static boolean isSchemaTypeUpdateAllowed(String prevType, String newType) {
+<span class="nc bnc" id="L357" title="All 8 branches missed.">    if (prevType == null || prevType.trim().isEmpty() || newType == null || newType.trim().isEmpty()) {</span>
+<span class="nc" id="L358">      return false;</span>
+    }
+<span class="nc" id="L360">    prevType = prevType.toLowerCase();</span>
+<span class="nc" id="L361">    newType = newType.toLowerCase();</span>
+<span class="nc bnc" id="L362" title="All 2 branches missed.">    if (prevType.equals(newType)) {</span>
+<span class="nc" id="L363">      return true;</span>
+<span class="nc bnc" id="L364" title="All 4 branches missed.">    } else if (prevType.equalsIgnoreCase(&quot;int&quot;) &amp;&amp; newType.equalsIgnoreCase(&quot;bigint&quot;)) {</span>
+<span class="nc" id="L365">      return true;</span>
+<span class="nc bnc" id="L366" title="All 4 branches missed.">    } else if (prevType.equalsIgnoreCase(&quot;float&quot;) &amp;&amp; newType.equalsIgnoreCase(&quot;double&quot;)) {</span>
+<span class="nc" id="L367">      return true;</span>
+    } else {
+<span class="nc bnc" id="L369" title="All 4 branches missed.">      return prevType.contains(&quot;struct&quot;) &amp;&amp; newType.toLowerCase().contains(&quot;struct&quot;);</span>
+    }
+  }
+
+  public static String generateSchemaString(MessageType storageSchema) throws IOException {
+<span class="nc" id="L374">    return generateSchemaString(storageSchema, new ArrayList&lt;&gt;());</span>
+  }
+
+  public static String generateSchemaString(MessageType storageSchema, List&lt;String&gt; colsToSkip) throws IOException {
+<span class="nc" id="L378">    Map&lt;String, String&gt; hiveSchema = convertParquetSchemaToHiveSchema(storageSchema);</span>
+<span class="nc" id="L379">    StringBuilder columns = new StringBuilder();</span>
+<span class="nc bnc" id="L380" title="All 2 branches missed.">    for (Map.Entry&lt;String, String&gt; hiveSchemaEntry : hiveSchema.entrySet()) {</span>
+<span class="nc bnc" id="L381" title="All 2 branches missed.">      if (!colsToSkip.contains(removeSurroundingTick(hiveSchemaEntry.getKey()))) {</span>
+<span class="nc" id="L382">        columns.append(hiveSchemaEntry.getKey()).append(&quot; &quot;);</span>
+<span class="nc" id="L383">        columns.append(hiveSchemaEntry.getValue()).append(&quot;, &quot;);</span>
+      }
+<span class="nc" id="L385">    }</span>
+    // Remove the last &quot;, &quot;
+<span class="nc" id="L387">    columns.delete(columns.length() - 2, columns.length());</span>
+<span class="nc" id="L388">    return columns.toString();</span>
+  }
+
+  public static String generateCreateDDL(String tableName, MessageType storageSchema, HiveSyncConfig config, String inputFormatClass,
+      String outputFormatClass, String serdeClass) throws IOException {
+<span class="nc" id="L393">    Map&lt;String, String&gt; hiveSchema = convertParquetSchemaToHiveSchema(storageSchema);</span>
+<span class="nc" id="L394">    String columns = generateSchemaString(storageSchema, config.partitionFields);</span>
+
+<span class="nc" id="L396">    List&lt;String&gt; partitionFields = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L397" title="All 2 branches missed.">    for (String partitionKey : config.partitionFields) {</span>
+<span class="nc" id="L398">      String partitionKeyWithTicks = tickSurround(partitionKey);</span>
+<span class="nc" id="L399">      partitionFields.add(new StringBuilder().append(partitionKeyWithTicks).append(&quot; &quot;)</span>
+<span class="nc" id="L400">          .append(getPartitionKeyType(hiveSchema, partitionKeyWithTicks)).toString());</span>
+<span class="nc" id="L401">    }</span>
+
+<span class="nc" id="L403">    String partitionsStr = String.join(&quot;,&quot;, partitionFields);</span>
+<span class="nc" id="L404">    StringBuilder sb = new StringBuilder(&quot;CREATE EXTERNAL TABLE  IF NOT EXISTS &quot;);</span>
+<span class="nc" id="L405">    sb.append(HIVE_ESCAPE_CHARACTER).append(config.databaseName).append(HIVE_ESCAPE_CHARACTER)</span>
+<span class="nc" id="L406">            .append(&quot;.&quot;).append(HIVE_ESCAPE_CHARACTER).append(tableName).append(HIVE_ESCAPE_CHARACTER);</span>
+<span class="nc" id="L407">    sb.append(&quot;( &quot;).append(columns).append(&quot;)&quot;);</span>
+<span class="nc bnc" id="L408" title="All 2 branches missed.">    if (!config.partitionFields.isEmpty()) {</span>
+<span class="nc" id="L409">      sb.append(&quot; PARTITIONED BY (&quot;).append(partitionsStr).append(&quot;)&quot;);</span>
+    }
+<span class="nc" id="L411">    sb.append(&quot; ROW FORMAT SERDE '&quot;).append(serdeClass).append(&quot;'&quot;);</span>
+<span class="nc" id="L412">    sb.append(&quot; STORED AS INPUTFORMAT '&quot;).append(inputFormatClass).append(&quot;'&quot;);</span>
+<span class="nc" id="L413">    sb.append(&quot; OUTPUTFORMAT '&quot;).append(outputFormatClass).append(&quot;' LOCATION '&quot;).append(config.basePath).append(&quot;'&quot;);</span>
+<span class="nc" id="L414">    return sb.toString();</span>
+  }
+
+  private static String getPartitionKeyType(Map&lt;String, String&gt; hiveSchema, String partitionKey) {
+<span class="nc bnc" id="L418" title="All 2 branches missed.">    if (hiveSchema.containsKey(partitionKey)) {</span>
+<span class="nc" id="L419">      return hiveSchema.get(partitionKey);</span>
+    }
+    // Default the unknown partition fields to be String
+    // TODO - all partition fields should be part of the schema. datestr is treated as special.
+    // Dont do that
+<span class="nc" id="L424">    return &quot;String&quot;;</span>
+  }
+
+  /**
+   * Read the schema from the log file on path.
+   * 
+   * @return
+   */
+  public static MessageType readSchemaFromLogFile(FileSystem fs, Path path) throws IOException {
+<span class="nc" id="L433">    Reader reader = HoodieLogFormat.newReader(fs, new HoodieLogFile(path), null);</span>
+<span class="nc" id="L434">    HoodieAvroDataBlock lastBlock = null;</span>
+<span class="nc bnc" id="L435" title="All 2 branches missed.">    while (reader.hasNext()) {</span>
+<span class="nc" id="L436">      HoodieLogBlock block = reader.next();</span>
+<span class="nc bnc" id="L437" title="All 2 branches missed.">      if (block instanceof HoodieAvroDataBlock) {</span>
+<span class="nc" id="L438">        lastBlock = (HoodieAvroDataBlock) block;</span>
+      }
+<span class="nc" id="L440">    }</span>
+<span class="nc" id="L441">    reader.close();</span>
+<span class="nc bnc" id="L442" title="All 2 branches missed.">    if (lastBlock != null) {</span>
+<span class="nc" id="L443">      return new AvroSchemaConverter().convert(lastBlock.getSchema());</span>
+    }
+<span class="nc" id="L445">    return null;</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

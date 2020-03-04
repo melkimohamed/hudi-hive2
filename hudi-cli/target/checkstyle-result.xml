@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<checkstyle version="8.18">
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/HoodieCLI.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/HoodieHistoryFileNameProvider.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/HoodiePrintHelper.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/HoodiePrompt.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/HoodieSplashScreen.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/Main.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/Table.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/TableHeader.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/ArchivedCommitsCommand.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/CleansCommand.java">
+<error line="34" severity="info" message="&apos;org.apache.spark.launcher.SparkLauncher&apos; devrait être séparé des imports précédents." source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="40" severity="info" message="&apos;scala.collection.JavaConverters&apos; devrait être séparé des imports précédents." source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="42" severity="info" message="Import java.io.IOException appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/CommitsCommand.java">
+<error line="37" severity="info" message="Séparation supplémentaire dans le groupe d`importation avant &apos;org.apache.hudi.common.util.StringUtils&apos;" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+<error line="38" severity="info" message="&apos;org.apache.spark.launcher.SparkLauncher&apos; devrait être séparé des imports précédents." source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/CompactionCommand.java">
+<error line="23" severity="info" message="Import org.apache.hudi.avro.model.HoodieCompactionOperation appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/FileSystemViewCommand.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/HDFSParquetImportCommand.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/HoodieLogFileCommand.java">
+<error line="43" severity="info" message="Séparation supplémentaire dans le groupe d`importation avant &apos;org.apache.avro.Schema&apos;" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/HoodieSyncCommand.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/RepairsCommand.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/RollbacksCommand.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/SavepointsCommand.java">
+<error line="22" severity="info" message="Import org.apache.hudi.cli.HoodieCLI appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/SparkEnvCommand.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/SparkMain.java">
+<error line="22" severity="info" message="Import org.apache.hudi.cli.DedupeSparkJob appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/StatsCommand.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/TableCommand.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/UtilsCommand.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/utils/CommitUtil.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/utils/HiveUtil.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/utils/InputStreamConsumer.java">
+</file>
+<file name="/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/utils/SparkUtil.java">
+<error line="22" severity="info" message="Import org.apache.hudi.cli.commands.SparkEnvCommand appears after other imports that it should precede" source="com.puppycrawl.tools.checkstyle.checks.imports.ImportOrderCheck"/>
+</file>
+</checkstyle>

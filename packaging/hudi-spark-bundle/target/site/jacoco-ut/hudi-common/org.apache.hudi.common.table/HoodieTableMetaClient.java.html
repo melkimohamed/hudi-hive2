@@ -1,0 +1,541 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieTableMetaClient.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.table</a> &gt; <span class="el_source">HoodieTableMetaClient.java</span></div><h1>HoodieTableMetaClient.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.table;
+
+import org.apache.hudi.common.SerializableConfiguration;
+import org.apache.hudi.common.io.storage.HoodieWrapperFileSystem;
+import org.apache.hudi.common.model.HoodieTableType;
+import org.apache.hudi.common.model.TimelineLayoutVersion;
+import org.apache.hudi.common.table.timeline.HoodieActiveTimeline;
+import org.apache.hudi.common.table.timeline.HoodieArchivedTimeline;
+import org.apache.hudi.common.table.timeline.HoodieInstant;
+import org.apache.hudi.common.util.ConsistencyGuardConfig;
+import org.apache.hudi.common.util.FSUtils;
+import org.apache.hudi.common.util.FailSafeConsistencyGuard;
+import org.apache.hudi.common.util.NoOpConsistencyGuard;
+import org.apache.hudi.common.util.Option;
+import org.apache.hudi.exception.TableNotFoundException;
+import org.apache.hudi.exception.HoodieException;
+
+import com.google.common.base.Preconditions;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.PathFilter;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+import java.io.File;
+import java.io.IOException;
+import java.io.Serializable;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Objects;
+import java.util.Properties;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+/**
+ * &lt;code&gt;HoodieTableMetaClient&lt;/code&gt; allows to access meta-data about a hoodie table It returns meta-data about
+ * commits, savepoints, compactions, cleanups as a &lt;code&gt;HoodieTimeline&lt;/code&gt; Create an instance of the
+ * &lt;code&gt;HoodieTableMetaClient&lt;/code&gt; with FileSystem and basePath to start getting the meta-data.
+ * &lt;p&gt;
+ * All the timelines are computed lazily, once computed the timeline is cached and never refreshed. Use the
+ * &lt;code&gt;HoodieTimeline.reload()&lt;/code&gt; to refresh timelines.
+ *
+ * @see HoodieTimeline
+ * @since 0.3.0
+ */
+public class HoodieTableMetaClient implements Serializable {
+
+<span class="nc" id="L69">  private static final Logger LOG = LogManager.getLogger(HoodieTableMetaClient.class);</span>
+<span class="nc" id="L70">  public static String METAFOLDER_NAME = &quot;.hoodie&quot;;</span>
+<span class="nc" id="L71">  public static String TEMPFOLDER_NAME = METAFOLDER_NAME + File.separator + &quot;.temp&quot;;</span>
+<span class="nc" id="L72">  public static String AUXILIARYFOLDER_NAME = METAFOLDER_NAME + File.separator + &quot;.aux&quot;;</span>
+  public static final String MARKER_EXTN = &quot;.marker&quot;;
+
+  private String basePath;
+  private transient HoodieWrapperFileSystem fs;
+  private String metaPath;
+  private boolean loadActiveTimelineOnLoad;
+  private SerializableConfiguration hadoopConf;
+  private HoodieTableType tableType;
+  private TimelineLayoutVersion timelineLayoutVersion;
+  private HoodieTableConfig tableConfig;
+  private HoodieActiveTimeline activeTimeline;
+  private HoodieArchivedTimeline archivedTimeline;
+<span class="nc" id="L85">  private ConsistencyGuardConfig consistencyGuardConfig = ConsistencyGuardConfig.newBuilder().build();</span>
+
+  public HoodieTableMetaClient(Configuration conf, String basePath) {
+    // Do not load any timeline by default
+<span class="nc" id="L89">    this(conf, basePath, false);</span>
+<span class="nc" id="L90">  }</span>
+
+  public HoodieTableMetaClient(Configuration conf, String basePath, String payloadClassName) {
+<span class="nc" id="L93">    this(conf, basePath, false, ConsistencyGuardConfig.newBuilder().build(), Option.of(TimelineLayoutVersion.CURR_LAYOUT_VERSION),</span>
+        payloadClassName);
+<span class="nc" id="L95">  }</span>
+
+  public HoodieTableMetaClient(Configuration conf, String basePath, boolean loadActiveTimelineOnLoad,
+                               ConsistencyGuardConfig consistencyGuardConfig, Option&lt;TimelineLayoutVersion&gt; layoutVersion) {
+<span class="nc" id="L99">    this(conf, basePath, loadActiveTimelineOnLoad, consistencyGuardConfig, layoutVersion, null);</span>
+<span class="nc" id="L100">  }</span>
+
+  public HoodieTableMetaClient(Configuration conf, String basePath, boolean loadActiveTimelineOnLoad) {
+<span class="nc" id="L103">    this(conf, basePath, loadActiveTimelineOnLoad, ConsistencyGuardConfig.newBuilder().build(), Option.of(TimelineLayoutVersion.CURR_LAYOUT_VERSION), null);</span>
+<span class="nc" id="L104">  }</span>
+
+  public HoodieTableMetaClient(Configuration conf, String basePath, boolean loadActiveTimelineOnLoad,
+<span class="nc" id="L107">      ConsistencyGuardConfig consistencyGuardConfig, Option&lt;TimelineLayoutVersion&gt; layoutVersion, String payloadClassName) {</span>
+<span class="nc" id="L108">    LOG.info(&quot;Loading HoodieTableMetaClient from &quot; + basePath);</span>
+<span class="nc" id="L109">    this.basePath = basePath;</span>
+<span class="nc" id="L110">    this.consistencyGuardConfig = consistencyGuardConfig;</span>
+<span class="nc" id="L111">    this.hadoopConf = new SerializableConfiguration(conf);</span>
+<span class="nc" id="L112">    Path basePathDir = new Path(this.basePath);</span>
+<span class="nc" id="L113">    this.metaPath = new Path(basePath, METAFOLDER_NAME).toString();</span>
+<span class="nc" id="L114">    Path metaPathDir = new Path(this.metaPath);</span>
+<span class="nc" id="L115">    this.fs = getFs();</span>
+<span class="nc" id="L116">    TableNotFoundException.checkTableValidity(fs, basePathDir, metaPathDir);</span>
+<span class="nc" id="L117">    this.tableConfig = new HoodieTableConfig(fs, metaPath, payloadClassName);</span>
+<span class="nc" id="L118">    this.tableType = tableConfig.getTableType();</span>
+<span class="nc" id="L119">    Option&lt;TimelineLayoutVersion&gt; tableConfigVersion = tableConfig.getTimelineLayoutVersion();</span>
+<span class="nc bnc" id="L120" title="All 4 branches missed.">    if (layoutVersion.isPresent() &amp;&amp; tableConfigVersion.isPresent()) {</span>
+      // Ensure layout version passed in config is not lower than the one seen in hoodie.properties
+<span class="nc bnc" id="L122" title="All 2 branches missed.">      Preconditions.checkArgument(layoutVersion.get().compareTo(tableConfigVersion.get()) &gt;= 0,</span>
+<span class="nc" id="L123">          &quot;Layout Version defined in hoodie properties has higher version (&quot; + tableConfigVersion.get()</span>
+<span class="nc" id="L124">              + &quot;) than the one passed in config (&quot; + layoutVersion.get() + &quot;)&quot;);</span>
+    }
+<span class="nc" id="L126">    this.timelineLayoutVersion = layoutVersion.orElseGet(() -&gt; tableConfig.getTimelineLayoutVersion().get());</span>
+<span class="nc" id="L127">    this.loadActiveTimelineOnLoad = loadActiveTimelineOnLoad;</span>
+<span class="nc" id="L128">    LOG.info(&quot;Finished Loading Table of type &quot; + tableType + &quot;(version=&quot; + timelineLayoutVersion + &quot;) from &quot; + basePath);</span>
+<span class="nc bnc" id="L129" title="All 2 branches missed.">    if (loadActiveTimelineOnLoad) {</span>
+<span class="nc" id="L130">      LOG.info(&quot;Loading Active commit timeline for &quot; + basePath);</span>
+<span class="nc" id="L131">      getActiveTimeline();</span>
+    }
+<span class="nc" id="L133">  }</span>
+
+  /**
+   * For serailizing and de-serializing.
+   *
+   * @deprecated
+   */
+<span class="nc" id="L140">  public HoodieTableMetaClient() {}</span>
+
+  public static HoodieTableMetaClient reload(HoodieTableMetaClient oldMetaClient) {
+<span class="nc" id="L143">    return new HoodieTableMetaClient(oldMetaClient.hadoopConf.get(), oldMetaClient.basePath,</span>
+        oldMetaClient.loadActiveTimelineOnLoad, oldMetaClient.consistencyGuardConfig,
+<span class="nc" id="L145">        Option.of(oldMetaClient.timelineLayoutVersion), null);</span>
+  }
+
+  /**
+   * This method is only used when this object is deserialized in a spark executor.
+   *
+   * @deprecated
+   */
+  private void readObject(java.io.ObjectInputStream in) throws IOException, ClassNotFoundException {
+<span class="nc" id="L154">    in.defaultReadObject();</span>
+<span class="nc" id="L155">    fs = null; // will be lazily inited</span>
+<span class="nc" id="L156">  }</span>
+
+  private void writeObject(java.io.ObjectOutputStream out) throws IOException {
+<span class="nc" id="L159">    out.defaultWriteObject();</span>
+<span class="nc" id="L160">  }</span>
+
+  /**
+   * @return Base path
+   */
+  public String getBasePath() {
+<span class="nc" id="L166">    return basePath;</span>
+  }
+
+  /**
+   * @return Hoodie Table Type
+   */
+  public HoodieTableType getTableType() {
+<span class="nc" id="L173">    return tableType;</span>
+  }
+
+  /**
+   * @return Meta path
+   */
+  public String getMetaPath() {
+<span class="nc" id="L180">    return metaPath;</span>
+  }
+
+  /**
+   * @return Temp Folder path
+   */
+  public String getTempFolderPath() {
+<span class="nc" id="L187">    return basePath + File.separator + TEMPFOLDER_NAME;</span>
+  }
+
+  /**
+   * Returns Marker folder path.
+   * 
+   * @param instantTs Instant Timestamp
+   * @return
+   */
+  public String getMarkerFolderPath(String instantTs) {
+<span class="nc" id="L197">    return String.format(&quot;%s%s%s&quot;, getTempFolderPath(), File.separator, instantTs);</span>
+  }
+
+  /**
+   * @return Auxiliary Meta path
+   */
+  public String getMetaAuxiliaryPath() {
+<span class="nc" id="L204">    return basePath + File.separator + AUXILIARYFOLDER_NAME;</span>
+  }
+
+  /**
+   * @return path where archived timeline is stored
+   */
+  public String getArchivePath() {
+<span class="nc" id="L211">    String archiveFolder = tableConfig.getArchivelogFolder();</span>
+<span class="nc bnc" id="L212" title="All 2 branches missed.">    if (archiveFolder.equals(HoodieTableConfig.DEFAULT_ARCHIVELOG_FOLDER)) {</span>
+<span class="nc" id="L213">      return getMetaPath();</span>
+    } else {
+<span class="nc" id="L215">      return getMetaPath() + &quot;/&quot; + archiveFolder;</span>
+    }
+  }
+
+  /**
+   * @return Table Config
+   */
+  public HoodieTableConfig getTableConfig() {
+<span class="nc" id="L223">    return tableConfig;</span>
+  }
+
+  public TimelineLayoutVersion getTimelineLayoutVersion() {
+<span class="nc" id="L227">    return timelineLayoutVersion;</span>
+  }
+
+  /**
+   * Get the FS implementation for this table.
+   */
+  public HoodieWrapperFileSystem getFs() {
+<span class="nc bnc" id="L234" title="All 2 branches missed.">    if (fs == null) {</span>
+<span class="nc" id="L235">      FileSystem fileSystem = FSUtils.getFs(metaPath, hadoopConf.newCopy());</span>
+<span class="nc bnc" id="L236" title="All 2 branches missed.">      Preconditions.checkArgument(!(fileSystem instanceof HoodieWrapperFileSystem),</span>
+          &quot;File System not expected to be that of HoodieWrapperFileSystem&quot;);
+<span class="nc" id="L238">      fs = new HoodieWrapperFileSystem(fileSystem,</span>
+<span class="nc bnc" id="L239" title="All 2 branches missed.">          consistencyGuardConfig.isConsistencyCheckEnabled()</span>
+              ? new FailSafeConsistencyGuard(fileSystem, consistencyGuardConfig)
+              : new NoOpConsistencyGuard());
+    }
+<span class="nc" id="L243">    return fs;</span>
+  }
+
+  /**
+   * Return raw file-system.
+   * 
+   * @return
+   */
+  public FileSystem getRawFs() {
+<span class="nc" id="L252">    return getFs().getFileSystem();</span>
+  }
+
+  public Configuration getHadoopConf() {
+<span class="nc" id="L256">    return hadoopConf.get();</span>
+  }
+
+  /**
+   * Get the active instants as a timeline.
+   *
+   * @return Active instants timeline
+   */
+  public synchronized HoodieActiveTimeline getActiveTimeline() {
+<span class="nc bnc" id="L265" title="All 2 branches missed.">    if (activeTimeline == null) {</span>
+<span class="nc" id="L266">      activeTimeline = new HoodieActiveTimeline(this);</span>
+    }
+<span class="nc" id="L268">    return activeTimeline;</span>
+  }
+
+  /**
+   * Reload ActiveTimeline and cache.
+   *
+   * @return Active instants timeline
+   */
+  public synchronized HoodieActiveTimeline reloadActiveTimeline() {
+<span class="nc" id="L277">    activeTimeline = new HoodieActiveTimeline(this);</span>
+<span class="nc" id="L278">    return activeTimeline;</span>
+  }
+
+  public ConsistencyGuardConfig getConsistencyGuardConfig() {
+<span class="nc" id="L282">    return consistencyGuardConfig;</span>
+  }
+
+  /**
+   * Get the archived commits as a timeline. This is costly operation, as all data from the archived files are read.
+   * This should not be used, unless for historical debugging purposes.
+   *
+   * @return Active commit timeline
+   */
+  public synchronized HoodieArchivedTimeline getArchivedTimeline() {
+<span class="nc bnc" id="L292" title="All 2 branches missed.">    if (archivedTimeline == null) {</span>
+<span class="nc" id="L293">      archivedTimeline = new HoodieArchivedTimeline(this);</span>
+    }
+<span class="nc" id="L295">    return archivedTimeline;</span>
+  }
+
+  /**
+   * Helper method to initialize a table, with given basePath, tableType, name, archiveFolder.
+   */
+  public static HoodieTableMetaClient initTableType(Configuration hadoopConf, String basePath, String tableType,
+      String tableName, String archiveLogFolder, String payloadClassName) throws IOException {
+<span class="nc" id="L303">    return initTableType(hadoopConf, basePath, HoodieTableType.valueOf(tableType), tableName,</span>
+        archiveLogFolder, payloadClassName, null);
+  }
+
+  /**
+   * Helper method to initialize a given path, as a given type and table name.
+   */
+  public static HoodieTableMetaClient initTableType(Configuration hadoopConf, String basePath,
+      HoodieTableType tableType, String tableName, String payloadClassName) throws IOException {
+<span class="nc" id="L312">    return initTableType(hadoopConf, basePath, tableType, tableName, null, payloadClassName, null);</span>
+  }
+
+  public static HoodieTableMetaClient initTableType(Configuration hadoopConf, String basePath,
+      HoodieTableType tableType, String tableName, String archiveLogFolder, String payloadClassName,
+      Integer timelineLayoutVersion) throws IOException {
+<span class="nc" id="L318">    Properties properties = new Properties();</span>
+<span class="nc" id="L319">    properties.setProperty(HoodieTableConfig.HOODIE_TABLE_NAME_PROP_NAME, tableName);</span>
+<span class="nc" id="L320">    properties.setProperty(HoodieTableConfig.HOODIE_TABLE_TYPE_PROP_NAME, tableType.name());</span>
+<span class="nc bnc" id="L321" title="All 4 branches missed.">    if (tableType == HoodieTableType.MERGE_ON_READ &amp;&amp; payloadClassName != null) {</span>
+<span class="nc" id="L322">      properties.setProperty(HoodieTableConfig.HOODIE_PAYLOAD_CLASS_PROP_NAME, payloadClassName);</span>
+    }
+
+<span class="nc bnc" id="L325" title="All 2 branches missed.">    if (null != archiveLogFolder) {</span>
+<span class="nc" id="L326">      properties.put(HoodieTableConfig.HOODIE_ARCHIVELOG_FOLDER_PROP_NAME, archiveLogFolder);</span>
+    }
+
+<span class="nc bnc" id="L329" title="All 2 branches missed.">    if (null != timelineLayoutVersion) {</span>
+<span class="nc" id="L330">      properties.put(HoodieTableConfig.HOODIE_TIMELINE_LAYOUT_VERSION, String.valueOf(timelineLayoutVersion));</span>
+    }
+<span class="nc" id="L332">    return HoodieTableMetaClient.initTableAndGetMetaClient(hadoopConf, basePath, properties);</span>
+  }
+
+  /**
+   * Helper method to initialize a given path as a hoodie table with configs passed in as as Properties.
+   *
+   * @return Instance of HoodieTableMetaClient
+   */
+  public static HoodieTableMetaClient initTableAndGetMetaClient(Configuration hadoopConf, String basePath,
+      Properties props) throws IOException {
+<span class="nc" id="L342">    LOG.info(&quot;Initializing &quot; + basePath + &quot; as hoodie table &quot; + basePath);</span>
+<span class="nc" id="L343">    Path basePathDir = new Path(basePath);</span>
+<span class="nc" id="L344">    final FileSystem fs = FSUtils.getFs(basePath, hadoopConf);</span>
+<span class="nc bnc" id="L345" title="All 2 branches missed.">    if (!fs.exists(basePathDir)) {</span>
+<span class="nc" id="L346">      fs.mkdirs(basePathDir);</span>
+    }
+<span class="nc" id="L348">    Path metaPathDir = new Path(basePath, METAFOLDER_NAME);</span>
+<span class="nc bnc" id="L349" title="All 2 branches missed.">    if (!fs.exists(metaPathDir)) {</span>
+<span class="nc" id="L350">      fs.mkdirs(metaPathDir);</span>
+    }
+
+    // if anything other than default archive log folder is specified, create that too
+<span class="nc" id="L354">    String archiveLogPropVal = props.getProperty(HoodieTableConfig.HOODIE_ARCHIVELOG_FOLDER_PROP_NAME,</span>
+        HoodieTableConfig.DEFAULT_ARCHIVELOG_FOLDER);
+<span class="nc bnc" id="L356" title="All 2 branches missed.">    if (!archiveLogPropVal.equals(HoodieTableConfig.DEFAULT_ARCHIVELOG_FOLDER)) {</span>
+<span class="nc" id="L357">      Path archiveLogDir = new Path(metaPathDir, archiveLogPropVal);</span>
+<span class="nc bnc" id="L358" title="All 2 branches missed.">      if (!fs.exists(archiveLogDir)) {</span>
+<span class="nc" id="L359">        fs.mkdirs(archiveLogDir);</span>
+      }
+    }
+
+    // Always create temporaryFolder which is needed for finalizeWrite for Hoodie tables
+<span class="nc" id="L364">    final Path temporaryFolder = new Path(basePath, HoodieTableMetaClient.TEMPFOLDER_NAME);</span>
+<span class="nc bnc" id="L365" title="All 2 branches missed.">    if (!fs.exists(temporaryFolder)) {</span>
+<span class="nc" id="L366">      fs.mkdirs(temporaryFolder);</span>
+    }
+
+    // Always create auxiliary folder which is needed to track compaction workloads (stats and any metadata in future)
+<span class="nc" id="L370">    final Path auxiliaryFolder = new Path(basePath, HoodieTableMetaClient.AUXILIARYFOLDER_NAME);</span>
+<span class="nc bnc" id="L371" title="All 2 branches missed.">    if (!fs.exists(auxiliaryFolder)) {</span>
+<span class="nc" id="L372">      fs.mkdirs(auxiliaryFolder);</span>
+    }
+
+<span class="nc" id="L375">    HoodieTableConfig.createHoodieProperties(fs, metaPathDir, props);</span>
+    // We should not use fs.getConf as this might be different from the original configuration
+    // used to create the fs in unit tests
+<span class="nc" id="L378">    HoodieTableMetaClient metaClient = new HoodieTableMetaClient(hadoopConf, basePath);</span>
+<span class="nc" id="L379">    LOG.info(&quot;Finished initializing Table of type &quot; + metaClient.getTableConfig().getTableType() + &quot; from &quot; + basePath);</span>
+<span class="nc" id="L380">    return metaClient;</span>
+  }
+
+  /**
+   * Helper method to scan all hoodie-instant metafiles.
+   *
+   * @param fs The file system implementation for this table
+   * @param metaPath The meta path where meta files are stored
+   * @param nameFilter The name filter to filter meta files
+   * @return An array of meta FileStatus
+   * @throws IOException In case of failure
+   */
+  public static FileStatus[] scanFiles(FileSystem fs, Path metaPath, PathFilter nameFilter) throws IOException {
+<span class="nc" id="L393">    return fs.listStatus(metaPath, nameFilter);</span>
+  }
+
+  /**
+   * Get the commit timeline visible for this table.
+   */
+  public HoodieTimeline getCommitsTimeline() {
+<span class="nc bnc" id="L400" title="All 3 branches missed.">    switch (this.getTableType()) {</span>
+      case COPY_ON_WRITE:
+<span class="nc" id="L402">        return getActiveTimeline().getCommitTimeline();</span>
+      case MERGE_ON_READ:
+        // We need to include the parquet files written out in delta commits
+        // Include commit action to be able to start doing a MOR over a COW table - no
+        // migration required
+<span class="nc" id="L407">        return getActiveTimeline().getCommitsTimeline();</span>
+      default:
+<span class="nc" id="L409">        throw new HoodieException(&quot;Unsupported table type :&quot; + this.getTableType());</span>
+    }
+  }
+
+  /**
+   * Get the commit + pending-compaction timeline visible for this table. A RT filesystem view is constructed with this
+   * timeline so that file-slice after pending compaction-requested instant-time is also considered valid. A RT
+   * file-system view for reading must then merge the file-slices before and after pending compaction instant so that
+   * all delta-commits are read.
+   */
+  public HoodieTimeline getCommitsAndCompactionTimeline() {
+<span class="nc bnc" id="L420" title="All 3 branches missed.">    switch (this.getTableType()) {</span>
+      case COPY_ON_WRITE:
+<span class="nc" id="L422">        return getActiveTimeline().getCommitTimeline();</span>
+      case MERGE_ON_READ:
+<span class="nc" id="L424">        return getActiveTimeline().getCommitsAndCompactionTimeline();</span>
+      default:
+<span class="nc" id="L426">        throw new HoodieException(&quot;Unsupported table type :&quot; + this.getTableType());</span>
+    }
+  }
+
+  /**
+   * Get the compacted commit timeline visible for this table.
+   */
+  public HoodieTimeline getCommitTimeline() {
+<span class="nc bnc" id="L434" title="All 2 branches missed.">    switch (this.getTableType()) {</span>
+      case COPY_ON_WRITE:
+      case MERGE_ON_READ:
+        // We need to include the parquet files written out in delta commits in tagging
+<span class="nc" id="L438">        return getActiveTimeline().getCommitTimeline();</span>
+      default:
+<span class="nc" id="L440">        throw new HoodieException(&quot;Unsupported table type :&quot; + this.getTableType());</span>
+    }
+  }
+
+  /**
+   * Gets the commit action type.
+   */
+  public String getCommitActionType() {
+<span class="nc bnc" id="L448" title="All 3 branches missed.">    switch (this.getTableType()) {</span>
+      case COPY_ON_WRITE:
+<span class="nc" id="L450">        return HoodieActiveTimeline.COMMIT_ACTION;</span>
+      case MERGE_ON_READ:
+<span class="nc" id="L452">        return HoodieActiveTimeline.DELTA_COMMIT_ACTION;</span>
+      default:
+<span class="nc" id="L454">        throw new HoodieException(&quot;Could not commit on unknown table type &quot; + this.getTableType());</span>
+    }
+  }
+
+  /**
+   * Helper method to scan all hoodie-instant metafiles and construct HoodieInstant objects.
+   *
+   * @param includedExtensions Included hoodie extensions
+   * @param applyLayoutVersionFilters Depending on Timeline layout version, if there are multiple states for the same
+   * action instant, only include the highest state
+   * @return List of Hoodie Instants generated
+   * @throws IOException in case of failure
+   */
+  public List&lt;HoodieInstant&gt; scanHoodieInstantsFromFileSystem(Set&lt;String&gt; includedExtensions,
+      boolean applyLayoutVersionFilters) throws IOException {
+<span class="nc" id="L469">    return scanHoodieInstantsFromFileSystem(new Path(metaPath), includedExtensions, applyLayoutVersionFilters);</span>
+  }
+
+  /**
+   * Helper method to scan all hoodie-instant metafiles and construct HoodieInstant objects.
+   *
+   * @param timelinePath MetaPath where instant files are stored
+   * @param includedExtensions Included hoodie extensions
+   * @param applyLayoutVersionFilters Depending on Timeline layout version, if there are multiple states for the same
+   * action instant, only include the highest state
+   * @return List of Hoodie Instants generated
+   * @throws IOException in case of failure
+   */
+  public List&lt;HoodieInstant&gt; scanHoodieInstantsFromFileSystem(Path timelinePath, Set&lt;String&gt; includedExtensions,
+      boolean applyLayoutVersionFilters) throws IOException {
+<span class="nc" id="L484">    Stream&lt;HoodieInstant&gt; instantStream = Arrays.stream(</span>
+        HoodieTableMetaClient
+<span class="nc" id="L486">            .scanFiles(getFs(), timelinePath, path -&gt; {</span>
+              // Include only the meta files with extensions that needs to be included
+<span class="nc" id="L488">              String extension = FSUtils.getFileExtension(path.getName());</span>
+<span class="nc" id="L489">              return includedExtensions.contains(extension);</span>
+<span class="nc" id="L490">            })).map(HoodieInstant::new);</span>
+
+<span class="nc bnc" id="L492" title="All 2 branches missed.">    if (applyLayoutVersionFilters) {</span>
+<span class="nc" id="L493">      instantStream = TimelineLayout.getLayout(getTimelineLayoutVersion()).filterHoodieInstants(instantStream);</span>
+    }
+<span class="nc" id="L495">    return instantStream.sorted().collect(Collectors.toList());</span>
+  }
+
+  @Override
+  public boolean equals(Object o) {
+<span class="nc bnc" id="L500" title="All 2 branches missed.">    if (this == o) {</span>
+<span class="nc" id="L501">      return true;</span>
+    }
+<span class="nc bnc" id="L503" title="All 4 branches missed.">    if (o == null || getClass() != o.getClass()) {</span>
+<span class="nc" id="L504">      return false;</span>
+    }
+<span class="nc" id="L506">    HoodieTableMetaClient that = (HoodieTableMetaClient) o;</span>
+<span class="nc bnc" id="L507" title="All 4 branches missed.">    return Objects.equals(basePath, that.basePath) &amp;&amp; tableType == that.tableType;</span>
+  }
+
+  @Override
+  public int hashCode() {
+<span class="nc" id="L512">    return Objects.hash(basePath, tableType);</span>
+  }
+
+  @Override
+  public String toString() {
+<span class="nc" id="L517">    final StringBuilder sb = new StringBuilder(&quot;HoodieTableMetaClient{&quot;);</span>
+<span class="nc" id="L518">    sb.append(&quot;basePath='&quot;).append(basePath).append('\'');</span>
+<span class="nc" id="L519">    sb.append(&quot;, metaPath='&quot;).append(metaPath).append('\'');</span>
+<span class="nc" id="L520">    sb.append(&quot;, tableType=&quot;).append(tableType);</span>
+<span class="nc" id="L521">    sb.append('}');</span>
+<span class="nc" id="L522">    return sb.toString();</span>
+  }
+
+  public void setBasePath(String basePath) {
+<span class="nc" id="L526">    this.basePath = basePath;</span>
+<span class="nc" id="L527">  }</span>
+
+  public void setMetaPath(String metaPath) {
+<span class="nc" id="L530">    this.metaPath = metaPath;</span>
+<span class="nc" id="L531">  }</span>
+
+  public void setActiveTimeline(HoodieActiveTimeline activeTimeline) {
+<span class="nc" id="L534">    this.activeTimeline = activeTimeline;</span>
+<span class="nc" id="L535">  }</span>
+
+  public void setTableConfig(HoodieTableConfig tableConfig) {
+<span class="nc" id="L538">    this.tableConfig = tableConfig;</span>
+<span class="nc" id="L539">  }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

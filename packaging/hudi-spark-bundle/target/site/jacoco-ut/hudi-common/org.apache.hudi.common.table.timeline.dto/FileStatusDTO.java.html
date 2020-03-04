@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>FileStatusDTO.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.table.timeline.dto</a> &gt; <span class="el_source">FileStatusDTO.java</span></div><h1>FileStatusDTO.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.table.timeline.dto;
+
+import org.apache.hudi.exception.HoodieException;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import org.apache.hadoop.fs.FileStatus;
+
+import java.io.IOException;
+
+/**
+ * The data transfer object of file status.
+ */
+@JsonIgnoreProperties(ignoreUnknown = true)
+<span class="nc" id="L33">public class FileStatusDTO {</span>
+
+  @JsonProperty(&quot;path&quot;)
+  FilePathDTO path;
+  @JsonProperty(&quot;length&quot;)
+  long length;
+  @JsonProperty(&quot;isdir&quot;)
+  boolean isdir;
+  @JsonProperty(&quot;blockReplication&quot;)
+  short blockReplication;
+  @JsonProperty(&quot;blocksize&quot;)
+  long blocksize;
+  @JsonProperty(&quot;modificationTime&quot;)
+  long modificationTime;
+  @JsonProperty(&quot;accessTime&quot;)
+  long accessTime;
+  @JsonProperty(&quot;permission&quot;)
+  FSPermissionDTO permission;
+  @JsonProperty(&quot;owner&quot;)
+  String owner;
+  @JsonProperty(&quot;group&quot;)
+  String group;
+  @JsonProperty(&quot;symlink&quot;)
+  FilePathDTO symlink;
+
+  public static FileStatusDTO fromFileStatus(FileStatus fileStatus) {
+<span class="nc bnc" id="L59" title="All 2 branches missed.">    if (null == fileStatus) {</span>
+<span class="nc" id="L60">      return null;</span>
+    }
+
+<span class="nc" id="L63">    FileStatusDTO dto = new FileStatusDTO();</span>
+    try {
+<span class="nc" id="L65">      dto.path = FilePathDTO.fromPath(fileStatus.getPath());</span>
+<span class="nc" id="L66">      dto.length = fileStatus.getLen();</span>
+<span class="nc" id="L67">      dto.isdir = fileStatus.isDirectory();</span>
+<span class="nc" id="L68">      dto.blockReplication = fileStatus.getReplication();</span>
+<span class="nc" id="L69">      dto.blocksize = fileStatus.getBlockSize();</span>
+<span class="nc" id="L70">      dto.modificationTime = fileStatus.getModificationTime();</span>
+<span class="nc" id="L71">      dto.accessTime = fileStatus.getModificationTime();</span>
+<span class="nc bnc" id="L72" title="All 2 branches missed.">      dto.symlink = fileStatus.isSymlink() ? FilePathDTO.fromPath(fileStatus.getSymlink()) : null;</span>
+<span class="nc" id="L73">      safeReadAndSetMetadata(dto, fileStatus);</span>
+<span class="nc" id="L74">    } catch (IOException ioe) {</span>
+<span class="nc" id="L75">      throw new HoodieException(ioe);</span>
+<span class="nc" id="L76">    }</span>
+<span class="nc" id="L77">    return dto;</span>
+  }
+
+  /**
+   * Used to safely handle FileStatus calls which might fail on some FileSystem implementation.
+   * (DeprecatedLocalFileSystem)
+   */
+  private static void safeReadAndSetMetadata(FileStatusDTO dto, FileStatus fileStatus) {
+    try {
+<span class="nc" id="L86">      dto.owner = fileStatus.getOwner();</span>
+<span class="nc" id="L87">      dto.group = fileStatus.getGroup();</span>
+<span class="nc" id="L88">      dto.permission = FSPermissionDTO.fromFsPermission(fileStatus.getPermission());</span>
+<span class="nc" id="L89">    } catch (IllegalArgumentException ie) {</span>
+      // Deprecated File System (testing) does not work well with this call
+      // skipping
+<span class="nc" id="L92">    }</span>
+<span class="nc" id="L93">  }</span>
+
+  public static FileStatus toFileStatus(FileStatusDTO dto) {
+<span class="nc bnc" id="L96" title="All 2 branches missed.">    if (null == dto) {</span>
+<span class="nc" id="L97">      return null;</span>
+    }
+
+<span class="nc" id="L100">    return new FileStatus(dto.length, dto.isdir, dto.blockReplication, dto.blocksize, dto.modificationTime,</span>
+<span class="nc" id="L101">        dto.accessTime, FSPermissionDTO.fromFsPermissionDTO(dto.permission), dto.owner, dto.group,</span>
+<span class="nc" id="L102">        FilePathDTO.toPath(dto.symlink), FilePathDTO.toPath(dto.path));</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

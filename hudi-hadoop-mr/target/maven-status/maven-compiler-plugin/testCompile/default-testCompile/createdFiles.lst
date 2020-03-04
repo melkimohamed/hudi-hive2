@@ -1,0 +1,8 @@
+org/apache/hudi/hadoop/TestHoodieROTablePathFilter.class
+org/apache/hudi/hadoop/TestRecordReaderValueIterator.class
+org/apache/hudi/hadoop/InputPathHandlerTest.class
+org/apache/hudi/hadoop/TestRecordReaderValueIterator$TestRecordReader.class
+org/apache/hudi/hadoop/InputFormatTestUtil.class
+org/apache/hudi/hadoop/realtime/TestHoodieRealtimeRecordReader.class
+org/apache/hudi/hadoop/TestHoodieParquetInputFormat.class
+org/apache/hudi/hadoop/TestAnnotation.class

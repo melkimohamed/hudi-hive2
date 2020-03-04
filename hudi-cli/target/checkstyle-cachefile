@@ -1,0 +1,24 @@
+#Wed Mar 04 21:54:09 CET 2020
+/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/utils/CommitUtil.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/HoodiePrintHelper.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/RollbacksCommand.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/HDFSParquetImportCommand.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/utils/HiveUtil.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/ArchivedCommitsCommand.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/HoodiePrompt.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/Table.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/FileSystemViewCommand.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/HoodieHistoryFileNameProvider.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/TableCommand.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/utils/InputStreamConsumer.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/HoodieSplashScreen.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/StatsCommand.java=1583354730000
+configuration*?=451BF041C19D50D852F526C0B5E4292CE8C6EC31
+/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/TableHeader.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/RepairsCommand.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/HoodieSyncCommand.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/SparkEnvCommand.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/HoodieCLI.java=1583354730000
+module-resource*?\:/root/hudi-incubator-build/incubator-hudi/hudi-cli/target/checkstyle-suppressions.xml=8D8F5336F98054DC2B1EAC538CCEE719E7161D3C
+/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/commands/UtilsCommand.java=1583354730000
+/root/hudi-incubator-build/incubator-hudi/hudi-cli/src/main/java/org/apache/hudi/cli/Main.java=1583354730000

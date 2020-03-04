@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>TimelineService.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-timeline-service</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.timeline.service</a> &gt; <span class="el_source">TimelineService.java</span></div><h1>TimelineService.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.timeline.service;
+
+import org.apache.hudi.common.SerializableConfiguration;
+import org.apache.hudi.common.table.view.FileSystemViewManager;
+import org.apache.hudi.common.table.view.FileSystemViewStorageConfig;
+import org.apache.hudi.common.table.view.FileSystemViewStorageType;
+import org.apache.hudi.common.util.FSUtils;
+
+import com.beust.jcommander.JCommander;
+import com.beust.jcommander.Parameter;
+import io.javalin.Javalin;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+import java.io.IOException;
+import java.io.Serializable;
+
+/**
+ * A stand alone timeline service exposing File-System View interfaces to clients.
+ */
+public class TimelineService {
+
+<span class="nc" id="L43">  private static final Logger LOG = LogManager.getLogger(TimelineService.class);</span>
+
+  private int serverPort;
+  private Configuration conf;
+  private transient FileSystem fs;
+<span class="nc" id="L48">  private transient Javalin app = null;</span>
+  private transient FileSystemViewManager fsViewsManager;
+
+  public int getServerPort() {
+<span class="nc" id="L52">    return serverPort;</span>
+  }
+
+  public TimelineService(int serverPort, FileSystemViewManager globalFileSystemViewManager, Configuration conf)
+<span class="nc" id="L56">      throws IOException {</span>
+<span class="nc" id="L57">    this.conf = FSUtils.prepareHadoopConf(conf);</span>
+<span class="nc" id="L58">    this.fs = FileSystem.get(conf);</span>
+<span class="nc" id="L59">    this.serverPort = serverPort;</span>
+<span class="nc" id="L60">    this.fsViewsManager = globalFileSystemViewManager;</span>
+<span class="nc" id="L61">  }</span>
+
+  public TimelineService(int serverPort, FileSystemViewManager globalFileSystemViewManager) throws IOException {
+<span class="nc" id="L64">    this(serverPort, globalFileSystemViewManager, new Configuration());</span>
+<span class="nc" id="L65">  }</span>
+
+  public TimelineService(Config config) throws IOException {
+<span class="nc" id="L68">    this(config.serverPort, buildFileSystemViewManager(config,</span>
+<span class="nc" id="L69">        new SerializableConfiguration(FSUtils.prepareHadoopConf(new Configuration()))));</span>
+<span class="nc" id="L70">  }</span>
+
+<span class="nc" id="L72">  public static class Config implements Serializable {</span>
+
+<span class="nc" id="L74">    @Parameter(names = {&quot;--server-port&quot;, &quot;-p&quot;}, description = &quot; Server Port&quot;)</span>
+<span class="nc" id="L75">    public Integer serverPort = 26754;</span>
+
+<span class="nc" id="L77">    @Parameter(names = {&quot;--view-storage&quot;, &quot;-st&quot;}, description = &quot;View Storage Type. Default - SPILLABLE_DISK&quot;)</span>
+    public FileSystemViewStorageType viewStorageType = FileSystemViewStorageType.SPILLABLE_DISK;
+
+<span class="nc" id="L80">    @Parameter(names = {&quot;--max-view-mem-per-table&quot;, &quot;-mv&quot;},</span>
+        description = &quot;Maximum view memory per table in MB to be used for storing file-groups.&quot;
+            + &quot; Overflow file-groups will be spilled to disk. Used for SPILLABLE_DISK storage type&quot;)
+<span class="nc" id="L83">    public Integer maxViewMemPerTableInMB = 2048;</span>
+
+<span class="nc" id="L85">    @Parameter(names = {&quot;--mem-overhead-fraction-pending-compaction&quot;, &quot;-cf&quot;},</span>
+        description = &quot;Memory Fraction of --max-view-mem-per-table to be allocated for managing pending compaction&quot;
+            + &quot; storage. Overflow entries will be spilled to disk. Used for SPILLABLE_DISK storage type&quot;)
+<span class="nc" id="L88">    public Double memFractionForCompactionPerTable = 0.001;</span>
+
+<span class="nc" id="L90">    @Parameter(names = {&quot;--base-store-path&quot;, &quot;-sp&quot;},</span>
+        description = &quot;Directory where spilled view entries will be stored. Used for SPILLABLE_DISK storage type&quot;)
+    public String baseStorePathForFileGroups = FileSystemViewStorageConfig.DEFAULT_VIEW_SPILLABLE_DIR;
+
+<span class="nc" id="L94">    @Parameter(names = {&quot;--rocksdb-path&quot;, &quot;-rp&quot;}, description = &quot;Root directory for RocksDB&quot;)</span>
+    public String rocksDBPath = FileSystemViewStorageConfig.DEFAULT_ROCKSDB_BASE_PATH;
+
+<span class="nc" id="L97">    @Parameter(names = {&quot;--help&quot;, &quot;-h&quot;})</span>
+<span class="nc" id="L98">    public Boolean help = false;</span>
+  }
+
+  public int startService() throws IOException {
+<span class="nc" id="L102">    app = Javalin.create();</span>
+<span class="nc" id="L103">    FileSystemViewHandler router = new FileSystemViewHandler(app, conf, fsViewsManager);</span>
+<span class="nc" id="L104">    app.get(&quot;/&quot;, ctx -&gt; ctx.result(&quot;Hello World&quot;));</span>
+<span class="nc" id="L105">    router.register();</span>
+<span class="nc" id="L106">    app.start(serverPort);</span>
+    // If port = 0, a dynamic port is assigned. Store it.
+<span class="nc" id="L108">    serverPort = app.port();</span>
+<span class="nc" id="L109">    LOG.info(&quot;Starting Timeline server on port :&quot; + serverPort);</span>
+<span class="nc" id="L110">    return serverPort;</span>
+  }
+
+  public void run() throws IOException {
+<span class="nc" id="L114">    startService();</span>
+<span class="nc" id="L115">  }</span>
+
+  public static FileSystemViewManager buildFileSystemViewManager(Config config, SerializableConfiguration conf) {
+<span class="nc bnc" id="L118" title="All 4 branches missed.">    switch (config.viewStorageType) {</span>
+      case MEMORY:
+<span class="nc" id="L120">        FileSystemViewStorageConfig.Builder inMemConfBuilder = FileSystemViewStorageConfig.newBuilder();</span>
+<span class="nc" id="L121">        inMemConfBuilder.withStorageType(FileSystemViewStorageType.MEMORY);</span>
+<span class="nc" id="L122">        return FileSystemViewManager.createViewManager(conf, inMemConfBuilder.build());</span>
+      case SPILLABLE_DISK: {
+<span class="nc" id="L124">        FileSystemViewStorageConfig.Builder spillableConfBuilder = FileSystemViewStorageConfig.newBuilder();</span>
+<span class="nc" id="L125">        spillableConfBuilder.withStorageType(FileSystemViewStorageType.SPILLABLE_DISK)</span>
+<span class="nc" id="L126">            .withBaseStoreDir(config.baseStorePathForFileGroups)</span>
+<span class="nc" id="L127">            .withMaxMemoryForView(config.maxViewMemPerTableInMB * 1024 * 1024L)</span>
+<span class="nc" id="L128">            .withMemFractionForPendingCompaction(config.memFractionForCompactionPerTable);</span>
+<span class="nc" id="L129">        return FileSystemViewManager.createViewManager(conf, spillableConfBuilder.build());</span>
+      }
+      case EMBEDDED_KV_STORE: {
+<span class="nc" id="L132">        FileSystemViewStorageConfig.Builder rocksDBConfBuilder = FileSystemViewStorageConfig.newBuilder();</span>
+<span class="nc" id="L133">        rocksDBConfBuilder.withStorageType(FileSystemViewStorageType.EMBEDDED_KV_STORE)</span>
+<span class="nc" id="L134">            .withRocksDBPath(config.rocksDBPath);</span>
+<span class="nc" id="L135">        return FileSystemViewManager.createViewManager(conf, rocksDBConfBuilder.build());</span>
+      }
+      default:
+<span class="nc" id="L138">        throw new IllegalArgumentException(&quot;Invalid view manager storage type :&quot; + config.viewStorageType);</span>
+    }
+  }
+
+  public void close() {
+<span class="nc" id="L143">    LOG.info(&quot;Closing Timeline Service&quot;);</span>
+<span class="nc" id="L144">    this.app.stop();</span>
+<span class="nc" id="L145">    this.app = null;</span>
+<span class="nc" id="L146">    this.fsViewsManager.close();</span>
+<span class="nc" id="L147">    LOG.info(&quot;Closed Timeline Service&quot;);</span>
+<span class="nc" id="L148">  }</span>
+
+  public Configuration getConf() {
+<span class="nc" id="L151">    return conf;</span>
+  }
+
+  public FileSystem getFs() {
+<span class="nc" id="L155">    return fs;</span>
+  }
+
+  public static void main(String[] args) throws Exception {
+<span class="nc" id="L159">    final Config cfg = new Config();</span>
+<span class="nc" id="L160">    JCommander cmd = new JCommander(cfg, null, args);</span>
+<span class="nc bnc" id="L161" title="All 2 branches missed.">    if (cfg.help) {</span>
+<span class="nc" id="L162">      cmd.usage();</span>
+<span class="nc" id="L163">      System.exit(1);</span>
+    }
+
+<span class="nc" id="L166">    Configuration conf = FSUtils.prepareHadoopConf(new Configuration());</span>
+<span class="nc" id="L167">    FileSystemViewManager viewManager = buildFileSystemViewManager(cfg, new SerializableConfiguration(conf));</span>
+<span class="nc" id="L168">    TimelineService service = new TimelineService(cfg.serverPort, viewManager);</span>
+<span class="nc" id="L169">    service.run();</span>
+<span class="nc" id="L170">  }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

@@ -1,0 +1,316 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieParquetInputFormat.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-hadoop-mr</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.hadoop</a> &gt; <span class="el_source">HoodieParquetInputFormat.java</span></div><h1>HoodieParquetInputFormat.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.hadoop;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+import org.apache.hadoop.conf.Configurable;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat;
+import org.apache.hadoop.io.ArrayWritable;
+import org.apache.hadoop.io.NullWritable;
+import org.apache.hadoop.mapred.InputSplit;
+import org.apache.hadoop.mapred.JobConf;
+import org.apache.hadoop.mapred.RecordReader;
+import org.apache.hadoop.mapred.Reporter;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hudi.common.model.HoodieCommitMetadata;
+import org.apache.hudi.common.model.HoodieBaseFile;
+import org.apache.hudi.common.model.HoodiePartitionMetadata;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.common.table.HoodieTimeline;
+import org.apache.hudi.common.table.TableFileSystemView.BaseFileOnlyView;
+import org.apache.hudi.common.table.timeline.HoodieInstant;
+import org.apache.hudi.common.table.view.HoodieTableFileSystemView;
+import org.apache.hudi.common.util.StringUtils;
+import org.apache.hudi.exception.HoodieIOException;
+import org.apache.log4j.LogManager;
+import org.apache.log4j.Logger;
+
+/**
+ * HoodieInputFormat which understands the Hoodie File Structure and filters files based on the Hoodie Mode. If paths
+ * that does not correspond to a hoodie table then they are passed in as is (as what FileInputFormat.listStatus()
+ * would do). The JobConf could have paths from multipe Hoodie/Non-Hoodie tables
+ */
+@UseFileSplitsFromInputFormat
+<span class="nc" id="L63">public class HoodieParquetInputFormat extends MapredParquetInputFormat implements Configurable {</span>
+
+<span class="nc" id="L65">  private static final Logger LOG = LogManager.getLogger(HoodieParquetInputFormat.class);</span>
+
+  protected Configuration conf;
+
+  @Override
+  public FileStatus[] listStatus(JobConf job) throws IOException {
+    // Segregate inputPaths[] to incremental, snapshot and non hoodie paths
+<span class="nc" id="L72">    List&lt;String&gt; incrementalTables = HoodieHiveUtil.getIncrementalTableNames(Job.getInstance(job));</span>
+<span class="nc" id="L73">    InputPathHandler inputPathHandler = new InputPathHandler(conf, getInputPaths(job), incrementalTables);</span>
+<span class="nc" id="L74">    List&lt;FileStatus&gt; returns = new ArrayList&lt;&gt;();</span>
+
+<span class="nc" id="L76">    Map&lt;String, HoodieTableMetaClient&gt; tableMetaClientMap = inputPathHandler.getTableMetaClientMap();</span>
+    // process incremental pulls first
+<span class="nc bnc" id="L78" title="All 2 branches missed.">    for (String table : incrementalTables) {</span>
+<span class="nc" id="L79">      HoodieTableMetaClient metaClient = tableMetaClientMap.get(table);</span>
+<span class="nc bnc" id="L80" title="All 2 branches missed.">      if (metaClient == null) {</span>
+        /* This can happen when the INCREMENTAL mode is set for a table but there were no InputPaths
+         * in the jobConf
+         */
+<span class="nc" id="L84">        continue;</span>
+      }
+<span class="nc" id="L86">      List&lt;Path&gt; inputPaths = inputPathHandler.getGroupedIncrementalPaths().get(metaClient);</span>
+<span class="nc" id="L87">      List&lt;FileStatus&gt; result = listStatusForIncrementalMode(job, metaClient, inputPaths);</span>
+<span class="nc bnc" id="L88" title="All 2 branches missed.">      if (result != null) {</span>
+<span class="nc" id="L89">        returns.addAll(result);</span>
+      }
+<span class="nc" id="L91">    }</span>
+
+    // process non hoodie Paths next.
+<span class="nc" id="L94">    List&lt;Path&gt; nonHoodiePaths = inputPathHandler.getNonHoodieInputPaths();</span>
+<span class="nc bnc" id="L95" title="All 2 branches missed.">    if (nonHoodiePaths.size() &gt; 0) {</span>
+<span class="nc" id="L96">      setInputPaths(job, nonHoodiePaths.toArray(new Path[nonHoodiePaths.size()]));</span>
+<span class="nc" id="L97">      FileStatus[] fileStatuses = super.listStatus(job);</span>
+<span class="nc" id="L98">      returns.addAll(Arrays.asList(fileStatuses));</span>
+    }
+
+    // process snapshot queries next.
+<span class="nc" id="L102">    List&lt;Path&gt; snapshotPaths = inputPathHandler.getSnapshotPaths();</span>
+<span class="nc bnc" id="L103" title="All 2 branches missed.">    if (snapshotPaths.size() &gt; 0) {</span>
+<span class="nc" id="L104">      setInputPaths(job, snapshotPaths.toArray(new Path[snapshotPaths.size()]));</span>
+<span class="nc" id="L105">      FileStatus[] fileStatuses = super.listStatus(job);</span>
+<span class="nc" id="L106">      Map&lt;HoodieTableMetaClient, List&lt;FileStatus&gt;&gt; groupedFileStatus =</span>
+<span class="nc" id="L107">          groupFileStatusForSnapshotPaths(fileStatuses, tableMetaClientMap.values());</span>
+<span class="nc" id="L108">      LOG.info(&quot;Found a total of &quot; + groupedFileStatus.size() + &quot; groups&quot;);</span>
+<span class="nc bnc" id="L109" title="All 2 branches missed.">      for (Map.Entry&lt;HoodieTableMetaClient, List&lt;FileStatus&gt;&gt; entry : groupedFileStatus.entrySet()) {</span>
+<span class="nc" id="L110">        List&lt;FileStatus&gt; result = filterFileStatusForSnapshotMode(entry.getKey(), entry.getValue());</span>
+<span class="nc bnc" id="L111" title="All 2 branches missed.">        if (result != null) {</span>
+<span class="nc" id="L112">          returns.addAll(result);</span>
+        }
+<span class="nc" id="L114">      }</span>
+    }
+<span class="nc" id="L116">    return returns.toArray(new FileStatus[returns.size()]);</span>
+  }
+
+  /**
+   * Achieves listStatus functionality for an incrementally queried table. Instead of listing all
+   * partitions and then filtering based on the commits of interest, this logic first extracts the
+   * partitions touched by the desired commits and then lists only those partitions.
+   */
+  private List&lt;FileStatus&gt; listStatusForIncrementalMode(
+      JobConf job, HoodieTableMetaClient tableMetaClient, List&lt;Path&gt; inputPaths) throws IOException {
+<span class="nc" id="L126">    String tableName = tableMetaClient.getTableConfig().getTableName();</span>
+<span class="nc" id="L127">    HoodieTimeline timeline = tableMetaClient.getActiveTimeline().getCommitsTimeline().filterCompletedInstants();</span>
+<span class="nc" id="L128">    String lastIncrementalTs = HoodieHiveUtil.readStartCommitTime(Job.getInstance(job), tableName);</span>
+    // Total number of commits to return in this batch. Set this to -1 to get all the commits.
+<span class="nc" id="L130">    Integer maxCommits = HoodieHiveUtil.readMaxCommits(Job.getInstance(job), tableName);</span>
+<span class="nc" id="L131">    LOG.info(&quot;Last Incremental timestamp was set as &quot; + lastIncrementalTs);</span>
+<span class="nc" id="L132">    List&lt;HoodieInstant&gt; commitsToCheck = timeline.findInstantsAfter(lastIncrementalTs, maxCommits)</span>
+<span class="nc" id="L133">        .getInstants().collect(Collectors.toList());</span>
+    // Extract partitions touched by the commitsToCheck
+<span class="nc" id="L135">    Set&lt;String&gt; partitionsToList = new HashSet&lt;&gt;();</span>
+<span class="nc bnc" id="L136" title="All 2 branches missed.">    for (HoodieInstant commit : commitsToCheck) {</span>
+<span class="nc" id="L137">      HoodieCommitMetadata commitMetadata = HoodieCommitMetadata.fromBytes(timeline.getInstantDetails(commit).get(),</span>
+          HoodieCommitMetadata.class);
+<span class="nc" id="L139">      partitionsToList.addAll(commitMetadata.getPartitionToWriteStats().keySet());</span>
+<span class="nc" id="L140">    }</span>
+<span class="nc bnc" id="L141" title="All 2 branches missed.">    if (partitionsToList.isEmpty()) {</span>
+<span class="nc" id="L142">      return null;</span>
+    }
+<span class="nc" id="L144">    String incrementalInputPaths = partitionsToList.stream()</span>
+<span class="nc" id="L145">        .map(s -&gt; tableMetaClient.getBasePath() + Path.SEPARATOR + s)</span>
+<span class="nc" id="L146">        .filter(s -&gt; {</span>
+          /*
+           * Ensure to return only results from the original input path that has incremental changes
+           * This check is needed for the following corner case -  When the caller invokes
+           * HoodieInputFormat.listStatus multiple times (with small batches of Hive partitions each
+           * time. Ex. Hive fetch task calls listStatus for every partition once) we do not want to
+           * accidentally return all incremental changes for the entire table in every listStatus()
+           * call. This will create redundant splits. Instead we only want to return the incremental
+           * changes (if so any) in that batch of input paths.
+           *
+           * NOTE on Hive queries that are executed using Fetch task:
+           * Since Fetch tasks invoke InputFormat.listStatus() per partition, Hoodie metadata can be
+           * listed in every such listStatus() call. In order to avoid this, it might be useful to
+           * disable fetch tasks using the hive session property for incremental queries:
+           * `set hive.fetch.task.conversion=none;`
+           * This would ensure Map Reduce execution is chosen for a Hive query, which combines
+           * partitions (comma separated) and calls InputFormat.listStatus() only once with all
+           * those partitions.
+           */
+<span class="nc bnc" id="L165" title="All 2 branches missed.">          for (Path path : inputPaths) {</span>
+<span class="nc bnc" id="L166" title="All 2 branches missed.">            if (path.toString().contains(s)) {</span>
+<span class="nc" id="L167">              return true;</span>
+            }
+<span class="nc" id="L169">          }</span>
+<span class="nc" id="L170">          return false;</span>
+        })
+<span class="nc" id="L172">        .collect(Collectors.joining(&quot;,&quot;));</span>
+<span class="nc bnc" id="L173" title="All 2 branches missed.">    if (StringUtils.isNullOrEmpty(incrementalInputPaths)) {</span>
+<span class="nc" id="L174">      return null;</span>
+    }
+    // Mutate the JobConf to set the input paths to only partitions touched by incremental pull.
+<span class="nc" id="L177">    setInputPaths(job, incrementalInputPaths);</span>
+<span class="nc" id="L178">    FileStatus[] fileStatuses = super.listStatus(job);</span>
+<span class="nc" id="L179">    BaseFileOnlyView roView = new HoodieTableFileSystemView(tableMetaClient, timeline, fileStatuses);</span>
+<span class="nc" id="L180">    List&lt;String&gt; commitsList = commitsToCheck.stream().map(HoodieInstant::getTimestamp).collect(Collectors.toList());</span>
+<span class="nc" id="L181">    List&lt;HoodieBaseFile&gt; filteredFiles = roView.getLatestBaseFilesInRange(commitsList).collect(Collectors.toList());</span>
+<span class="nc" id="L182">    List&lt;FileStatus&gt; returns = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L183" title="All 2 branches missed.">    for (HoodieBaseFile filteredFile : filteredFiles) {</span>
+<span class="nc" id="L184">      LOG.debug(&quot;Processing incremental hoodie file - &quot; + filteredFile.getPath());</span>
+<span class="nc" id="L185">      filteredFile = checkFileStatus(filteredFile);</span>
+<span class="nc" id="L186">      returns.add(filteredFile.getFileStatus());</span>
+<span class="nc" id="L187">    }</span>
+<span class="nc" id="L188">    LOG.info(&quot;Total paths to process after hoodie incremental filter &quot; + filteredFiles.size());</span>
+<span class="nc" id="L189">    return returns;</span>
+  }
+
+  /**
+   * Takes in a list of filesStatus and a list of table metadatas. Groups the files status list
+   * based on given table metadata.
+   * @param fileStatuses
+   * @param metaClientList
+   * @return
+   * @throws IOException
+   */
+  private Map&lt;HoodieTableMetaClient, List&lt;FileStatus&gt;&gt; groupFileStatusForSnapshotPaths(
+      FileStatus[] fileStatuses, Collection&lt;HoodieTableMetaClient&gt; metaClientList) {
+    // This assumes the paths for different tables are grouped together
+<span class="nc" id="L203">    Map&lt;HoodieTableMetaClient, List&lt;FileStatus&gt;&gt; grouped = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L204">    HoodieTableMetaClient metadata = null;</span>
+<span class="nc bnc" id="L205" title="All 2 branches missed.">    for (FileStatus status : fileStatuses) {</span>
+<span class="nc" id="L206">      Path inputPath = status.getPath();</span>
+<span class="nc bnc" id="L207" title="All 2 branches missed.">      if (!inputPath.getName().endsWith(&quot;.parquet&quot;)) {</span>
+        //FIXME(vc): skip non parquet files for now. This wont be needed once log file name start
+        // with &quot;.&quot;
+<span class="nc" id="L210">        continue;</span>
+      }
+<span class="nc bnc" id="L212" title="All 4 branches missed.">      if ((metadata == null) || (!inputPath.toString().contains(metadata.getBasePath()))) {</span>
+<span class="nc bnc" id="L213" title="All 2 branches missed.">        for (HoodieTableMetaClient metaClient : metaClientList) {</span>
+<span class="nc bnc" id="L214" title="All 2 branches missed.">          if (inputPath.toString().contains(metaClient.getBasePath())) {</span>
+<span class="nc" id="L215">            metadata = metaClient;</span>
+<span class="nc bnc" id="L216" title="All 2 branches missed.">            if (!grouped.containsKey(metadata)) {</span>
+<span class="nc" id="L217">              grouped.put(metadata, new ArrayList&lt;&gt;());</span>
+            }
+            break;
+          }
+<span class="nc" id="L221">        }</span>
+      }
+<span class="nc" id="L223">      grouped.get(metadata).add(status);</span>
+    }
+<span class="nc" id="L225">    return grouped;</span>
+  }
+
+  /**
+   * Filters data files for a snapshot queried table.
+   */
+  private List&lt;FileStatus&gt; filterFileStatusForSnapshotMode(
+      HoodieTableMetaClient metadata, List&lt;FileStatus&gt; fileStatuses) {
+<span class="nc" id="L233">    FileStatus[] statuses = fileStatuses.toArray(new FileStatus[0]);</span>
+<span class="nc bnc" id="L234" title="All 2 branches missed.">    if (LOG.isDebugEnabled()) {</span>
+<span class="nc" id="L235">      LOG.debug(&quot;Hoodie Metadata initialized with completed commit Ts as :&quot; + metadata);</span>
+    }
+    // Get all commits, delta commits, compactions, as all of them produce a base parquet file today
+<span class="nc" id="L238">    HoodieTimeline timeline = metadata.getActiveTimeline().getCommitsTimeline().filterCompletedInstants();</span>
+<span class="nc" id="L239">    BaseFileOnlyView roView = new HoodieTableFileSystemView(metadata, timeline, statuses);</span>
+    // filter files on the latest commit found
+<span class="nc" id="L241">    List&lt;HoodieBaseFile&gt; filteredFiles = roView.getLatestBaseFiles().collect(Collectors.toList());</span>
+<span class="nc" id="L242">    LOG.info(&quot;Total paths to process after hoodie filter &quot; + filteredFiles.size());</span>
+<span class="nc" id="L243">    List&lt;FileStatus&gt; returns = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L244" title="All 2 branches missed.">    for (HoodieBaseFile filteredFile : filteredFiles) {</span>
+<span class="nc bnc" id="L245" title="All 2 branches missed.">      if (LOG.isDebugEnabled()) {</span>
+<span class="nc" id="L246">        LOG.debug(&quot;Processing latest hoodie file - &quot; + filteredFile.getPath());</span>
+      }
+<span class="nc" id="L248">      filteredFile = checkFileStatus(filteredFile);</span>
+<span class="nc" id="L249">      returns.add(filteredFile.getFileStatus());</span>
+<span class="nc" id="L250">    }</span>
+<span class="nc" id="L251">    return returns;</span>
+  }
+
+  /**
+   * Checks the file status for a race condition which can set the file size to 0. 1. HiveInputFormat does
+   * super.listStatus() and gets back a FileStatus[] 2. Then it creates the HoodieTableMetaClient for the paths listed.
+   * 3. Generation of splits looks at FileStatus size to create splits, which skips this file
+   */
+  private HoodieBaseFile checkFileStatus(HoodieBaseFile dataFile) {
+<span class="nc" id="L260">    Path dataPath = dataFile.getFileStatus().getPath();</span>
+    try {
+<span class="nc bnc" id="L262" title="All 2 branches missed.">      if (dataFile.getFileSize() == 0) {</span>
+<span class="nc" id="L263">        FileSystem fs = dataPath.getFileSystem(conf);</span>
+<span class="nc" id="L264">        LOG.info(&quot;Refreshing file status &quot; + dataFile.getPath());</span>
+<span class="nc" id="L265">        return new HoodieBaseFile(fs.getFileStatus(dataPath));</span>
+      }
+<span class="nc" id="L267">      return dataFile;</span>
+<span class="nc" id="L268">    } catch (IOException e) {</span>
+<span class="nc" id="L269">      throw new HoodieIOException(&quot;Could not get FileStatus on path &quot; + dataPath);</span>
+    }
+  }
+
+  public void setConf(Configuration conf) {
+<span class="nc" id="L274">    this.conf = conf;</span>
+<span class="nc" id="L275">  }</span>
+
+  @Override
+  public Configuration getConf() {
+<span class="nc" id="L279">    return conf;</span>
+  }
+
+  @Override
+  public RecordReader&lt;NullWritable, ArrayWritable&gt; getRecordReader(final InputSplit split, final JobConf job,
+      final Reporter reporter) throws IOException {
+    // TODO enable automatic predicate pushdown after fixing issues
+    // FileSplit fileSplit = (FileSplit) split;
+    // HoodieTableMetadata metadata = getTableMetadata(fileSplit.getPath().getParent());
+    // String tableName = metadata.getTableName();
+    // String mode = HoodieHiveUtil.readMode(job, tableName);
+
+    // if (HoodieHiveUtil.INCREMENTAL_SCAN_MODE.equals(mode)) {
+    // FilterPredicate predicate = constructHoodiePredicate(job, tableName, split);
+    // LOG.info(&quot;Setting parquet predicate push down as &quot; + predicate);
+    // ParquetInputFormat.setFilterPredicate(job, predicate);
+    // clearOutExistingPredicate(job);
+    // }
+<span class="nc" id="L297">    return super.getRecordReader(split, job, reporter);</span>
+  }
+
+  /**
+   * Read the table metadata from a data path. This assumes certain hierarchy of files which should be changed once a
+   * better way is figured out to pass in the hoodie meta directory
+   */
+  protected static HoodieTableMetaClient getTableMetaClient(FileSystem fs, Path dataPath) throws IOException {
+<span class="nc" id="L305">    int levels = HoodieHiveUtil.DEFAULT_LEVELS_TO_BASEPATH;</span>
+<span class="nc bnc" id="L306" title="All 2 branches missed.">    if (HoodiePartitionMetadata.hasPartitionMetadata(fs, dataPath)) {</span>
+<span class="nc" id="L307">      HoodiePartitionMetadata metadata = new HoodiePartitionMetadata(fs, dataPath);</span>
+<span class="nc" id="L308">      metadata.readFromFS();</span>
+<span class="nc" id="L309">      levels = metadata.getPartitionDepth();</span>
+    }
+<span class="nc" id="L311">    Path baseDir = HoodieHiveUtil.getNthParent(dataPath, levels);</span>
+<span class="nc" id="L312">    LOG.info(&quot;Reading hoodie metadata from path &quot; + baseDir.toString());</span>
+<span class="nc" id="L313">    return new HoodieTableMetaClient(fs.getConf(), baseDir.toString());</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

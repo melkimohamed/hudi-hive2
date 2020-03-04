@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>LazyFileIterable.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.util.collection</a> &gt; <span class="el_source">LazyFileIterable.java</span></div><h1>LazyFileIterable.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.util.collection;
+
+import org.apache.hudi.common.util.BufferedRandomAccessFile;
+import org.apache.hudi.exception.HoodieException;
+
+import java.io.IOException;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.function.Consumer;
+import java.util.stream.Collectors;
+
+/**
+ * Iterable to lazily fetch values spilled to disk. This class uses BufferedRandomAccessFile to randomly access the position of
+ * the latest value for a key spilled to disk and returns the result.
+ */
+public class LazyFileIterable&lt;T, R&gt; implements Iterable&lt;R&gt; {
+
+  // Used to access the value written at a specific position in the file
+  private final String filePath;
+  // Stores the key and corresponding value's latest metadata spilled to disk
+  private final Map&lt;T, DiskBasedMap.ValueMetadata&gt; inMemoryMetadataOfSpilledData;
+
+<span class="nc" id="L41">  public LazyFileIterable(String filePath, Map&lt;T, DiskBasedMap.ValueMetadata&gt; map) {</span>
+<span class="nc" id="L42">    this.filePath = filePath;</span>
+<span class="nc" id="L43">    this.inMemoryMetadataOfSpilledData = map;</span>
+<span class="nc" id="L44">  }</span>
+
+  @Override
+  public Iterator&lt;R&gt; iterator() {
+    try {
+<span class="nc" id="L49">      return new LazyFileIterator&lt;&gt;(filePath, inMemoryMetadataOfSpilledData);</span>
+<span class="nc" id="L50">    } catch (IOException io) {</span>
+<span class="nc" id="L51">      throw new HoodieException(&quot;Unable to initialize iterator for file on disk&quot;, io);</span>
+    }
+  }
+
+  /**
+   * Iterator implementation for the iterable defined above.
+   */
+  public class LazyFileIterator&lt;T, R&gt; implements Iterator&lt;R&gt; {
+
+    private final String filePath;
+    private BufferedRandomAccessFile readOnlyFileHandle;
+    private final Iterator&lt;Map.Entry&lt;T, DiskBasedMap.ValueMetadata&gt;&gt; metadataIterator;
+
+<span class="nc" id="L64">    public LazyFileIterator(String filePath, Map&lt;T, DiskBasedMap.ValueMetadata&gt; map) throws IOException {</span>
+<span class="nc" id="L65">      this.filePath = filePath;</span>
+<span class="nc" id="L66">      this.readOnlyFileHandle = new BufferedRandomAccessFile(filePath, &quot;r&quot;, DiskBasedMap.BUFFER_SIZE);</span>
+<span class="nc" id="L67">      readOnlyFileHandle.seek(0);</span>
+
+      // sort the map in increasing order of offset of value so disk seek is only in one(forward) direction
+<span class="nc" id="L70">      this.metadataIterator = map.entrySet().stream()</span>
+<span class="nc" id="L71">          .sorted((Map.Entry&lt;T, DiskBasedMap.ValueMetadata&gt; o1, Map.Entry&lt;T, DiskBasedMap.ValueMetadata&gt; o2) -&gt; o1</span>
+<span class="nc" id="L72">              .getValue().getOffsetOfValue().compareTo(o2.getValue().getOffsetOfValue()))</span>
+<span class="nc" id="L73">          .collect(Collectors.toList()).iterator();</span>
+<span class="nc" id="L74">      this.addShutdownHook();</span>
+<span class="nc" id="L75">    }</span>
+
+    @Override
+    public boolean hasNext() {
+<span class="nc" id="L79">      boolean available = this.metadataIterator.hasNext();</span>
+<span class="nc bnc" id="L80" title="All 2 branches missed.">      if (!available) {</span>
+<span class="nc" id="L81">        close();</span>
+      }
+<span class="nc" id="L83">      return available;</span>
+    }
+
+    @Override
+    public R next() {
+<span class="nc bnc" id="L88" title="All 2 branches missed.">      if (!hasNext()) {</span>
+<span class="nc" id="L89">        throw new IllegalStateException(&quot;next() called on EOF'ed stream. File :&quot; + filePath);</span>
+      }
+<span class="nc" id="L91">      Map.Entry&lt;T, DiskBasedMap.ValueMetadata&gt; entry = this.metadataIterator.next();</span>
+<span class="nc" id="L92">      return DiskBasedMap.get(entry.getValue(), readOnlyFileHandle);</span>
+    }
+
+    @Override
+    public void remove() {
+<span class="nc" id="L97">      this.metadataIterator.remove();</span>
+<span class="nc" id="L98">    }</span>
+
+    @Override
+    public void forEachRemaining(Consumer&lt;? super R&gt; action) {
+<span class="nc" id="L102">      action.accept(next());</span>
+<span class="nc" id="L103">    }</span>
+
+    private void close() {
+<span class="nc bnc" id="L106" title="All 2 branches missed.">      if (readOnlyFileHandle != null) {</span>
+        try {
+<span class="nc" id="L108">          readOnlyFileHandle.close();</span>
+<span class="nc" id="L109">          readOnlyFileHandle = null;</span>
+<span class="nc" id="L110">        } catch (IOException e) {</span>
+<span class="nc" id="L111">          throw new RuntimeException(e);</span>
+<span class="nc" id="L112">        }</span>
+      }
+<span class="nc" id="L114">    }</span>
+
+    private void addShutdownHook() {
+<span class="nc" id="L117">      Runtime.getRuntime().addShutdownHook(new Thread() {</span>
+        @Override
+        public void run() {
+<span class="nc" id="L120">          close();</span>
+<span class="nc" id="L121">        }</span>
+      });
+<span class="nc" id="L123">    }</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

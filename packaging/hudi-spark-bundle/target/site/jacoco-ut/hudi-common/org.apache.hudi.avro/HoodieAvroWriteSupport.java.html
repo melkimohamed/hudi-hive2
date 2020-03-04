@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>HoodieAvroWriteSupport.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.avro</a> &gt; <span class="el_source">HoodieAvroWriteSupport.java</span></div><h1>HoodieAvroWriteSupport.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.avro;
+
+import org.apache.hudi.common.bloom.filter.BloomFilter;
+import org.apache.hudi.common.bloom.filter.HoodieDynamicBoundedBloomFilter;
+
+import org.apache.avro.Schema;
+import org.apache.parquet.avro.AvroWriteSupport;
+import org.apache.parquet.hadoop.api.WriteSupport;
+import org.apache.parquet.schema.MessageType;
+
+import java.util.HashMap;
+
+/**
+ * Wrap AvroWriterSupport for plugging in the bloom filter.
+ */
+public class HoodieAvroWriteSupport extends AvroWriteSupport {
+
+  private BloomFilter bloomFilter;
+  private String minRecordKey;
+  private String maxRecordKey;
+
+  public static final String OLD_HOODIE_AVRO_BLOOM_FILTER_METADATA_KEY = &quot;com.uber.hoodie.bloomfilter&quot;;
+  public static final String HOODIE_AVRO_BLOOM_FILTER_METADATA_KEY = &quot;org.apache.hudi.bloomfilter&quot;;
+  public static final String HOODIE_MIN_RECORD_KEY_FOOTER = &quot;hoodie_min_record_key&quot;;
+  public static final String HOODIE_MAX_RECORD_KEY_FOOTER = &quot;hoodie_max_record_key&quot;;
+  public static final String HOODIE_BLOOM_FILTER_TYPE_CODE = &quot;hoodie_bloom_filter_type_code&quot;;
+
+  public HoodieAvroWriteSupport(MessageType schema, Schema avroSchema, BloomFilter bloomFilter) {
+<span class="nc" id="L47">    super(schema, avroSchema);</span>
+<span class="nc" id="L48">    this.bloomFilter = bloomFilter;</span>
+<span class="nc" id="L49">  }</span>
+
+  @Override
+  public WriteSupport.FinalizedWriteContext finalizeWrite() {
+<span class="nc" id="L53">    HashMap&lt;String, String&gt; extraMetaData = new HashMap&lt;&gt;();</span>
+<span class="nc bnc" id="L54" title="All 2 branches missed.">    if (bloomFilter != null) {</span>
+<span class="nc" id="L55">      extraMetaData.put(HOODIE_AVRO_BLOOM_FILTER_METADATA_KEY, bloomFilter.serializeToString());</span>
+<span class="nc bnc" id="L56" title="All 4 branches missed.">      if (minRecordKey != null &amp;&amp; maxRecordKey != null) {</span>
+<span class="nc" id="L57">        extraMetaData.put(HOODIE_MIN_RECORD_KEY_FOOTER, minRecordKey);</span>
+<span class="nc" id="L58">        extraMetaData.put(HOODIE_MAX_RECORD_KEY_FOOTER, maxRecordKey);</span>
+      }
+<span class="nc bnc" id="L60" title="All 2 branches missed.">      if (bloomFilter.getBloomFilterTypeCode().name().contains(HoodieDynamicBoundedBloomFilter.TYPE_CODE_PREFIX)) {</span>
+<span class="nc" id="L61">        extraMetaData.put(HOODIE_BLOOM_FILTER_TYPE_CODE, bloomFilter.getBloomFilterTypeCode().name());</span>
+      }
+    }
+<span class="nc" id="L64">    return new WriteSupport.FinalizedWriteContext(extraMetaData);</span>
+  }
+
+  public void add(String recordKey) {
+<span class="nc" id="L68">    this.bloomFilter.add(recordKey);</span>
+<span class="nc bnc" id="L69" title="All 2 branches missed.">    if (minRecordKey != null) {</span>
+<span class="nc bnc" id="L70" title="All 2 branches missed.">      minRecordKey = minRecordKey.compareTo(recordKey) &lt;= 0 ? minRecordKey : recordKey;</span>
+    } else {
+<span class="nc" id="L72">      minRecordKey = recordKey;</span>
+    }
+
+<span class="nc bnc" id="L75" title="All 2 branches missed.">    if (maxRecordKey != null) {</span>
+<span class="nc bnc" id="L76" title="All 2 branches missed.">      maxRecordKey = maxRecordKey.compareTo(recordKey) &gt;= 0 ? maxRecordKey : recordKey;</span>
+    } else {
+<span class="nc" id="L78">      maxRecordKey = recordKey;</span>
+    }
+<span class="nc" id="L80">  }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

@@ -1,0 +1,243 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="fr"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../../jacoco-resources/report.gif" type="image/gif"/><title>InternalDynamicBloomFilter.java</title><link rel="stylesheet" href="../../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../../index.html" class="el_report">hudi-spark-bundle_2.11</a> &gt; <a href="../index.html" class="el_bundle">hudi-common</a> &gt; <a href="index.source.html" class="el_package">org.apache.hudi.common.bloom.filter</a> &gt; <span class="el_source">InternalDynamicBloomFilter.java</span></div><h1>InternalDynamicBloomFilter.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.hudi.common.bloom.filter;
+
+import org.apache.hadoop.util.bloom.BloomFilter;
+import org.apache.hadoop.util.bloom.Key;
+
+import java.io.DataInput;
+import java.io.DataOutput;
+import java.io.IOException;
+
+/**
+ * Hoodie's internal dynamic Bloom Filter. This is largely based of {@link org.apache.hadoop.util.bloom.DynamicBloomFilter}
+ * with bounds on maximum number of entries. Once the max entries is reached, false positive gaurantees are not
+ * honored.
+ */
+class InternalDynamicBloomFilter extends InternalFilter {
+
+  /**
+   * Threshold for the maximum number of key to record in a dynamic Bloom filter row.
+   */
+  private int nr;
+
+  /**
+   * The number of keys recorded in the current standard active Bloom filter.
+   */
+  private int currentNbRecord;
+  private int maxNr;
+<span class="nc" id="L45">  private boolean reachedMax = false;</span>
+<span class="nc" id="L46">  private int curMatrixIndex = 0;</span>
+
+  /**
+   * The matrix of Bloom filter.
+   */
+  private org.apache.hadoop.util.bloom.BloomFilter[] matrix;
+
+  /**
+   * Zero-args constructor for the serialization.
+   */
+<span class="nc" id="L56">  public InternalDynamicBloomFilter() {</span>
+<span class="nc" id="L57">  }</span>
+
+  /**
+   * Constructor.
+   * &lt;p&gt;
+   * Builds an empty Dynamic Bloom filter.
+   *
+   * @param vectorSize The number of bits in the vector.
+   * @param nbHash     The number of hash function to consider.
+   * @param hashType   type of the hashing function (see {@link org.apache.hadoop.util.hash.Hash}).
+   * @param nr         The threshold for the maximum number of keys to record in a dynamic Bloom filter row.
+   */
+  public InternalDynamicBloomFilter(int vectorSize, int nbHash, int hashType, int nr, int maxNr) {
+<span class="nc" id="L70">    super(vectorSize, nbHash, hashType);</span>
+
+<span class="nc" id="L72">    this.nr = nr;</span>
+<span class="nc" id="L73">    this.currentNbRecord = 0;</span>
+<span class="nc" id="L74">    this.maxNr = maxNr;</span>
+
+<span class="nc" id="L76">    matrix = new org.apache.hadoop.util.bloom.BloomFilter[1];</span>
+<span class="nc" id="L77">    matrix[0] = new org.apache.hadoop.util.bloom.BloomFilter(this.vectorSize, this.nbHash, this.hashType);</span>
+<span class="nc" id="L78">  }</span>
+
+  @Override
+  public void add(Key key) {
+<span class="nc bnc" id="L82" title="All 2 branches missed.">    if (key == null) {</span>
+<span class="nc" id="L83">      throw new NullPointerException(&quot;Key can not be null&quot;);</span>
+    }
+
+<span class="nc" id="L86">    org.apache.hadoop.util.bloom.BloomFilter bf = getActiveStandardBF();</span>
+
+<span class="nc bnc" id="L88" title="All 2 branches missed.">    if (bf == null) {</span>
+<span class="nc" id="L89">      addRow();</span>
+<span class="nc" id="L90">      bf = matrix[matrix.length - 1];</span>
+<span class="nc" id="L91">      currentNbRecord = 0;</span>
+    }
+
+<span class="nc" id="L94">    bf.add(key);</span>
+
+<span class="nc" id="L96">    currentNbRecord++;</span>
+<span class="nc" id="L97">  }</span>
+
+  @Override
+  public void and(InternalFilter filter) {
+<span class="nc bnc" id="L101" title="All 6 branches missed.">    if (!(filter instanceof InternalDynamicBloomFilter)</span>
+        || filter.vectorSize != this.vectorSize
+        || filter.nbHash != this.nbHash) {
+<span class="nc" id="L104">      throw new IllegalArgumentException(&quot;filters cannot be and-ed&quot;);</span>
+    }
+
+<span class="nc" id="L107">    InternalDynamicBloomFilter dbf = (InternalDynamicBloomFilter) filter;</span>
+
+<span class="nc bnc" id="L109" title="All 4 branches missed.">    if (dbf.matrix.length != this.matrix.length || dbf.nr != this.nr) {</span>
+<span class="nc" id="L110">      throw new IllegalArgumentException(&quot;filters cannot be and-ed&quot;);</span>
+    }
+
+<span class="nc bnc" id="L113" title="All 2 branches missed.">    for (int i = 0; i &lt; matrix.length; i++) {</span>
+<span class="nc" id="L114">      matrix[i].and(dbf.matrix[i]);</span>
+    }
+<span class="nc" id="L116">  }</span>
+
+  @Override
+  public boolean membershipTest(Key key) {
+<span class="nc bnc" id="L120" title="All 2 branches missed.">    if (key == null) {</span>
+<span class="nc" id="L121">      return true;</span>
+    }
+
+<span class="nc bnc" id="L124" title="All 2 branches missed.">    for (BloomFilter bloomFilter : matrix) {</span>
+<span class="nc bnc" id="L125" title="All 2 branches missed.">      if (bloomFilter.membershipTest(key)) {</span>
+<span class="nc" id="L126">        return true;</span>
+      }
+    }
+
+<span class="nc" id="L130">    return false;</span>
+  }
+
+  @Override
+  public void not() {
+<span class="nc bnc" id="L135" title="All 2 branches missed.">    for (BloomFilter bloomFilter : matrix) {</span>
+<span class="nc" id="L136">      bloomFilter.not();</span>
+    }
+<span class="nc" id="L138">  }</span>
+
+  @Override
+  public void or(InternalFilter filter) {
+<span class="nc bnc" id="L142" title="All 6 branches missed.">    if (!(filter instanceof InternalDynamicBloomFilter)</span>
+        || filter.vectorSize != this.vectorSize
+        || filter.nbHash != this.nbHash) {
+<span class="nc" id="L145">      throw new IllegalArgumentException(&quot;filters cannot be or-ed&quot;);</span>
+    }
+
+<span class="nc" id="L148">    InternalDynamicBloomFilter dbf = (InternalDynamicBloomFilter) filter;</span>
+
+<span class="nc bnc" id="L150" title="All 4 branches missed.">    if (dbf.matrix.length != this.matrix.length || dbf.nr != this.nr) {</span>
+<span class="nc" id="L151">      throw new IllegalArgumentException(&quot;filters cannot be or-ed&quot;);</span>
+    }
+<span class="nc bnc" id="L153" title="All 2 branches missed.">    for (int i = 0; i &lt; matrix.length; i++) {</span>
+<span class="nc" id="L154">      matrix[i].or(dbf.matrix[i]);</span>
+    }
+<span class="nc" id="L156">  }</span>
+
+  @Override
+  public void xor(InternalFilter filter) {
+<span class="nc bnc" id="L160" title="All 6 branches missed.">    if (!(filter instanceof InternalDynamicBloomFilter)</span>
+        || filter.vectorSize != this.vectorSize
+        || filter.nbHash != this.nbHash) {
+<span class="nc" id="L163">      throw new IllegalArgumentException(&quot;filters cannot be xor-ed&quot;);</span>
+    }
+<span class="nc" id="L165">    InternalDynamicBloomFilter dbf = (InternalDynamicBloomFilter) filter;</span>
+
+<span class="nc bnc" id="L167" title="All 4 branches missed.">    if (dbf.matrix.length != this.matrix.length || dbf.nr != this.nr) {</span>
+<span class="nc" id="L168">      throw new IllegalArgumentException(&quot;filters cannot be xor-ed&quot;);</span>
+    }
+
+<span class="nc bnc" id="L171" title="All 2 branches missed.">    for (int i = 0; i &lt; matrix.length; i++) {</span>
+<span class="nc" id="L172">      matrix[i].xor(dbf.matrix[i]);</span>
+    }
+<span class="nc" id="L174">  }</span>
+
+  @Override
+  public String toString() {
+<span class="nc" id="L178">    StringBuilder res = new StringBuilder();</span>
+
+<span class="nc bnc" id="L180" title="All 2 branches missed.">    for (BloomFilter bloomFilter : matrix) {</span>
+<span class="nc" id="L181">      res.append(bloomFilter);</span>
+<span class="nc" id="L182">      res.append(Character.LINE_SEPARATOR);</span>
+    }
+<span class="nc" id="L184">    return res.toString();</span>
+  }
+
+  // Writable
+
+  @Override
+  public void write(DataOutput out) throws IOException {
+<span class="nc" id="L191">    super.write(out);</span>
+<span class="nc" id="L192">    out.writeInt(nr);</span>
+<span class="nc" id="L193">    out.writeInt(currentNbRecord);</span>
+<span class="nc" id="L194">    out.writeInt(matrix.length);</span>
+<span class="nc bnc" id="L195" title="All 2 branches missed.">    for (BloomFilter bloomFilter : matrix) {</span>
+<span class="nc" id="L196">      bloomFilter.write(out);</span>
+    }
+<span class="nc" id="L198">  }</span>
+
+  @Override
+  public void readFields(DataInput in) throws IOException {
+<span class="nc" id="L202">    super.readFields(in);</span>
+<span class="nc" id="L203">    nr = in.readInt();</span>
+<span class="nc" id="L204">    currentNbRecord = in.readInt();</span>
+<span class="nc" id="L205">    int len = in.readInt();</span>
+<span class="nc" id="L206">    matrix = new org.apache.hadoop.util.bloom.BloomFilter[len];</span>
+<span class="nc bnc" id="L207" title="All 2 branches missed.">    for (int i = 0; i &lt; matrix.length; i++) {</span>
+<span class="nc" id="L208">      matrix[i] = new org.apache.hadoop.util.bloom.BloomFilter();</span>
+<span class="nc" id="L209">      matrix[i].readFields(in);</span>
+    }
+<span class="nc" id="L211">  }</span>
+
+  /**
+   * Adds a new row to &lt;i&gt;this&lt;/i&gt; dynamic Bloom filter.
+   */
+  private void addRow() {
+<span class="nc" id="L217">    BloomFilter[] tmp = new BloomFilter[matrix.length + 1];</span>
+<span class="nc" id="L218">    System.arraycopy(matrix, 0, tmp, 0, matrix.length);</span>
+<span class="nc" id="L219">    tmp[tmp.length - 1] = new BloomFilter(vectorSize, nbHash, hashType);</span>
+<span class="nc" id="L220">    matrix = tmp;</span>
+<span class="nc" id="L221">  }</span>
+
+  /**
+   * Returns the active standard Bloom filter in &lt;i&gt;this&lt;/i&gt; dynamic Bloom filter.
+   *
+   * @return BloomFilter The active standard Bloom filter.
+   * &lt;code&gt;Null&lt;/code&gt; otherwise.
+   */
+  private BloomFilter getActiveStandardBF() {
+<span class="nc bnc" id="L230" title="All 2 branches missed.">    if (reachedMax) {</span>
+<span class="nc" id="L231">      return matrix[curMatrixIndex++ % matrix.length];</span>
+    }
+
+<span class="nc bnc" id="L234" title="All 4 branches missed.">    if (currentNbRecord &gt;= nr &amp;&amp; (matrix.length * nr) &lt; maxNr) {</span>
+<span class="nc" id="L235">      return null;</span>
+<span class="nc bnc" id="L236" title="All 4 branches missed.">    } else if (currentNbRecord &gt;= nr &amp;&amp; (matrix.length * nr) &gt;= maxNr) {</span>
+<span class="nc" id="L237">      reachedMax = true;</span>
+<span class="nc" id="L238">      return matrix[0];</span>
+    }
+<span class="nc" id="L240">    return matrix[matrix.length - 1];</span>
+  }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.5.201910111838</span></div></body></html>

@@ -1,0 +1,3 @@
+/root/hudi-incubator-build/incubator-hudi/hudi-integ-test/src/test/java/org/apache/hudi/integ/ITTestHoodieSanity.java
+/root/hudi-incubator-build/incubator-hudi/hudi-integ-test/src/test/java/org/apache/hudi/integ/ITTestHoodieDemo.java
+/root/hudi-incubator-build/incubator-hudi/hudi-integ-test/src/test/java/org/apache/hudi/integ/ITTestBase.java
